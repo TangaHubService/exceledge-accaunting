@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: accounting
+      POSTGRES_PASSWORD: accounting
+      POSTGRES_DB: accounting
+    ports:
+      - "5433:5432"
+    volumes:
+      - accounting_pg:/var/lib/postgresql/data
+volumes:
+  accounting_pg:

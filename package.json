@@ -1,0 +1,19 @@
+{
+  "name": "exceledge-accounting",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @exceledge/accounting-api",
+    "dev:web": "npm run dev -w @exceledge/accounting-web",
+    "test": "npm run test -w @exceledge/accounting-api && npm run test -w @exceledge/accounting-domain",
+    "typecheck": "npm run typecheck -w @exceledge/accounting-api && npm run typecheck -w @exceledge/accounting-domain",
+    "db:migrate": "npm run prisma:migrate -w @exceledge/accounting-api",
+    "db:generate": "npm run prisma:generate -w @exceledge/accounting-api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

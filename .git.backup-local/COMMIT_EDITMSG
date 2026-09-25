@@ -1,0 +1,5 @@
+feat(accounting): deliver Phases 4–10 (AR, AP, inventory, banking, tax, expenses, fixed assets)
+
+Complete the accounting roadmap segments through fixed assets with domain rules, Prisma migrations, APIs, web UI, and automated tests. ERP ASSET_ACQUIRED and expense sync stay capability-gated on JWT roles.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
