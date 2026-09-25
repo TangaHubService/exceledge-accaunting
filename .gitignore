@@ -14,3 +14,4 @@ apps/web/dist/
 **/tsconfig.tsbuildinfo
 node_modules/
 dist/
+.git.backup-local/
