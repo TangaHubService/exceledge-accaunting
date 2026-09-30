@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "node scripts/ensure-workspace-links.js",
     "build": "npm run build -w @exceledge/accounting-api",
     "start": "npm run prisma:deploy -w @exceledge/accounting-api && npm run start -w @exceledge/accounting-api",
     "dev:api": "npm run dev -w @exceledge/accounting-api",
