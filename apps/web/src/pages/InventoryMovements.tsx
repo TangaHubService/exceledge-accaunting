@@ -1,8 +1,9 @@
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type Column, DataTable } from "../components/DataTable";
 import { Select } from "../components/Select";
-import { EmptyState, Field, Loadable, PageHeader } from "../components/ui";
+import { EmptyState, Field, Loadable, PageHeader, Pagination } from "../components/ui";
+import { PAGE_SIZE_OPTIONS } from "../lib/pagination";
 import { useCompany } from "../lib/company";
 import { amount, date } from "../lib/format";
 import { COST_SOURCE_LABELS, KIND_GROUPS, KIND_LABELS, postingStatus } from "../lib/inventory";
@@ -22,6 +23,8 @@ export function InventoryMovements() {
   const from = query.get("from") ?? "";
   const to = query.get("to") ?? "";
   const page = Number(query.get("page") ?? 1) || 1;
+  const urlPageSize = Number(query.get("pageSize") ?? PAGE_SIZE) || PAGE_SIZE;
+  const pageSize = PAGE_SIZE_OPTIONS.includes(urlPageSize) ? urlPageSize : PAGE_SIZE;
   const [search, setSearch] = useState(query.get("q") ?? "");
 
   useEffect(() => {
@@ -35,7 +38,7 @@ export function InventoryMovements() {
   }, [search, query]);
 
   const group = KIND_GROUPS.find((g) => g.key === show);
-  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (group) params.set("kind", group.kinds.join(","));
   for (const [k, v] of Object.entries({ itemId, costSource, locationId, from, to, q: query.get("q") ?? "" })) if (v) params.set(k, v);
 
@@ -108,7 +111,12 @@ export function InventoryMovements() {
 
   const filters: Array<[string, string]> = [["all", "All"], ...KIND_GROUPS.map((g) => [g.key, g.label] as [string, string])];
   const total = movements.data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const goToPage = (next: number) => setQueryParam("page", next <= 1 ? null : String(next));
+  const changePageSize = (next: number) => {
+    setQueryParam("pageSize", String(next));
+    setQueryParam("page", null);
+  };
 
   return (
     <>
@@ -162,7 +170,8 @@ export function InventoryMovements() {
               columns={columns}
               rows={p.rows}
               rowKey={(m) => m.id}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
+              showPagination={false}
               empty={
                 total === 0 && show === "all" && !itemId && !locationId && !from && !to && !query.get("q") ? (
                   <EmptyState title="No stock movements yet" body="Movements appear here as Excel Edge receives, sells, adjusts and transfers stock." />
@@ -173,7 +182,7 @@ export function InventoryMovements() {
               footer={
                 p.rows.length > 0 && (
                   <tr>
-                    <td colSpan={3}>{pages > 1 ? "Total for all matching movements" : "Total"}</td>
+                    <td colSpan={3}>{total > pageSize ? "Total for all matching movements" : "Total"}</td>
                     <td className="num hide-sm">{amount(p.totals.quantityIn)}</td>
                     <td className="num hide-sm">{amount(p.totals.quantityOut)}</td>
                     <td className="hide-md" />
@@ -183,19 +192,7 @@ export function InventoryMovements() {
                 )
               }
             />
-            {pages > 1 && (
-              <div className="pager">
-                <span>
-                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
-                </span>
-                <button type="button" className="icon-button" onClick={() => setQueryParam("page", String(page - 1))} disabled={page <= 1} aria-label="Previous page">
-                  <ChevronLeft size={16} aria-hidden="true" />
-                </button>
-                <button type="button" className="icon-button" onClick={() => setQueryParam("page", String(page + 1))} disabled={page >= pages} aria-label="Next page">
-                  <ChevronRight size={16} aria-hidden="true" />
-                </button>
-              </div>
-            )}
+            <Pagination page={page} pageSize={pageSize} total={total} onPage={goToPage} onPageSize={changePageSize} />
           </>
         )}
       </Loadable>

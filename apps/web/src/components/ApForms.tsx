@@ -8,7 +8,7 @@ import type { AccountType, ApAdvance, ApBill, ApPayment, ApPaymentMethod, Suppli
 import { SettlementAccountField } from "./BankingForms";
 import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
 import { Select, type SelectOption } from "./Select";
-import { Drawer, Field } from "./ui";
+import { Drawer, Field, Skeleton } from "./ui";
 
 export const AP_METHODS: Array<{ value: ApPaymentMethod; label: string }> = [
   { value: "BANK", label: "Bank transfer" },
@@ -531,7 +531,7 @@ export function PaymentForm({
           <>
             <div className="form-section-title" style={{ marginTop: 24 }}>Settle bills</div>
             {bills.error && <p className="field-error">{bills.error}</p>}
-            {!open && !bills.error && <p className="muted small">Loading open bills…</p>}
+            {!open && !bills.error && <Skeleton width={160} />}
             {open && open.length === 0 && <p className="muted small">No open bills. The payment will be kept on the supplier's account as a prepayment.</p>}
             {open && open.length > 0 && (
               <div className="table-wrap">

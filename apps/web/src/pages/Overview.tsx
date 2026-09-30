@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useMemo } from "react";
-import { EmptyState, Figure, PageHeader } from "../components/ui";
+import { BarsSkeleton, EmptyState, Figure, FiguresSkeleton, ListSkeleton, PageHeader, TableSkeleton } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, money, plural, toNumber } from "../lib/format";
 import { Link, navigate } from "../lib/router";
@@ -119,6 +119,9 @@ export function Overview() {
         }
       />
 
+      {company.loading && !company.snapshot ? (
+        <FiguresSkeleton count={figureCount} />
+      ) : (
       <section className="figures" aria-label="Financial position" style={{ "--cols": figureCount } as CSSProperties}>
         {cashAccounts.length > 0 ? (
           <Figure
@@ -171,6 +174,7 @@ export function Overview() {
           />
         )}
       </section>
+      )}
 
       <div className="overview-grid">
         <section>
@@ -194,9 +198,7 @@ export function Overview() {
                 ))}
               </ul>
             ) : attentionLoading ? (
-              <div className="all-clear">
-                <span className="skeleton" style={{ width: "50%" }} />
-              </div>
+              <ListSkeleton rows={3} />
             ) : (
               <p className="all-clear">You're up to date. Nothing needs attention right now.</p>
             )}
@@ -227,7 +229,7 @@ export function Overview() {
                   <span className="amount">{money(ar.data.totalOutstanding, currency)}</span>
                 </div>
               )}
-              {!ar.data && <span className="skeleton" style={{ width: "100%", height: 90 }} />}
+              {!ar.data && <BarsSkeleton rows={5} />}
             </div>
           </section>
         )}
@@ -240,7 +242,9 @@ export function Overview() {
               <h2 className="section-title">Latest payments received</h2>
             </div>
             <div className="table-wrap">
-              {ar.data && ar.data.recentReceipts.length === 0 ? (
+              {!ar.data ? (
+                <TableSkeleton rows={4} columns={3} wrap={false} label="Loading payments" />
+              ) : ar.data.recentReceipts.length === 0 ? (
                 <EmptyState title="No payments recorded yet" body="Customer payments will appear here as they're recorded." />
               ) : (
                 <table className="table">
@@ -273,7 +277,9 @@ export function Overview() {
               </Link>
             </div>
             <div className="table-wrap">
-              {journals.data && recentJournals.length === 0 ? (
+              {!journals.data ? (
+                <TableSkeleton rows={4} columns={3} wrap={false} label="Loading journal entries" />
+              ) : recentJournals.length === 0 ? (
                 <EmptyState title="Nothing posted yet" body="Invoices, receipts, ERP sales and manual journals appear here once posted." />
               ) : (
                 <table className="table">
@@ -308,7 +314,9 @@ export function Overview() {
               </Link>
             </div>
             <div className="table-wrap">
-              {ap.data && ap.data.paymentCalendar.length === 0 ? (
+              {!ap.data ? (
+                <TableSkeleton rows={4} columns={3} wrap={false} label="Loading upcoming payments" />
+              ) : ap.data.paymentCalendar.length === 0 ? (
                 <EmptyState title="Nothing due in the next 30 days" body="Bills falling due will be listed here by date so you can plan cash." />
               ) : (
                 <table className="table">
@@ -356,7 +364,7 @@ export function Overview() {
                   <span className="amount">{money(ap.data.totalOutstanding, currency)}</span>
                 </div>
               )}
-              {!ap.data && <span className="skeleton" style={{ width: "100%", height: 90 }} />}
+              {!ap.data && <BarsSkeleton rows={5} />}
             </div>
           </section>
         </div>

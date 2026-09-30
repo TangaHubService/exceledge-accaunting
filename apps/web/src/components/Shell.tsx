@@ -196,7 +196,10 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className={`app ${navOpen ? "nav-open" : ""} ${collapsed ? "collapsed" : ""}`}>
-      <aside className="sidebar" aria-label="Sidebar">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+      <aside className="sidebar" aria-label="Accounting navigation">
         <div className="sidebar-brand">
           <img src="/logo.jpeg" alt="" />
           <div className="brand-text">
@@ -256,15 +259,21 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <div className="main">
         <header className="topbar">
-          <button type="button" className="icon-button menu-button" onClick={() => setNavOpen(true)} aria-label="Open menu">
+          <button type="button" className="icon-button menu-button" onClick={() => setNavOpen(true)} aria-label="Open menu" aria-expanded={navOpen}>
             <MenuIcon size={20} aria-hidden="true" />
           </button>
-          <div className="context">
+          <div className="context" aria-label="Financial context">
             {dash?.currentFinancialYear ? (
               <>
                 <strong>{dash.currentFinancialYear.name}</strong>
-                {dash.currentOpenPeriod && <> · Open period <strong>{dash.currentOpenPeriod.name}</strong></>}
-                {" · "}Amounts in {company.currency}
+                {dash.currentOpenPeriod && (
+                  <span className="hide-xs">
+                    {" "}· Open period <strong>{dash.currentOpenPeriod.name}</strong>
+                  </span>
+                )}
+                <span className="context-ccy" title={`Amounts in ${company.currency}`}>
+                  {" "}· {company.currency}
+                </span>
               </>
             ) : (
               dash && "No financial year set up"
@@ -304,7 +313,7 @@ export function Shell({ children }: { children: ReactNode }) {
             ]}
           />
         </header>
-        <main className="content">{children}</main>
+        <main className="content" id="main-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

@@ -70,24 +70,24 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
+export {
+  BarsSkeleton,
+  CardSkeleton,
+  FiguresSkeleton,
+  FormSkeleton,
+  ListSkeleton,
+  PageSkeleton,
+  SearchResultsSkeleton,
+  Skeleton,
+  StatCardSkeleton,
+  TableSkeleton,
+} from "./skeletons";
+export { Pagination } from "./Pagination";
+import { TableSkeleton } from "./skeletons";
+
+/** Table loading state. Standardized on {@link TableSkeleton}. */
 export function SkeletonRows({ rows = 6, cols = 4 }: { rows?: number; cols?: number }) {
-  return (
-    <div className="table-wrap" aria-busy="true" aria-label="Loading">
-      <table className="table">
-        <tbody>
-          {Array.from({ length: rows }, (_, r) => (
-            <tr key={r}>
-              {Array.from({ length: cols }, (_, c) => (
-                <td key={c}>
-                  <span className="skeleton" style={{ width: c === 0 ? "60%" : `${30 + ((r + c) % 3) * 15}%` }} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <TableSkeleton rows={rows} columns={cols} />;
 }
 
 /** Shows skeleton, error or content for a `useResource` result. */

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { EmptyState, Field, Loadable, PageHeader } from "../components/ui";
+import { EmptyState, Field, Loadable, PageHeader, Pagination } from "../components/ui";
 import { Select } from "../components/Select";
 import { useCompany } from "../lib/company";
 import { amount, date, isoDay, moduleLabel } from "../lib/format";
@@ -14,7 +14,8 @@ export function TaxLedgerPage() {
   const [to, setTo] = useState(isoDay());
   const [taxType, setTaxType] = useState("");
   const [page, setPage] = useState(1);
-  const q = new URLSearchParams({ from, to, page: String(page), pageSize: "50" });
+  const [pageSize, setPageSize] = useState(50);
+  const q = new URLSearchParams({ from, to, page: String(page), pageSize: String(pageSize) });
   if (taxType) q.set("taxType", taxType);
   const ledger = useResource<TaxLedger>(`/api/v1/tax/ledger?${q}`);
 
@@ -111,19 +112,16 @@ export function TaxLedgerPage() {
                 </table>
               </div>
             )}
-            {r.total > r.pageSize && (
-              <div className="pager">
-                <button type="button" className="btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </button>
-                <span className="muted">
-                  Page {r.page} of {Math.ceil(r.total / r.pageSize)}
-                </span>
-                <button type="button" className="btn" disabled={page * r.pageSize >= r.total} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </button>
-              </div>
-            )}
+            <Pagination
+              page={r.page}
+              pageSize={r.pageSize}
+              total={r.total}
+              onPage={setPage}
+              onPageSize={(next) => {
+                setPageSize(next);
+                setPage(1);
+              }}
+            />
           </div>
         )}
       </Loadable>

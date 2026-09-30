@@ -67,13 +67,15 @@ export async function resolveCompany(req: AuthedRequest, res: Response, next: Ne
   }
 
   const externalId = String(orgId);
-  let company = await prisma.company.findUnique({
-    where: { externalErpOrganizationId: externalId },
-  });
-
-  if (!company) {
-    company = await prisma.company.create({
-      data: {
+  // Use upsert: the overview page fires ~8 requests in parallel on first login,
+  // and findUnique-then-create races (P2002 on externalErpOrganizationId).
+  // Upsert narrows the race; the P2002 catch covers two simultaneous first-time inserts.
+  let company;
+  try {
+    company = await prisma.company.upsert({
+      where: { externalErpOrganizationId: externalId },
+      update: {},
+      create: {
         externalErpOrganizationId: externalId,
         name: `ERP Org ${externalId}`,
         activation: { create: {} },
@@ -97,6 +99,14 @@ export async function resolveCompany(req: AuthedRequest, res: Response, next: Ne
         },
       },
     });
+  } catch (e: unknown) {
+    if (typeof e === "object" && e !== null && "code" in e && (e as { code: string }).code === "P2002") {
+      const existing = await prisma.company.findUnique({ where: { externalErpOrganizationId: externalId } });
+      if (!existing) throw e;
+      company = existing;
+    } else {
+      throw e;
+    }
   }
 
   req.companyId = company.id;

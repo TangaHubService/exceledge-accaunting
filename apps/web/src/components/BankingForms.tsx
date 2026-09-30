@@ -21,7 +21,7 @@ import type { BankTransaction, FinancialAccount, FinancialAccountKind, Reconcili
 import { useFeedback } from "./feedback";
 import { Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
 import { Select, type SelectOption } from "./Select";
-import { Badge, Drawer, Field } from "./ui";
+import { Badge, Drawer, Field, Skeleton } from "./ui";
 
 /** Active GL accounts for allocation, leaving out the ledgers behind bank and cash accounts (use a transfer for those). */
 function useAllocationOptions(accounts: FinancialAccount[]): SelectOption[] {
@@ -623,7 +623,7 @@ export function TransactionDrawer({ id, onClose, onChanged }: { id: string; onCl
       }
     >
       {!t ? (
-        <p className="muted">{txn.error ?? "Loading…"}</p>
+        txn.error ? <p className="muted">{txn.error}</p> : <Skeleton width={140} />
       ) : (
         <>
           {t.status === "REVERSED" && (

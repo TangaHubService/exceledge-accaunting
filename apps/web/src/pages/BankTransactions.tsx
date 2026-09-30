@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TransactionDrawer } from "../components/BankingForms";
 import { type Column, DataTable } from "../components/DataTable";
 import { Select } from "../components/Select";
-import { Badge, EmptyState, Field, Loadable, PageHeader } from "../components/ui";
+import { Badge, EmptyState, Field, Loadable, PageHeader, Pagination } from "../components/ui";
+import { PAGE_SIZE_OPTIONS } from "../lib/pagination";
 import { financialAccountOptions, txnEffect, txnLabel, useFinancialAccounts } from "../lib/banking";
 import { useCompany } from "../lib/company";
 import { amount, date } from "../lib/format";
@@ -29,6 +29,8 @@ export function BankTransactions() {
   const from = query.get("from") ?? "";
   const to = query.get("to") ?? "";
   const page = Number(query.get("page") ?? 1) || 1;
+  const urlPageSize = Number(query.get("pageSize") ?? PAGE_SIZE) || PAGE_SIZE;
+  const pageSize = PAGE_SIZE_OPTIONS.includes(urlPageSize) ? urlPageSize : PAGE_SIZE;
   const [search, setSearch] = useState(query.get("q") ?? "");
   const [open, setOpen] = useState<BankingForm>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function BankTransactions() {
   }, [search, query]);
 
   const group = GROUPS.find((g) => g.key === show);
-  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (group) params.set("kind", group.kinds.join(","));
   for (const [k, v] of Object.entries({ accountId, from, to, q: query.get("q") ?? "" })) if (v) params.set(k, v);
   const txns = useResource<BankTransactionPage>(`/api/v1/banking/transactions?${params}`);
@@ -97,7 +99,12 @@ export function BankTransactions() {
 
   const filters: Array<[string, string]> = [["all", "All"], ...GROUPS.map((g) => [g.key, g.label] as [string, string])];
   const total = txns.data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const goToPage = (next: number) => setQueryParam("page", next <= 1 ? null : String(next));
+  const changePageSize = (next: number) => {
+    setQueryParam("pageSize", String(next));
+    setQueryParam("page", null);
+  };
 
   return (
     <>
@@ -135,7 +142,8 @@ export function BankTransactions() {
               rows={p.rows}
               rowKey={(t) => t.id}
               onRowClick={(t) => setTxnId(t.id)}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
+              showPagination={false}
               empty={
                 total === 0 && show === "all" && !accountId && !from && !to && !query.get("q") ? (
                   <EmptyState title="No bank transactions yet" body="Money received, payments, transfers and cash counts recorded here appear in this list." />
@@ -164,19 +172,7 @@ export function BankTransactions() {
                 </div>
               </dl>
             )}
-            {pages > 1 && (
-              <div className="pager">
-                <span>
-                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
-                </span>
-                <button type="button" className="icon-button" onClick={() => setQueryParam("page", String(page - 1))} disabled={page <= 1} aria-label="Previous page">
-                  <ChevronLeft size={16} aria-hidden="true" />
-                </button>
-                <button type="button" className="icon-button" onClick={() => setQueryParam("page", String(page + 1))} disabled={page >= pages} aria-label="Next page">
-                  <ChevronRight size={16} aria-hidden="true" />
-                </button>
-              </div>
-            )}
+            <Pagination page={page} pageSize={pageSize} total={total} onPage={goToPage} onPageSize={changePageSize} />
           </>
         )}
       </Loadable>

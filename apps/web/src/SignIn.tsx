@@ -1,6 +1,7 @@
-import { CircleAlert, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { CircleAlert, Eye, EyeOff, LoaderCircle, Lock } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { erpLinks } from "./lib/config";
+import { readRememberedEmail, rememberEmail } from "./lib/session";
 
 type LoginResponse = {
   accessToken?: string;
@@ -12,10 +13,11 @@ type LoginResponse = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string) => void; notice?: string }) {
-  const [email, setEmail] = useState("");
+export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string, remember: boolean) => void; notice?: string }) {
+  const [email, setEmail] = useState(readRememberedEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -53,7 +55,8 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string) => 
         setError("Excel Edge did not return a session. Please try again.");
         return;
       }
-      onSignedIn(token);
+      rememberEmail(remember ? email.trim() : null);
+      onSignedIn(token, remember);
     } catch {
       setError("Can't reach Excel Edge right now. Check your connection and try again.");
     } finally {
@@ -147,6 +150,22 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string) => 
               </div>
             )}
 
+            <div className="signin-row">
+              <label className="check" htmlFor="signin-remember">
+                <input
+                  id="signin-remember"
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                Remember me
+              </label>
+              <span className="signin-secure">
+                <Lock size={12} aria-hidden="true" />
+                Secured by Excel Edge
+              </span>
+            </div>
+
             <button type="submit" className="btn btn-primary btn-lg" disabled={busy}>
               {busy && <LoaderCircle size={16} className="spin" aria-hidden="true" />}
               {busy ? "Signing in…" : "Sign in"}
@@ -159,7 +178,7 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string) => 
           </button>
         </div>
 
-        <p className="signin-foot">Use the same account you sign in to Excel Edge with.</p>
+        <p className="signin-foot">Use the same account you sign in to Excel Edge with. Your books stay in your company's workspace.</p>
       </main>
     </div>
   );

@@ -1,7 +1,9 @@
 import { type AccountingCapability, capabilitiesForRole } from "@exceledge/accounting-domain";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { accountingUrl } from "./config";
 
 const TOKEN_KEY = "erp_jwt";
+const REMEMBER_EMAIL_KEY = "erp_remember_email";
 
 type TokenClaims = { userId?: number; email?: string; role?: string; name?: string; exp?: number };
 
@@ -38,24 +40,42 @@ export function readInitialToken() {
   const handoff = hash.get("access_token");
   if (handoff) {
     localStorage.setItem(TOKEN_KEY, handoff);
+    sessionStorage.removeItem(TOKEN_KEY);
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
     return handoff;
   }
-  const stored = localStorage.getItem(TOKEN_KEY) ?? "";
+  const stored = localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY) ?? "";
   const claims = decodeClaims(stored);
   if (claims?.exp && claims.exp * 1000 < Date.now()) {
     localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
     return "";
   }
   return stored;
 }
 
-export function storeToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
+export function readRememberedEmail() {
+  return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? "";
+}
+
+export function storeToken(token: string, remember = true) {
+  if (remember) {
+    localStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.removeItem(TOKEN_KEY);
+  } else {
+    sessionStorage.setItem(TOKEN_KEY, token);
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+export function rememberEmail(email: string | null) {
+  if (email) localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+  else localStorage.removeItem(REMEMBER_EMAIL_KEY);
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 function decodeClaims(token: string): TokenClaims | null {
@@ -117,7 +137,7 @@ export function SessionProvider({
     async <T,>(path: string, init?: RequestInit) => {
       let res: Response;
       try {
-        res = await fetch(path, {
+        res = await fetch(accountingUrl(path), {
           ...init,
           headers: {
             "Content-Type": "application/json",
@@ -152,7 +172,7 @@ export function SessionProvider({
       api: async <T,>(path: string, init?: RequestInit) => (await call<T>(path, init)).data,
       apiWithMessage: call,
       download: async (path, filename) => {
-        const res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(accountingUrl(path), { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) throw new ApiError(friendlyError(res.status, undefined), res.status);
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");

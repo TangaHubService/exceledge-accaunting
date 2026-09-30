@@ -6,7 +6,7 @@ import { useResource, useSession } from "../lib/session";
 import type { DepPreview, DisposalMethod, FaCategory, FixedAsset } from "../lib/types";
 import { Footer, FormError, MoneyInput, parseAmount, useSubmit } from "./forms";
 import { Select } from "./Select";
-import { Drawer, Field } from "./ui";
+import { Drawer, Field, Skeleton } from "./ui";
 
 export function RegisterAssetForm({ onClose, onSaved }: { onClose: () => void; onSaved: (a: FixedAsset) => void }) {
   const { api } = useSession();
@@ -367,7 +367,11 @@ export function DepreciationRunForm({ onClose, onSaved }: { onClose: () => void;
         </Field>
         <div className="span-2 panel">
           {!preview.data ? (
-            <p className="muted">Loading preview…</p>
+            <div style={{ display: "grid", gap: 8 }}>
+              <Skeleton width="40%" />
+              <Skeleton width="65%" />
+              <Skeleton width="30%" />
+            </div>
           ) : preview.data.assetCount === 0 ? (
             <p className="all-clear">No assets need depreciation for this period.</p>
           ) : (

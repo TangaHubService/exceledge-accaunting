@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_ERP_URL?: string;
   readonly VITE_ERP_API_URL?: string;
+  readonly VITE_ACCOUNTING_API_URL?: string;
 }
 
 interface ImportMeta {

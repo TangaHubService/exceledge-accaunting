@@ -6,7 +6,7 @@ import { useResource, useSession } from "../lib/session";
 import type { Customer, CustomerLedger, CustomerStatement, CustomerType } from "../lib/types";
 import { SettlementAccountField } from "./BankingForms";
 import { Select } from "./Select";
-import { Drawer, Field } from "./ui";
+import { Drawer, Field, Skeleton } from "./ui";
 
 export const CUSTOMER_TYPES: CustomerType[] = [
   "CREDIT",
@@ -480,7 +480,7 @@ export function ReceiptForm({
           <>
             <div className="form-section-title" style={{ marginTop: 24 }}>Apply to invoices</div>
             {invoicesError && <p className="field-error">{invoicesError}</p>}
-            {!invoices && !invoicesError && <p className="muted small">Loading open invoices…</p>}
+            {!invoices && !invoicesError && <Skeleton width={180} />}
             {invoices && invoices.length === 0 && (
               <p className="muted small">This customer has no open invoices. The payment will be kept as credit on their account.</p>
             )}

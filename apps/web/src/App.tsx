@@ -120,8 +120,8 @@ export function App() {
     setNotice(reason === "expired" ? "Your session ended. Sign in again to continue." : "");
   }, []);
 
-  function signIn(next: string) {
-    storeToken(next);
+  function signIn(next: string, remember = true) {
+    storeToken(next, remember);
     setNotice("");
     setToken(next);
   }

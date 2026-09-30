@@ -1,5 +1,7 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
+import { clampPage, usePagination } from "../lib/pagination";
+import { Pagination } from "./Pagination";
 
 export type Column<T> = {
   key: string;
@@ -24,6 +26,9 @@ export function DataTable<T>({
   footer,
   rowClassName,
   pageSize = 50,
+  loading = false,
+  paginationKey,
+  showPagination = true,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -34,13 +39,22 @@ export function DataTable<T>({
   footer?: ReactNode;
   rowClassName?: (row: T) => string | undefined;
   pageSize?: number;
+  /**
+   * Show skeleton rows in place (header and footer layout kept, so page
+   * changes and pagination don't shift the layout). Ignored once rows exist.
+   */
+  loading?: boolean;
+  /** Scopes the persisted rows-per-page preference. Defaults to shared. */
+  paginationKey?: string;
+  /** Set false when the parent pages on the server and renders its own bar. */
+  showPagination?: boolean;
 }) {
   const [sort, setSort] = useState<Sort | undefined>(initialSort);
-  const [page, setPage] = useState(0);
+  const { page, pageSize: size, setPage, setPageSize } = usePagination({ key: paginationKey ?? "datatable", defaultPageSize: pageSize });
   const [pagedRows, setPagedRows] = useState(rows);
   if (pagedRows !== rows) {
     setPagedRows(rows);
-    setPage(0);
+    setPage(1);
   }
 
   const sorted = useMemo(() => {
@@ -56,12 +70,12 @@ export function DataTable<T>({
     });
   }, [rows, sort, columns]);
 
-  const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const current = Math.min(page, pages - 1);
-  const visible = pages > 1 ? sorted.slice(current * pageSize, (current + 1) * pageSize) : sorted;
+  const pageCount = Math.max(1, Math.ceil(sorted.length / size));
+  const current = clampPage(page, pageCount);
+  const visible = pageCount > 1 ? sorted.slice((current - 1) * size, current * size) : sorted;
 
   function toggle(col: Column<T>) {
-    setPage(0);
+    setPage(1);
     setSort((s) =>
       s?.key === col.key
         ? { key: col.key, dir: s.dir === "asc" ? "desc" : "asc" }
@@ -73,8 +87,11 @@ export function DataTable<T>({
     if (e.key === "Enter" && e.target === e.currentTarget) onRowClick?.(row);
   }
 
+  const showSkeleton = loading && sorted.length === 0;
+  const skeletonRows = Math.min(size, 8);
+
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" aria-busy={showSkeleton || undefined} aria-label={showSkeleton ? "Loading table" : undefined}>
       <table className="table">
         <thead>
           <tr>
@@ -103,7 +120,18 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {visible.map((row) => (
+          {showSkeleton &&
+            Array.from({ length: skeletonRows }, (_, r) => (
+              <tr key={`sk-${r}`} aria-hidden="true">
+                {columns.map((c, cIdx) => (
+                  <td key={c.key} className={`${c.numeric ? "num" : ""} ${c.className ?? ""}`}>
+                    <span className="skeleton" style={{ width: `${[60, 45, 75, 55, 65, 40][(r + cIdx) % 6]}%` }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          {!showSkeleton &&
+            visible.map((row) => (
             <tr
               key={rowKey(row)}
               className={`${onRowClick ? "clickable" : ""} ${rowClassName?.(row) ?? ""}`}
@@ -118,7 +146,7 @@ export function DataTable<T>({
               ))}
             </tr>
           ))}
-          {sorted.length === 0 && (
+          {!showSkeleton && sorted.length === 0 && (
             <tr>
               <td colSpan={columns.length} style={{ padding: 0 }}>
                 {empty}
@@ -128,18 +156,8 @@ export function DataTable<T>({
         </tbody>
         {footer && sorted.length > 0 && <tfoot>{footer}</tfoot>}
       </table>
-      {pages > 1 && (
-        <div className="pager">
-          <span>
-            {current * pageSize + 1}–{Math.min((current + 1) * pageSize, sorted.length)} of {sorted.length}
-          </span>
-          <button type="button" className="icon-button" onClick={() => setPage(current - 1)} disabled={current === 0} aria-label="Previous page">
-            <ChevronLeft size={16} aria-hidden="true" />
-          </button>
-          <button type="button" className="icon-button" onClick={() => setPage(current + 1)} disabled={current >= pages - 1} aria-label="Next page">
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
-        </div>
+      {showPagination && sorted.length > 10 && (
+        <Pagination page={current} pageSize={size} total={sorted.length} onPage={setPage} onPageSize={setPageSize} />
       )}
     </div>
   );

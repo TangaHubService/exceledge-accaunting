@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 export type SelectOption = {
   value: string;
   label: string;
-  /** Shown before the label in a muted monospace, e.g. an account code. */
+  /** Shown before the label in muted tabular figures, e.g. an account code. */
   prefix?: string;
   /** Secondary text shown on the right, e.g. an outstanding amount. */
   hint?: string;
