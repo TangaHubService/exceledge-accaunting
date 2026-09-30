@@ -12,7 +12,7 @@ import {
   type TaxFilingKind,
   type TaxType,
 } from "@exceledge/accounting-domain";
-import type { TaxCode } from "@prisma/client";
+import type { Prisma, TaxCode } from "@prisma/client";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
@@ -835,7 +835,7 @@ export async function reverseTaxPayment(companyId: string, id: string, input: { 
   const lines = reverseJournalLines(
     original.lines.map((l) => ({ accountId: l.accountId, description: l.description ?? undefined, debit: money(l.debit), credit: money(l.credit) })),
   );
-  const reversalDate = startOfDay(input.reversalDate ?? isoDay());
+  const reversalDate = startOfDay(input.reversalDate ?? isoDay(new Date()));
   const journal = await postTax(
     companyId,
     {
@@ -987,7 +987,7 @@ export async function prepareFiling(
   });
   if (open) throw new Error(`A ${input.kind} filing for this period is already open (${open.number})`);
 
-  let summary: Record<string, unknown>;
+  let summary: Prisma.InputJsonValue;
   if (input.kind === "VAT") {
     const vat = await vatReport(companyId, input.periodFrom, input.periodTo);
     summary = { ...vat.totals, outputLineCount: vat.outputLines.length, inputLineCount: vat.inputLines.length };

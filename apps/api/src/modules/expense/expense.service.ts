@@ -79,7 +79,6 @@ async function ensureExpenseGlAccount(companyId: string, code: string, name: str
       isActive: true,
       systemProtected: false,
       allowManualPost: true,
-      createdByErpUserId: actor.erpUserId,
     },
   });
   return created.id;
@@ -763,7 +762,7 @@ export async function expenseDashboard(companyId: string) {
 }
 
 export async function expensesByCategoryReport(companyId: string, from?: string, to?: string) {
-  const start = from ? startOfDay(from) : startOfDay(`${isoDay().slice(0, 8)}01`);
+  const start = from ? startOfDay(from) : startOfDay(`${isoDay(new Date()).slice(0, 8)}01`);
   const end = to ? endOfDay(to) : endOfDay(new Date());
   const rows = await prisma.expense.findMany({
     where: { companyId, status: "POSTED", expenseDate: { gte: start, lte: end } },
