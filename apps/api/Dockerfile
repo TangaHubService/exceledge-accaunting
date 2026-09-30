@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY apps/api/package*.json apps/api/
 COPY apps/web/package*.json apps/web/
 COPY packages/domain/package*.json packages/domain/
-COPY packages/contracts/package*.json packages/contracts/
+# packages/contracts is plain source (no package.json); copy it with the tree below.
 RUN npm ci
 COPY . .
 RUN npm run build -w @exceledge/accounting-api

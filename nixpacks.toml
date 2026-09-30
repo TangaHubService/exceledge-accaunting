@@ -1,0 +1,15 @@
+# Dokploy / Nixpacks build for the Accounting API.
+# The API lives in an npm workspace; plain `npm i` re-resolves the private
+# workspace package (@exceledge/accounting-domain) against the public
+# registry and 404s. `npm ci` honours package-lock.json workspace links.
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.install]
+cmds = ["npm ci --include=dev"]
+
+[phases.build]
+cmds = ["npm run build -w @exceledge/accounting-api"]
+
+[start]
+cmd = "npm run prisma:deploy -w @exceledge/accounting-api && npm run start -w @exceledge/accounting-api"
