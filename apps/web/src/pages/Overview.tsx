@@ -8,6 +8,50 @@ import type { ApDashboard, ArDashboard, Customer, Journal, PostingException } fr
 
 type Attention = { key: string; tone: "negative" | "warning" | "info"; what: string; why?: string; value?: ReactNode; to: string };
 
+type AgeingBucket = { key: string; label: string; amount: number };
+
+/** Vertical column chart for an ageing breakdown (receivables / payables). */
+function AgeingColumns({
+  buckets,
+  currency,
+  totalLabel,
+  total,
+}: {
+  buckets: AgeingBucket[];
+  currency: string;
+  totalLabel: string;
+  total: number;
+}) {
+  const max = Math.max(1, ...buckets.map((b) => b.amount));
+  return (
+    <div className="panel cols">
+      {buckets.length === 0 ? (
+        <p className="col-empty">Nothing outstanding.</p>
+      ) : (
+        <div
+          className="col-chart"
+          role="img"
+          aria-label={`${totalLabel}: ${buckets.map((b) => `${b.label} ${amount(b.amount)}`).join(", ")}`}
+        >
+          {buckets.map((b, i) => (
+            <div className="col" key={b.key} title={`${b.label}: ${money(b.amount, currency)}`}>
+              <span className="col-value num">{amount(b.amount)}</span>
+              <div className="col-track">
+                <div className={`col-fill ${i ? `b${i}` : ""}`} style={{ height: `${(b.amount / max) * 100}%` }} />
+              </div>
+              <span className="col-label">{b.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="bar-total">
+        <span>{totalLabel}</span>
+        <span className="amount">{money(total, currency)}</span>
+      </div>
+    </div>
+  );
+}
+
 export function Overview() {
   const { can } = useSession();
   const company = useCompany();
@@ -103,9 +147,7 @@ export function Overview() {
   const attentionLoading = ar.loading || ap.loading || exceptions.loading || drafts.loading || company.loading;
   const recentJournals = (journals.data ?? []).filter((j) => j.status === "POSTED").slice(0, 6);
   const ageing = ar.data?.ageing ?? [];
-  const maxBucket = Math.max(1, ...ageing.map((b) => b.amount));
   const apAgeing = ap.data?.ageing ?? [];
-  const maxApBucket = Math.max(1, ...apAgeing.map((b) => b.amount));
   const figureCount = 1 + (can("ar:view") ? 3 : 0) + (can("ap:view") ? 1 : 0);
 
   return (
@@ -213,24 +255,18 @@ export function Overview() {
                 Ageing report
               </Link>
             </div>
-            <div className="panel bars">
-              {ageing.map((b, i) => (
-                <div className="bar-row" key={b.key}>
-                  <span className="muted">{b.label}</span>
-                  <div className="bar-track">
-                    <div className={`bar-fill ${i ? `b${i}` : ""}`} style={{ width: `${(b.amount / maxBucket) * 100}%` }} />
-                  </div>
-                  <span className="num">{amount(b.amount)}</span>
-                </div>
-              ))}
-              {ar.data && (
-                <div className="bar-total">
-                  <span>Total owed</span>
-                  <span className="amount">{money(ar.data.totalOutstanding, currency)}</span>
-                </div>
-              )}
-              {!ar.data && <BarsSkeleton rows={5} />}
-            </div>
+            {ar.data ? (
+              <AgeingColumns
+                buckets={ageing}
+                currency={currency}
+                totalLabel="Total owed"
+                total={ar.data.totalOutstanding}
+              />
+            ) : (
+              <div className="panel cols">
+                <BarsSkeleton rows={5} />
+              </div>
+            )}
           </section>
         )}
       </div>
@@ -348,24 +384,18 @@ export function Overview() {
                 Ageing report
               </Link>
             </div>
-            <div className="panel bars">
-              {apAgeing.map((b, i) => (
-                <div className="bar-row" key={b.key}>
-                  <span className="muted">{b.label}</span>
-                  <div className="bar-track">
-                    <div className={`bar-fill ${i ? `b${i}` : ""}`} style={{ width: `${(b.amount / maxApBucket) * 100}%` }} />
-                  </div>
-                  <span className="num">{amount(b.amount)}</span>
-                </div>
-              ))}
-              {ap.data && (
-                <div className="bar-total">
-                  <span>Total owed to suppliers</span>
-                  <span className="amount">{money(ap.data.totalOutstanding, currency)}</span>
-                </div>
-              )}
-              {!ap.data && <BarsSkeleton rows={5} />}
-            </div>
+            {ap.data ? (
+              <AgeingColumns
+                buckets={apAgeing}
+                currency={currency}
+                totalLabel="Total owed to suppliers"
+                total={ap.data.totalOutstanding}
+              />
+            ) : (
+              <div className="panel cols">
+                <BarsSkeleton rows={5} />
+              </div>
+            )}
           </section>
         </div>
       )}

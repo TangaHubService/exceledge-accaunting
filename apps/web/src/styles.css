@@ -691,6 +691,21 @@ textarea.input { height: auto; min-height: 64px; padding: 8px 10px; resize: vert
 .bar-fill.b4, .bar-fill.b5 { background: #b42318; }
 .bar-total { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); font-weight: 600; font-size: 13px; }
 
+/* ── Vertical column charts (dashboard ageing panels) ────── */
+.cols { padding: 16px 18px 14px; }
+.col-chart { display: flex; gap: 8px; height: 216px; }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.col-value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+.col-track { flex: 1; width: 100%; max-width: 54px; min-height: 0; display: flex; align-items: flex-end; background: #f2f4f7; border-radius: 6px; overflow: hidden; }
+.col-fill { width: 100%; border-radius: 6px 6px 0 0; background: #98a2b3; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); transition: height 0.4s ease; }
+.col-fill.b1 { background: #fdb022; }
+.col-fill.b2 { background: #f79009; }
+.col-fill.b3 { background: #e04f16; }
+.col-fill.b4, .col-fill.b5 { background: #b42318; }
+.col:hover .col-fill { filter: brightness(1.07); }
+.col-label { margin-top: 6px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.25; }
+.col-empty { margin: 0; padding: 60px 0; text-align: center; color: var(--muted); font-size: 13px; }
+
 .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 
 /* ── Banking ───────────────────────────────────────────── */
@@ -1055,6 +1070,9 @@ pre.json {
   .dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .dl dd { margin-bottom: 8px; }
   .bar-row { grid-template-columns: 80px minmax(0, 1fr) 90px; }
+  .col-chart { height: 180px; gap: 6px; }
+  .col-value { font-size: 11px; }
+  .col-label { font-size: 11px; }
   .topbar { gap: 8px; padding: 0 12px; }
   .user-button { padding-right: 4px; }
   .btn { height: 38px; }
