@@ -8,16 +8,16 @@
 providers = ["node"]
 
 [variables]
-NIXPACKS_NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "24"
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm-10_x", "openssl"]
+nixPkgs = ["nodejs_24", "npm-11_x", "openssl"]
 
 [phases.install]
-cmds = ["npm ci --include=dev"]
+cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-api"]
 
 [start]
-cmd = "npm run start"
+cmd = "npm run start -w @exceledge/accounting-api"

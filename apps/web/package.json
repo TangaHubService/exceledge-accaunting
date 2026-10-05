@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5174",
-    "prebuild": "node scripts/ensure-domain-built.js",
+    "prebuild": "node scripts/ensure-domain-built.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
