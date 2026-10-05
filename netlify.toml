@@ -11,6 +11,13 @@
 
 [build.environment]
   NODE_VERSION = "24"
+  # VITE_ERP_URL / VITE_ERP_API_URL are PUBLIC frontend origins (they are
+  # inlined into the client bundle by design and visible to anyone in the
+  # browser). Netlify's Secrets Controller flags their values as "exposed
+  # secrets" (they appear in apps/web/.env.example and in the built JS) and
+  # fails the build. Exclude these keys from secret scanning.
+  # (UI equivalent: Site settings → Environment variables → add this same key.)
+  SECRETS_SCAN_OMIT_KEYS = "VITE_ERP_URL,VITE_ERP_API_URL"
 
 # SPA fallback: serve index.html for client-side routes.
 [[redirects]]
