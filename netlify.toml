@@ -1,0 +1,19 @@
+# Netlify deploy for the Accounting WEB frontend.
+# Repo is a monorepo (npm workspaces at the repo root), so the build MUST run
+# from the repository root — NOT from apps/web. A `base` pointing anywhere
+# else (e.g. a stale UI value or a wrong path) fails with:
+#   "Base directory does not exist: /opt/build"
+# In Netlify UI leave "Base directory" EMPTY so this file is honoured.
+[build]
+  base = "."
+  publish = "apps/web/dist"
+  command = "npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-web"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# SPA fallback: serve index.html for client-side routes.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

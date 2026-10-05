@@ -222,8 +222,8 @@ async function seedPayables() {
   await mkBill({ supplierId: utilities, supplierInvoiceNumber: "DEMO-780", billDate: "2026-09-22", net: 450_000, tax: 81_000 });
   // Advance applied to the overdue bill (same supplier as the bill)
   const advances = expect(await api("GET", "/api/v1/ap/advances"), [200], "list advances") as any[];
-  if (!advances.some((a) => a.supplierId === logistics && Number(a.amount ?? a.gross ?? 0) === 500_000)) {
-    const adv = await api("POST", "/api/v1/ap/advances", { supplierId: logistics, advanceDate: "2026-09-01", method: "BANK", amount: 500_000 })
+  if (!advances.some((a) => a.supplierId === foods && Number(a.amount ?? a.gross ?? 0) === 500_000)) {
+    const adv = await api("POST", "/api/v1/ap/advances", { supplierId: foods, advanceDate: "2026-09-01", method: "BANK", amount: 500_000 })
       .then((r) => expect(r, [201], "create advance"));
     await api("POST", `/api/v1/ap/advances/${adv.id}/allocate`, { billId: bill1.id, amount: 500_000, allocationDate: "2026-09-02" })
       .then((r) => expect(r, [200], "allocate advance"));
