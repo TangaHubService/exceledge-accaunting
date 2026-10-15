@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { Badge, ErrorState, PageHeader, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { date, dateTime, humanize } from "../lib/format";
+import { calendarDate, date, dateTime, humanize } from "../lib/format";
 import { useSession } from "../lib/session";
 
 const SECTION_LABELS: Record<string, string> = {
@@ -236,7 +236,7 @@ export function Setup() {
                 {snap?.localization?.electronicInvoicingRequired && <span className="muted"> · EBM e-invoicing required</span>}
               </dd>
               <dt>Financial year</dt>
-              <dd>{year ? `${year.name} (${date(year.startDate)} – ${date(year.endDate)})` : <span className="muted">Not set</span>}</dd>
+              <dd>{year ? `${year.name} (${calendarDate(year.startDate)} – ${calendarDate(year.endDate)})` : <span className="muted">Not set</span>}</dd>
               <dt>Open period</dt>
               <dd>{d.currentOpenPeriod?.name ?? <span className="muted">None open</span>}</dd>
               <dt>ERP organisation</dt>

@@ -19,7 +19,7 @@ import type { CustomerType, Prisma } from "@prisma/client";
 import { defaultsFor, money, nextNumber, settlementDefaults } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -71,6 +71,7 @@ async function postBalanced(
     description: string;
     referenceNumber?: string;
     currencyCode?: string;
+    exchangeRate?: number;
     sourceDocumentType: string;
     sourceDocumentId: string;
     sourceDocumentNumber?: string;
@@ -79,14 +80,15 @@ async function postBalanced(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: input.currencyCode ?? "RWF",
+      currencyCode: input.currencyCode,
+      exchangeRate: input.exchangeRate,
       sourceModule: "AR",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -99,7 +101,6 @@ async function postBalanced(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 function invoiceOutstanding(invoice: {
@@ -570,6 +571,7 @@ export async function reverseReceipt(companyId: string, receiptId: string, actor
       journalDate: new Date(),
       description: `Reverse receipt ${receipt.receiptNumber}`,
       referenceNumber: receipt.receiptNumber,
+      ...(await reversalCurrency(companyId, receipt.journalId)),
       sourceDocumentType: "ArReceiptReversal",
       sourceDocumentId: receipt.id,
       sourceDocumentNumber: receipt.receiptNumber,

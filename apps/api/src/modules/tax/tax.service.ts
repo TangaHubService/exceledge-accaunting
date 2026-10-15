@@ -16,7 +16,7 @@ import type { Prisma, TaxCode } from "@prisma/client";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal } from "../journals/journal.service";
 import { glBalance, isoDay, startOfDay, endOfDay } from "../banking/banking.service";
 
 export type Actor = {
@@ -44,14 +44,13 @@ async function postTax(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: "RWF",
       sourceModule: "TAX",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -61,7 +60,6 @@ async function postTax(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 function range(from?: string, to?: string) {

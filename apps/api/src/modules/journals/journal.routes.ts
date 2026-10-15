@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { hasCapability } from "@exceledge/accounting-domain";
 import {
   AuthedRequest,
   authenticateErpJwt,
@@ -41,7 +42,8 @@ journalsRouter.post("/", requireCapability("journal:create"), async (req: Authed
         journalDate: z.string(),
         description: z.string().optional(),
         referenceNumber: z.string().optional(),
-        currencyCode: z.string().optional(),
+        currencyCode: z.string().length(3).optional(),
+        exchangeRate: z.number().positive().optional(),
         branchId: z.string().optional(),
         lines: z
           .array(
@@ -57,25 +59,24 @@ journalsRouter.post("/", requireCapability("journal:create"), async (req: Authed
       })
       .parse(req.body);
 
-    const created = await journals.createJournal(
-      req.companyId!,
-      {
-        journalDate: body.journalDate,
-        description: body.description,
-        referenceNumber: body.referenceNumber,
-        currencyCode: body.currencyCode,
-        branchId: body.branchId,
-        journalType: "MANUAL",
-        lines: body.lines,
-      },
-      actor(req),
-    );
-
-    if (body.postImmediately) {
-      const posted = await journals.postJournal(req.companyId!, created.id, actor(req));
-      return res.status(201).json({ success: true, data: posted });
+    if (body.postImmediately && !hasCapability(req.organizationRole ?? req.erpUser?.role, "journal:post")) {
+      return res.status(403).json({ success: false, error: "Missing capability: journal:post" });
     }
-    return res.status(201).json({ success: true, data: created });
+
+    const input = {
+      journalDate: body.journalDate,
+      description: body.description,
+      referenceNumber: body.referenceNumber,
+      currencyCode: body.currencyCode,
+      exchangeRate: body.exchangeRate,
+      branchId: body.branchId,
+      journalType: "MANUAL" as const,
+      lines: body.lines,
+    };
+    const data = body.postImmediately
+      ? await journals.createAndPostJournal(req.companyId!, input, actor(req))
+      : await journals.createJournal(req.companyId!, input, actor(req));
+    return res.status(201).json({ success: true, data });
   } catch (e) {
     return res.status(400).json({ success: false, error: (e as Error).message });
   }

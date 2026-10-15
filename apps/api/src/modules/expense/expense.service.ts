@@ -16,13 +16,15 @@ import {
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal } from "../journals/journal.service";
 import { endOfDay, isoDay, startOfDay } from "../banking/banking.service";
 
 export type Actor = {
   erpUserId?: number;
   erpRole?: string;
   meta?: { ipAddress?: string; userAgent?: string };
+  /** Set by the post route; posting an expense that isn't approved yet needs approval rights. */
+  canApprove?: boolean;
 };
 
 async function audit(companyId: string, actor: Actor, action: string, entityType: string, entityId: string, afterJson: unknown, beforeJson?: unknown) {
@@ -42,14 +44,13 @@ async function postExpenseJournal(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: "RWF",
       sourceModule: "EXPENSE",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -59,7 +60,6 @@ async function postExpenseJournal(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 async function accountName(companyId: string, id: string | null | undefined) {
@@ -481,6 +481,9 @@ export async function postExpense(companyId: string, id: string, actor: Actor = 
   if (expense.status === "POSTED") return serializeExpense(companyId, id);
   if (expense.status === "REVERSED") throw new Error("A reversed expense can't be posted again");
   if (expense.status === "REJECTED") throw new Error("A rejected expense can't be posted");
+  if (actor.canApprove === false && expense.status !== "APPROVED") {
+    throw new Error("Only an approver can post an expense that hasn't been approved");
+  }
   if (expense.status === "DRAFT") assertExpenseTransition("DRAFT", "POSTED");
   else if (expense.status === "SUBMITTED") {
     await prisma.expense.update({

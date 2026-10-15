@@ -324,7 +324,17 @@ export type AccountingCapability =
   | "expense:approve"
   | "fa:view"
   | "fa:manage"
-  | "fa:post";
+  | "fa:post"
+  | "close:view"
+  | "close:manage"
+  | "report:view"
+  | "fx:manage"
+  | "budget:view"
+  | "budget:manage"
+  | "control:view"
+  | "control:manage"
+  | "platform:view"
+  | "platform:manage";
 
 const ALL_FINANCE: AccountingCapability[] = [
   "setup:view",
@@ -364,6 +374,16 @@ const ALL_FINANCE: AccountingCapability[] = [
   "fa:view",
   "fa:manage",
   "fa:post",
+  "close:view",
+  "close:manage",
+  "report:view",
+  "fx:manage",
+  "budget:view",
+  "budget:manage",
+  "control:view",
+  "control:manage",
+  "platform:view",
+  "platform:manage",
 ];
 
 const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
@@ -389,6 +409,11 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "expense:view",
     "expense:manage",
     "fa:view",
+    "close:view",
+    "report:view",
+    "budget:view",
+    "control:view",
+    "platform:view",
   ],
   ACCOUNTANT: [
     "setup:view",
@@ -421,6 +446,16 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "fa:view",
     "fa:manage",
     "fa:post",
+    "close:view",
+    "close:manage",
+    "report:view",
+    "fx:manage",
+    "budget:view",
+    "budget:manage",
+    "control:view",
+    "control:manage",
+    "platform:view",
+    "platform:manage",
   ],
   SELLER: [],
 };
@@ -462,7 +497,9 @@ export const SYSTEM_ACCOUNT_SEED: Array<{
   { code: "2130", name: "Goods Received Not Invoiced", type: "LIABILITY", systemProtected: true },
   { code: "2200", name: "Output Tax Payable", type: "LIABILITY", systemProtected: true },
   { code: "2210", name: "Withholding Tax Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2300", name: "Payroll Payable", type: "LIABILITY", systemProtected: true },
+  { code: "2300", name: "PAYE Payable", type: "LIABILITY", systemProtected: true },
+  { code: "2310", name: "RSSB Contributions Payable", type: "LIABILITY", systemProtected: true },
+  { code: "2320", name: "Net Salaries Payable", type: "LIABILITY", systemProtected: true },
   { code: "2400", name: "Bank Charges", type: "EXPENSE", systemProtected: true },
   { code: "3100", name: "Retained Earnings", type: "EQUITY", systemProtected: true },
   { code: "3200", name: "Current Year Earnings", type: "EQUITY", systemProtected: true },
@@ -474,6 +511,7 @@ export const SYSTEM_ACCOUNT_SEED: Array<{
   { code: "5100", name: "Cost of Sales", type: "COST_OF_SALES", systemProtected: true },
   { code: "5200", name: "Purchases", type: "COST_OF_SALES", systemProtected: true },
   { code: "6100", name: "Salaries and Wages", type: "EXPENSE", systemProtected: true },
+  { code: "6120", name: "Employer Social Security", type: "EXPENSE", systemProtected: true },
   { code: "6200", name: "Bad Debt Expense", type: "EXPENSE", systemProtected: true },
   { code: "6300", name: "Depreciation Expense", type: "EXPENSE", systemProtected: true },
   { code: "6400", name: "Inventory Adjustment", type: "EXPENSE", systemProtected: true },
@@ -2628,3 +2666,5 @@ export function buildRevaluationLines(input: {
   assertJournalBalanced(lines);
   return lines;
 }
+
+export * from "./platform";

@@ -15,6 +15,7 @@ import { Banking } from "./pages/Banking";
 import { BankReconciliationDetail, BankReconciliations } from "./pages/BankReconciliations";
 import { BankTransactions } from "./pages/BankTransactions";
 import { Bills } from "./pages/Bills";
+import { Budgets, Controls, Currencies, PeriodClose, Platform, Statements } from "./pages/Books";
 import { CashPosition } from "./pages/CashPosition";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
@@ -97,6 +98,12 @@ const ROUTES: Route[] = [
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
   { pattern: "/accounts", needs: "coa:view", render: () => <Accounts /> },
   { pattern: "/reports/trial-balance", needs: "coa:view", render: () => <TrialBalance /> },
+  { pattern: "/reports/statements", needs: "report:view", render: () => <Statements /> },
+  { pattern: "/close", needs: "close:view", render: () => <PeriodClose /> },
+  { pattern: "/budgets", needs: "budget:view", render: () => <Budgets /> },
+  { pattern: "/currencies", needs: "report:view", render: () => <Currencies /> },
+  { pattern: "/controls", needs: "control:view", render: () => <Controls /> },
+  { pattern: "/platform", needs: "platform:view", render: () => <Platform /> },
   { pattern: "/reports/ageing", needs: "ar:view", render: () => <AgeingReportPage kind="ar" /> },
   { pattern: "/reports/payables-ageing", needs: "ap:view", render: () => <AgeingReportPage kind="ap" /> },
   { pattern: "/reports/withholding-tax", needs: "ap:view", render: () => <WithholdingTaxReport /> },
@@ -120,8 +127,8 @@ export function App() {
     setNotice(reason === "expired" ? "Your session ended. Sign in again to continue." : "");
   }, []);
 
-  function signIn(next: string, remember = true) {
-    storeToken(next, remember);
+  function signIn(next: string, remember = true, refreshToken?: string) {
+    storeToken(next, remember, refreshToken);
     setNotice("");
     setToken(next);
   }
@@ -129,7 +136,7 @@ export function App() {
   if (!token) return <SignIn onSignedIn={signIn} notice={notice} />;
 
   return (
-    <SessionProvider token={token} onSignOut={signOut}>
+    <SessionProvider token={token} onSignOut={signOut} onTokenRefreshed={setToken}>
       <FeedbackProvider>
         <Gate />
       </FeedbackProvider>
@@ -139,7 +146,7 @@ export function App() {
 
 function Gate() {
   const { can, signOut } = useSession();
-  if (!can("setup:view") && !can("ar:view") && !can("ap:view") && !can("inventory:view") && !can("bank:view") && !can("tax:view") && !can("expense:view") && !can("fa:view") && !can("journal:view")) {
+  if (!can("setup:view") && !can("ar:view") && !can("ap:view") && !can("inventory:view") && !can("bank:view") && !can("tax:view") && !can("expense:view") && !can("fa:view") && !can("journal:view") && !can("report:view")) {
     return (
       <div className="center-screen">
         <div className="panel" style={{ maxWidth: 440 }}>

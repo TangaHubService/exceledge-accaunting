@@ -17,7 +17,7 @@ import { env } from "../../config/env";
 import { defaultsFor, money } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { assertAccountsPostable, assertOpenPeriod, createJournal, postJournal } from "../journals/journal.service";
+import { assertAccountsPostable, assertOpenPeriod, createAndPostJournal } from "../journals/journal.service";
 
 export const INVENTORY_EVENT_TYPES = new Set(["INVENTORY_MOVEMENT", "INVENTORY_OPENING"]);
 
@@ -433,7 +433,7 @@ export async function processInventoryEvent(eventId: string) {
     event.eventType === "INVENTORY_OPENING"
       ? `Opening stock from ERP snapshot (${unposted.length} item-locations)`
       : `Inventory ${first.kind.toLowerCase().replace(/_/g, " ")} ${first.reference ?? ""}`.trim();
-  const journal = await createJournal(
+  const posted = await createAndPostJournal(
     companyId,
     {
       journalDate: movementDate,
@@ -452,7 +452,6 @@ export async function processInventoryEvent(eventId: string) {
     },
     SYSTEM,
   );
-  const posted = await postJournal(companyId, journal.id, SYSTEM);
   await prisma.inventoryMovement.updateMany({ where: { id: { in: unposted.map((m) => m.id) } }, data: { journalId: posted.id } });
   return posted;
 }

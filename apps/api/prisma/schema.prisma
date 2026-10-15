@@ -169,6 +169,28 @@ model Company {
   faTransfers          FixedAssetTransfer[]
   faRevaluations       FixedAssetRevaluation[]
   faImpairments        FixedAssetImpairment[]
+  recurringJournals    RecurringJournal[]
+  periodCloses         PeriodClose[]
+  exchangeRates        ExchangeRate[]
+  fxRevaluations       FxRevaluation[]
+  budgets              Budget[]
+  dimensions           Dimension[]
+  controlItems         ControlItem[]
+  approvalRequests     ApprovalRequest[]
+  notifications        Notification[]
+  documents            AccountingDocument[]
+  importBatches        ImportBatch[]
+  ownedGroups          CompanyGroup[]
+  groupMemberships     GroupMember[]
+  eliminations         Elimination[]
+  forecastScenarios    ForecastScenario[]
+  anomalyFlags         AnomalyFlag[]
+  esgMeasures          EsgMeasure[]
+  workflowTemplates    WorkflowTemplate[]
+  workflowInstances    WorkflowInstance[]
+  apiCredentials       ApiCredential[]
+  signatures           SignatureRecord[]
+  automationJobs       AutomationJob[]
 
   @@map("companies")
 }
@@ -806,6 +828,8 @@ model JournalLine {
   description String?
   debit       Decimal  @default(0) @db.Decimal(18, 4)
   credit      Decimal  @default(0) @db.Decimal(18, 4)
+  /// Debit-positive amount in the journal's currency when it differs from the functional currency
+  amountForeign Decimal? @db.Decimal(18, 4)
   taxCode     String?
   customerRef String?
   supplierRef String?
@@ -2413,4 +2437,475 @@ model FixedAssetImpairment {
 
   @@index([companyId, assetId])
   @@map("fixed_asset_impairments")
+}
+
+enum CloseKind {
+  MONTH
+  YEAR
+}
+
+enum CloseStatus {
+  CLOSED
+  REOPENED
+}
+
+enum BudgetStatus {
+  DRAFT
+  APPROVED
+}
+
+enum DimensionKind {
+  COST_CENTRE
+  PROJECT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NoticeSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum ControlStatus {
+  OPEN
+  EFFECTIVE
+  DEFICIENT
+}
+
+model RecurringJournal {
+  id                 String             @id @default(cuid())
+  companyId          String
+  name               String
+  description        String?
+  frequency          RecurringFrequency
+  nextRunDate        DateTime
+  endDate            DateTime?
+  autoPost           Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  currencyCode       String             @default("RWF")
+  createdByErpUserId Int?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines   RecurringJournalLine[]
+
+  @@index([companyId, nextRunDate])
+  @@map("recurring_journals")
+}
+
+model RecurringJournalLine {
+  id          String  @id @default(cuid())
+  templateId  String
+  lineNumber  Int
+  accountId   String
+  description String?
+  debit       Decimal @default(0) @db.Decimal(18, 4)
+  credit      Decimal @default(0) @db.Decimal(18, 4)
+
+  template RecurringJournal @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, lineNumber])
+  @@map("recurring_journal_lines")
+}
+
+model PeriodClose {
+  id                 String      @id @default(cuid())
+  companyId          String
+  periodId           String
+  kind               CloseKind
+  status             CloseStatus @default(CLOSED)
+  checklistJson      Json
+  journalId          String?
+  closedByErpUserId  Int?
+  reopenReason       String?
+  closedAt           DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, periodId])
+  @@map("period_closes")
+}
+
+model ExchangeRate {
+  id          String   @id @default(cuid())
+  companyId   String
+  currency    String
+  rateDate    DateTime
+  rate        Decimal  @db.Decimal(18, 8)
+  source      String?
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, currency, rateDate])
+  @@map("exchange_rates")
+}
+
+model FxRevaluation {
+  id                 String   @id @default(cuid())
+  companyId          String
+  currency           String
+  rateDate           DateTime
+  closingRate        Decimal  @db.Decimal(18, 8)
+  gainLoss           Decimal  @db.Decimal(18, 4)
+  journalId          String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, currency])
+  @@map("fx_revaluations")
+}
+
+model Budget {
+  id                 String       @id @default(cuid())
+  companyId          String
+  name               String
+  financialYearId    String?
+  status             BudgetStatus @default(DRAFT)
+  createdByErpUserId Int?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines   BudgetLine[]
+
+  @@index([companyId, status])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id             String  @id @default(cuid())
+  budgetId       String
+  accountId      String
+  periodSequence Int     @default(0)
+  amount         Decimal @db.Decimal(18, 4)
+  costCentre     String?
+  project        String?
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId, accountId])
+  @@map("budget_lines")
+}
+
+model Dimension {
+  id        String        @id @default(cuid())
+  companyId String
+  kind      DimensionKind
+  code      String
+  name      String
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, code])
+  @@map("dimensions")
+}
+
+model ControlItem {
+  id        String        @id @default(cuid())
+  companyId String
+  code      String
+  title     String
+  category  String
+  status    ControlStatus @default(OPEN)
+  notes     String?
+  updatedAt DateTime      @updatedAt
+  createdAt DateTime      @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, code])
+  @@map("control_items")
+}
+
+model ApprovalRequest {
+  id                   String         @id @default(cuid())
+  companyId            String
+  entityType           String
+  entityId             String
+  amount               Decimal        @db.Decimal(18, 4)
+  status               ApprovalStatus @default(PENDING)
+  reason               String?
+  requestedByErpUserId Int?
+  decidedByErpUserId   Int?
+  createdAt            DateTime       @default(now())
+  decidedAt            DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@map("approval_requests")
+}
+
+model Notification {
+  id        String         @id @default(cuid())
+  companyId String
+  title     String
+  body      String
+  severity  NoticeSeverity @default(INFO)
+  readAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, readAt])
+  @@map("notifications")
+}
+
+model AccountingDocument {
+  id                 String   @id @default(cuid())
+  companyId          String
+  entityType         String
+  entityId           String
+  fileName           String
+  note               String?
+  contentText        String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, entityType, entityId])
+  @@map("accounting_documents")
+}
+
+model ImportBatch {
+  id                 String   @id @default(cuid())
+  companyId          String
+  kind               String
+  status             String
+  rowCount           Int      @default(0)
+  errorCount         Int      @default(0)
+  summaryJson        Json?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("import_batches")
+}
+
+model CompanyGroup {
+  id             String   @id @default(cuid())
+  ownerCompanyId String
+  name           String
+  createdAt      DateTime @default(now())
+
+  owner    Company       @relation(fields: [ownerCompanyId], references: [id], onDelete: Cascade)
+  members  GroupMember[]
+  eliminations Elimination[]
+
+  @@index([ownerCompanyId])
+  @@map("company_groups")
+}
+
+model GroupMember {
+  id                 String  @id @default(cuid())
+  groupId            String
+  companyId          String?
+  name               String
+  ownershipPercent   Decimal @default(100) @db.Decimal(8, 4)
+
+  group   CompanyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@map("group_members")
+}
+
+model Elimination {
+  id          String  @id @default(cuid())
+  companyId   String
+  groupId     String
+  description String
+  debit       Decimal @default(0) @db.Decimal(18, 4)
+  credit      Decimal @default(0) @db.Decimal(18, 4)
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group   CompanyGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  lines   EliminationLine[]
+
+  @@index([groupId])
+  @@map("eliminations")
+}
+
+model EliminationLine {
+  id            String  @id @default(cuid())
+  eliminationId String
+  lineNumber    Int
+  accountCode   String
+  debit         Decimal @default(0) @db.Decimal(18, 4)
+  credit        Decimal @default(0) @db.Decimal(18, 4)
+
+  elimination Elimination @relation(fields: [eliminationId], references: [id], onDelete: Cascade)
+
+  @@unique([eliminationId, lineNumber])
+  @@map("elimination_lines")
+}
+
+model ForecastScenario {
+  id            String   @id @default(cuid())
+  companyId     String
+  name          String
+  horizonMonths Int
+  resultJson    Json
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("forecast_scenarios")
+}
+
+model AnomalyFlag {
+  id        String   @id @default(cuid())
+  companyId String
+  journalId String?
+  score     Decimal  @db.Decimal(18, 4)
+  reason    String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@map("anomaly_flags")
+}
+
+model EsgMeasure {
+  id        String   @id @default(cuid())
+  companyId String
+  period    String
+  code      String
+  name      String
+  value     Decimal  @db.Decimal(18, 4)
+  unit      String
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, period, code])
+  @@map("esg_measures")
+}
+
+model WorkflowTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  stepsJson Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  instances WorkflowInstance[]
+
+  @@index([companyId])
+  @@map("workflow_templates")
+}
+
+model WorkflowInstance {
+  id         String   @id @default(cuid())
+  companyId  String
+  templateId String
+  entityType String
+  entityId   String
+  status     String   @default("IN_PROGRESS")
+  stepIndex  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  template WorkflowTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  steps    WorkflowStepLog[]
+
+  @@index([companyId, status])
+  @@map("workflow_instances")
+}
+
+model WorkflowStepLog {
+  id         String   @id @default(cuid())
+  instanceId String
+  stepIndex  Int
+  stepName   String
+  erpUserId  Int
+  erpRole    String?
+  createdAt  DateTime @default(now())
+
+  instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, stepIndex])
+  @@map("workflow_step_logs")
+}
+
+model ApiCredential {
+  id                 String    @id @default(cuid())
+  companyId          String
+  name               String
+  prefix             String
+  tokenHash          String
+  scopes             String[]  @default([])
+  expiresAt          DateTime?
+  lastUsedAt         DateTime?
+  createdByErpUserId Int?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([prefix])
+  @@map("api_credentials")
+}
+
+/// Short-lived lease so only one API instance runs a scheduled job at a time.
+model JobLock {
+  key       String   @id
+  holder    String
+  expiresAt DateTime
+
+  @@map("job_locks")
+}
+
+model SignatureRecord {
+  id                String   @id @default(cuid())
+  companyId         String
+  entityType        String
+  entityId          String
+  statement         String
+  signerErpUserId   Int
+  signedAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, entityType, entityId])
+  @@map("signature_records")
+}
+
+model AutomationJob {
+  id          String    @id @default(cuid())
+  companyId   String
+  name        String
+  jobType     String
+  schedule    String
+  enabled     Boolean   @default(true)
+  lastRunAt   DateTime?
+  lastStatus  String?
+  createdAt   DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("automation_jobs")
 }

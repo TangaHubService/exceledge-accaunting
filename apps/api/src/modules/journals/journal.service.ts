@@ -1,11 +1,14 @@
 import {
   assertJournalBalanced,
+  convertJournalLines,
+  isDebitNormal,
   reverseJournalLines,
   sumJournalLines,
+  type BookAccountType,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { JournalStatus, JournalType, Prisma } from "@prisma/client";
-import { prisma } from "../../lib/prisma";
+import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 
 type Actor = {
@@ -14,9 +17,12 @@ type Actor = {
   meta?: { ipAddress?: string; userAgent?: string };
 };
 
-async function nextJournalNumber(companyId: string) {
-  const seq = await prisma.numberSequence.upsert({
-    where: { companyId_documentType: { companyId, documentType: "JOURNAL_ENTRY" } },
+const SYSTEM_JOURNAL_TYPES = new Set<JournalType>(["AUTOMATIC", "OPENING_BALANCE", "REVERSAL"]);
+
+async function nextJournalNumber(companyId: string, journalDate: Date) {
+  const where = { companyId_documentType: { companyId, documentType: "JOURNAL_ENTRY" as const } };
+  await prisma.numberSequence.upsert({
+    where,
     create: {
       companyId,
       documentType: "JOURNAL_ENTRY",
@@ -28,13 +34,10 @@ async function nextJournalNumber(companyId: string) {
     },
     update: {},
   });
-  const year = new Date().getUTCFullYear();
-  const n = seq.nextNumber;
-  await prisma.numberSequence.update({
-    where: { id: seq.id },
-    data: { nextNumber: n + 1 },
-  });
-  return `${seq.prefix ?? "JE"}-${year}-${String(n).padStart(seq.sequenceLength, "0")}`;
+  const seq = await prisma.numberSequence.update({ where, data: { nextNumber: { increment: 1 } } });
+  const n = String(seq.nextNumber - 1).padStart(seq.sequenceLength, "0");
+  const prefix = seq.prefix ?? "JE";
+  return seq.includeYear ? `${prefix}-${journalDate.getUTCFullYear()}-${n}` : `${prefix}-${n}`;
 }
 
 async function assertCompanyActivated(companyId: string) {
@@ -44,31 +47,95 @@ async function assertCompanyActivated(companyId: string) {
   }
 }
 
+/**
+ * Periods are generated as FUTURE; one opens the first time something is dated in it
+ * once its start date has arrived. Closed and locked periods stay shut.
+ */
 export async function assertOpenPeriod(companyId: string, date: Date) {
-  const years = await prisma.financialYear.findMany({
-    where: { companyId },
-    include: { periods: true },
+  const period = await prisma.accountingPeriod.findFirst({
+    where: { financialYear: { companyId }, startDate: { lte: date }, endDate: { gte: date } },
+    include: { financialYear: true },
   });
-  const open = years
-    .flatMap((y) => y.periods)
-    .find((p) => p.status === "OPEN" && p.startDate <= date && p.endDate >= date);
-  if (!open) {
-    throw new Error("No open accounting period covers the journal date");
+  if (!period) {
+    throw new Error("No accounting period covers the journal date");
   }
-  return open;
+  const lockDate = period.financialYear.transactionLockDate;
+  if (lockDate && date <= lockDate) {
+    throw new Error(`Transactions dated on or before ${lockDate.toISOString().slice(0, 10)} are locked`);
+  }
+  if (period.status === "FUTURE" && period.startDate <= new Date()) {
+    return prisma.accountingPeriod.update({ where: { id: period.id }, data: { status: "OPEN" } });
+  }
+  if (period.status !== "OPEN" && period.status !== "REOPENED") {
+    throw new Error(`Accounting period ${period.name} is ${period.status.toLowerCase().replace("_", " ")}`);
+  }
+  return period;
 }
 
-export async function assertAccountsPostable(companyId: string, accountIds: string[]) {
+/** Opens every FUTURE period that has started, e.g. after activation or a new financial year. */
+export async function openStartedPeriods(companyId: string, asOf = new Date()) {
+  const result = await prisma.accountingPeriod.updateMany({
+    where: { financialYear: { companyId }, status: "FUTURE", startDate: { lte: asOf } },
+    data: { status: "OPEN" },
+  });
+  return result.count;
+}
+
+const MANUAL_SOURCES = new Set(["IMPORT", "RECURRING"]);
+
+/** Journals keyed by a person (screen, CSV import, recurring template) rather than produced by a module. */
+export function isManualEntry(input: { journalType?: JournalType; sourceModule?: string }) {
+  return (input.journalType ?? "MANUAL") === "MANUAL" && (!input.sourceModule || MANUAL_SOURCES.has(input.sourceModule));
+}
+
+export async function functionalCurrency(companyId: string) {
+  return (await prisma.currencySettings.findUnique({ where: { companyId } }))?.functionalCurrency ?? "RWF";
+}
+
+export async function assertAccountsPostable(
+  companyId: string,
+  accountIds: string[],
+  opts: { manual?: boolean; currency?: string; functional?: string; revaluation?: boolean } = {},
+) {
   const accounts = await prisma.account.findMany({
     where: { companyId, id: { in: accountIds } },
   });
   if (accounts.length !== new Set(accountIds).size) {
     throw new Error("One or more journal accounts were not found");
   }
+  const defaults = opts.manual
+    ? await prisma.defaultPostingAccounts.findUnique({ where: { companyId } })
+    : null;
+  const control = new Map<string, string>();
+  if (defaults?.accountsReceivableId) control.set(defaults.accountsReceivableId, "receivables");
+  if (defaults?.accountsPayableId) control.set(defaults.accountsPayableId, "payables");
+  if (defaults?.inventoryAssetId) control.set(defaults.inventoryAssetId, "inventory");
   for (const a of accounts) {
     if (!a.isActive) throw new Error(`Account ${a.code} is inactive`);
+    if (opts.manual) {
+      const kind = control.get(a.id) ?? (a.isInventoryAccount ? "inventory" : undefined);
+      if (kind) {
+        throw new Error(`Account ${a.code} is the ${kind} control account; post through the ${kind} module so its subledger stays in step`);
+      }
+      if (!a.allowManualPost) throw new Error(`Account ${a.code} does not accept manual journals`);
+    } else if (!a.allowAutoPost) {
+      throw new Error(`Account ${a.code} does not accept automatic postings`);
+    }
+    const kept = a.currency?.toUpperCase();
+    if (kept && opts.functional && kept !== opts.functional && kept !== opts.currency && !opts.revaluation) {
+      throw new Error(`Account ${a.code} is kept in ${kept}; post to it in ${kept}`);
+    }
   }
   return accounts;
+}
+
+async function rateFor(companyId: string, currency: string, date: Date) {
+  const rate = await prisma.exchangeRate.findFirst({
+    where: { companyId, currency, rateDate: { lte: date } },
+    orderBy: { rateDate: "desc" },
+  });
+  if (!rate) throw new Error(`No ${currency} exchange rate is on file on or before ${date.toISOString().slice(0, 10)}`);
+  return Number(rate.rate);
 }
 
 export async function createJournal(
@@ -78,7 +145,9 @@ export async function createJournal(
     journalType?: JournalType;
     description?: string;
     referenceNumber?: string;
+    /** Lines are in this currency; when it is not the functional currency they are converted at `exchangeRate`. */
     currencyCode?: string;
+    exchangeRate?: number;
     branchId?: string;
     costCentre?: string;
     project?: string;
@@ -88,7 +157,7 @@ export async function createJournal(
     sourceDocumentId?: string;
     sourceDocumentNumber?: string;
     integrationEventId?: string;
-    lines: JournalLineDraft[];
+    lines: Array<JournalLineDraft & { amountForeign?: number }>;
   },
   actor: Actor = {},
 ) {
@@ -96,13 +165,23 @@ export async function createJournal(
   assertJournalBalanced(input.lines);
   const journalDate = new Date(input.journalDate);
   await assertOpenPeriod(companyId, journalDate);
+
+  const functional = await functionalCurrency(companyId);
+  const currency = (input.currencyCode ?? functional).toUpperCase();
+  let rate = 1;
+  let lines = input.lines;
+  if (currency !== functional) {
+    rate = input.exchangeRate ?? (await rateFor(companyId, currency, journalDate));
+    lines = convertJournalLines(input.lines, rate);
+  }
   await assertAccountsPostable(
     companyId,
-    input.lines.map((l) => l.accountId),
+    lines.map((l) => l.accountId),
+    { manual: isManualEntry(input), currency, functional, revaluation: input.sourceModule === "FX" },
   );
 
-  const totals = sumJournalLines(input.lines);
-  const journalNumber = await nextJournalNumber(companyId);
+  const totals = sumJournalLines(lines);
+  const journalNumber = await nextJournalNumber(companyId, journalDate);
 
   const journal = await prisma.journal.create({
     data: {
@@ -113,7 +192,8 @@ export async function createJournal(
       status: input.status ?? "DRAFT",
       referenceNumber: input.referenceNumber,
       description: input.description,
-      currencyCode: input.currencyCode ?? "RWF",
+      currencyCode: currency,
+      exchangeRate: rate,
       branchId: input.branchId,
       costCentre: input.costCentre,
       project: input.project,
@@ -126,13 +206,14 @@ export async function createJournal(
       sourceDocumentNumber: input.sourceDocumentNumber,
       integrationEventId: input.integrationEventId,
       lines: {
-        create: input.lines.map((l, idx) => ({
+        create: lines.map((l, idx) => ({
           companyId,
           lineNumber: idx + 1,
           accountId: l.accountId,
           description: l.description,
           debit: l.debit,
           credit: l.credit,
+          amountForeign: l.amountForeign,
           taxCode: l.taxCode,
           customerRef: l.customerRef,
           supplierRef: l.supplierRef,
@@ -159,7 +240,8 @@ export async function createJournal(
 export async function postJournal(companyId: string, journalId: string, actor: Actor = {}) {
   await assertCompanyActivated(companyId);
 
-  return prisma.$transaction(async (tx) => {
+  return inTransaction(async () => {
+    const tx = prisma;
     const journal = await tx.journal.findFirst({
       where: { id: journalId, companyId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
@@ -181,18 +263,20 @@ export async function postJournal(companyId: string, journalId: string, actor: A
 
     const postingDate = new Date();
     for (const line of journal.lines) {
-      const account = await tx.account.findUniqueOrThrow({ where: { id: line.accountId } });
-      const delta = Number(line.debit) - Number(line.credit);
-      // Assets/expenses increase with debit; liabilities/equity/income increase with credit.
-      // Store signed running balance as debit-positive for simplicity (asset convention).
-      const nextBalance = Number(account.currentBalance) + delta;
-      await tx.account.update({
-        where: { id: account.id },
+      // Balances are stored debit-positive. The increment locks the account row, so
+      // concurrent posts cannot overwrite each other.
+      const account = await tx.account.update({
+        where: { id: line.accountId },
         data: {
-          currentBalance: nextBalance,
+          currentBalance: { increment: Number(line.debit) - Number(line.credit) },
           hasPostedTransactions: true,
         },
       });
+      const nextBalance = account.currentBalance;
+      if (!account.allowNegativeBalance) {
+        const natural = isDebitNormal(account.type as BookAccountType) ? Number(nextBalance) : -Number(nextBalance);
+        if (natural < -0.0001) throw new Error(`Posting would take account ${account.code} below zero`);
+      }
       await tx.glEntry.create({
         data: {
           companyId,
@@ -263,6 +347,50 @@ export async function postJournal(companyId: string, journalId: string, actor: A
   });
 }
 
+/** Creates and posts a journal as one unit: if posting fails, no journal is left behind. */
+export async function createAndPostJournal(
+  companyId: string,
+  input: Parameters<typeof createJournal>[1],
+  actor: Actor = {},
+) {
+  return inTransaction(async () => {
+    const journal = await createJournal(companyId, input, actor);
+    return postJournal(companyId, journal.id, actor);
+  });
+}
+
+/** Lines as they were entered: in the foreign currency when the journal had one, else functional. */
+export function linesInJournalCurrency(
+  lines: Array<{ accountId: string; debit: Prisma.Decimal | number; credit: Prisma.Decimal | number; amountForeign: Prisma.Decimal | number | null; description: string | null }>,
+): JournalLineDraft[] {
+  const foreign = lines.some((l) => l.amountForeign !== null);
+  return lines.map((l) => {
+    const f = Number(l.amountForeign ?? 0);
+    return {
+      accountId: l.accountId,
+      debit: foreign ? Math.max(f, 0) : Number(l.debit),
+      credit: foreign ? Math.max(-f, 0) : Number(l.credit),
+      description: l.description ?? undefined,
+    };
+  });
+}
+
+/** Currency and rate of a posted journal, so a module reversing it posts back at the original rate. */
+export async function reversalCurrency(companyId: string, journalId: string | null | undefined) {
+  if (!journalId) return {};
+  const journal = await prisma.journal.findFirst({ where: { id: journalId, companyId }, select: { currencyCode: true, exchangeRate: true } });
+  return journal ? { currencyCode: journal.currencyCode, exchangeRate: Number(journal.exchangeRate) } : {};
+}
+
+async function reversalDate(companyId: string, originalDate: Date) {
+  try {
+    await assertOpenPeriod(companyId, originalDate);
+    return originalDate;
+  } catch {
+    return new Date();
+  }
+}
+
 export async function reverseJournal(
   companyId: string,
   journalId: string,
@@ -276,60 +404,59 @@ export async function reverseJournal(
   if (!original) throw new Error("Journal not found");
   if (original.status !== "POSTED") throw new Error("Only posted journals can be reversed");
   if (original.reversedJournalId) throw new Error("Journal already reversed");
+  if (SYSTEM_JOURNAL_TYPES.has(original.journalType) || original.sourceModule === "CLOSE") {
+    const source = original.sourceModule ? ` by ${original.sourceModule}` : "";
+    throw new Error(`Journal ${original.journalNumber} was created${source}; reverse it from its source document`);
+  }
 
-  const reversalLines = reverseJournalLines(
-    original.lines.map((l) => ({
-      accountId: l.accountId,
-      debit: Number(l.debit),
-      credit: Number(l.credit),
-      description: l.description ?? undefined,
-    })),
-  );
+  const foreign = original.lines.some((l) => l.amountForeign !== null);
+  const reversalLines = reverseJournalLines(linesInJournalCurrency(original.lines));
 
-  const reversal = await createJournal(
-    companyId,
-    {
-      journalDate: original.journalDate,
-      journalType: "REVERSAL",
-      description: reason
-        ? `Reversal of ${original.journalNumber}: ${reason}`
-        : `Reversal of ${original.journalNumber}`,
-      referenceNumber: original.journalNumber,
-      currencyCode: original.currencyCode,
-      branchId: original.branchId ?? undefined,
-      sourceModule: original.sourceModule ?? undefined,
-      sourceDocumentType: original.sourceDocumentType ?? undefined,
-      sourceDocumentId: original.sourceDocumentId ?? undefined,
-      sourceDocumentNumber: original.sourceDocumentNumber ?? undefined,
-      lines: reversalLines,
-      status: "DRAFT",
-    },
-    actor,
-  );
+  return inTransaction(async () => {
+    const postedReversal = await createAndPostJournal(
+      companyId,
+      {
+        journalDate: await reversalDate(companyId, original.journalDate),
+        journalType: "REVERSAL",
+        description: reason
+          ? `Reversal of ${original.journalNumber}: ${reason}`
+          : `Reversal of ${original.journalNumber}`,
+        referenceNumber: original.journalNumber,
+        currencyCode: foreign ? original.currencyCode : undefined,
+        exchangeRate: foreign ? Number(original.exchangeRate) : undefined,
+        branchId: original.branchId ?? undefined,
+        sourceModule: original.sourceModule ?? undefined,
+        sourceDocumentType: original.sourceDocumentType ?? undefined,
+        sourceDocumentId: original.sourceDocumentId ?? undefined,
+        sourceDocumentNumber: original.sourceDocumentNumber ?? undefined,
+        lines: reversalLines,
+        status: "DRAFT",
+      },
+      actor,
+    );
 
-  const postedReversal = await postJournal(companyId, reversal.id, actor);
+    await prisma.journal.update({
+      where: { id: original.id },
+      data: { status: "REVERSED", reversedJournalId: postedReversal.id },
+    });
+    await prisma.journal.update({
+      where: { id: postedReversal.id },
+      data: { reversesJournalId: original.id },
+    });
 
-  await prisma.journal.update({
-    where: { id: original.id },
-    data: { status: "REVERSED", reversedJournalId: postedReversal.id },
+    await writeAudit({
+      companyId,
+      erpUserId: actor.erpUserId ?? 0,
+      erpRole: actor.erpRole,
+      action: "REVERSE",
+      entityType: "Journal",
+      entityId: original.id,
+      afterJson: { reversedBy: postedReversal.journalNumber },
+      ...actor.meta,
+    });
+
+    return { originalId: original.id, reversal: postedReversal };
   });
-  await prisma.journal.update({
-    where: { id: postedReversal.id },
-    data: { reversesJournalId: original.id },
-  });
-
-  await writeAudit({
-    companyId,
-    erpUserId: actor.erpUserId ?? 0,
-    erpRole: actor.erpRole,
-    action: "REVERSE",
-    entityType: "Journal",
-    entityId: original.id,
-    afterJson: { reversedBy: postedReversal.journalNumber },
-    ...actor.meta,
-  });
-
-  return { originalId: original.id, reversal: postedReversal };
 }
 
 export async function listJournals(

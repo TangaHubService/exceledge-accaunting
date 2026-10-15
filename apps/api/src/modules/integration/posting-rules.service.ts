@@ -158,14 +158,16 @@ export async function resolvePostingLines(
       if (!defaults.accountsPayableId || !defaults.purchasesId) {
         throw new Error("AP/Purchases accounts not configured");
       }
-      const lines: JournalLineDraft[] = [
-        {
-          accountId: defaults.purchasesId,
-          debit: amountNet,
-          credit: 0,
-          description: "Purchases / expense",
-        },
-      ];
+      const receivedAtCost = Math.max(0, Number(metadata.receivedAtCost ?? 0));
+      const clearsGrni = Math.min(receivedAtCost, amountNet);
+      if (clearsGrni > 0 && !defaultsRow.grniId) throw new Error("Goods received not invoiced account not configured");
+      const lines: JournalLineDraft[] = [];
+      if (clearsGrni > 0) {
+        lines.push({ accountId: defaultsRow.grniId!, debit: clearsGrni, credit: 0, description: "Stock received, now invoiced" });
+      }
+      if (amountNet - clearsGrni > 0) {
+        lines.push({ accountId: defaults.purchasesId, debit: amountNet - clearsGrni, credit: 0, description: "Purchases / expense" });
+      }
       if (amountTax > 0) {
         if (!defaults.inputTaxReceivableId) throw new Error("Input tax account not configured");
         lines.push({
@@ -225,6 +227,50 @@ export async function resolvePostingLines(
           { accountId: grniId, debit: 0, credit: amount, description: "GRNI" },
         ],
         description: "Auto post goods received",
+      };
+    }
+    case "PAYROLL_APPROVED": {
+      const figure = (key: string) => Number(metadata[key] ?? 0);
+      const grossPay = figure("grossPay");
+      const paye = figure("paye");
+      const employeeRssb = figure("employeeRssb");
+      const employerRssb = figure("employerRssb");
+      const cbhi = figure("cbhi");
+      const netPay = figure("netPay");
+      if (Math.abs(grossPay - paye - employeeRssb - cbhi - netPay) > 0.5) {
+        throw new Error("Payroll totals do not add up: gross pay must equal PAYE, employee RSSB, CBHI and net pay");
+      }
+      const [rssbPayable, netSalaries, employerExpense] = await Promise.all(
+        ["2310", "2320", "6120"].map((code) => prisma.account.findFirst({ where: { companyId, code } })),
+      );
+      const salaries = defaultsRow.salariesWagesExpenseId;
+      const payePayable = defaults.payrollTaxPayableId;
+      if (!salaries || !payePayable || !rssbPayable || !netSalaries || !employerExpense) {
+        throw new Error("Payroll accounts are not configured (6100, 6120, 2300, 2310, 2320)");
+      }
+      const period = String(metadata.period ?? "");
+      const lines: JournalLineDraft[] = [
+        { accountId: salaries, debit: grossPay, credit: 0, description: `Gross pay ${period}` },
+        { accountId: employerExpense.id, debit: employerRssb, credit: 0, description: `Employer RSSB ${period}` },
+        { accountId: payePayable, debit: 0, credit: paye, description: `PAYE ${period}` },
+        { accountId: rssbPayable.id, debit: 0, credit: employeeRssb + employerRssb + cbhi, description: `RSSB and CBHI ${period}` },
+        { accountId: netSalaries.id, debit: 0, credit: netPay, description: `Net salaries ${period}` },
+      ].filter((l) => l.debit > 0 || l.credit > 0);
+      return { lines, description: `Payroll ${period}` };
+    }
+    case "PAYROLL_PAID": {
+      const amount = Number(totals.gross ?? metadata.netPay ?? 0);
+      const method = String(primaryMethod).toUpperCase();
+      const creditAccount =
+        method === "BANK" ? defaults.defaultBankAccountId : method === "MOBILE_MONEY" ? defaults.mobileMoneyClearingId || defaults.defaultCashAccountId : defaults.defaultCashAccountId;
+      const netSalaries = await prisma.account.findFirst({ where: { companyId, code: "2320" } });
+      if (!netSalaries || !creditAccount) throw new Error("Net salaries payable (2320) or the payment account is not configured");
+      return {
+        lines: [
+          { accountId: netSalaries.id, debit: amount, credit: 0, description: "Net salaries paid" },
+          { accountId: creditAccount, debit: 0, credit: amount, description: `Salary payment (${method.toLowerCase().replace("_", " ")})` },
+        ],
+        description: `Salary payment ${metadata.period ?? ""}`.trim(),
       };
     }
     default:

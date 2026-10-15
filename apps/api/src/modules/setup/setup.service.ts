@@ -16,6 +16,7 @@ import type {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
+import { openStartedPeriods } from "../journals/journal.service";
 
 const DEFAULT_DOCUMENT_TYPES = [
   "CUSTOMER",
@@ -61,6 +62,9 @@ async function setSectionStatus(
   });
 }
 
+/** Receivables, payables, inventory and current-year earnings only move through their own modules. */
+export const NO_MANUAL_POSTING_CODES = new Set(["1200", "2100", "1300", "3200"]);
+
 export async function ensureSystemChartOfAccounts(companyId: string) {
   const existing = await prisma.account.findMany({ where: { companyId } });
   const have = new Set(existing.map((a) => a.code));
@@ -73,7 +77,7 @@ export async function ensureSystemChartOfAccounts(companyId: string) {
         name: a.name,
         type: a.type,
         systemProtected: a.systemProtected,
-        allowManualPost: !a.systemProtected,
+        allowManualPost: !NO_MANUAL_POSTING_CODES.has(a.code),
       })),
     });
   }
@@ -133,7 +137,7 @@ export async function ensureDefaultAccountMappings(companyId: string) {
       withholdingTaxPayableId: by("2210"),
       payrollTaxPayableId: by("2300"),
       salariesWagesExpenseId: by("6100"),
-      payrollPayableId: by("2300"),
+      payrollPayableId: by("2320"),
       ...faPatch,
       retainedEarningsId: by("3100"),
       currentYearEarningsId: by("3200"),
@@ -142,7 +146,10 @@ export async function ensureDefaultAccountMappings(companyId: string) {
       fxGainId: by("4300"),
       fxLossId: by("6500"),
     },
-    update: faPatch,
+    update: {
+      ...faPatch,
+      ...(existing?.payrollPayableId && existing.payrollPayableId === existing.payrollTaxPayableId ? { payrollPayableId: by("2320") } : {}),
+    },
   });
 }
 
@@ -156,7 +163,7 @@ export async function getSetupDashboard(companyId: string) {
       localization: true,
       financialYears: {
         where: { isCurrent: true },
-        include: { periods: { where: { status: "OPEN" }, take: 1 } },
+        include: { periods: { where: { status: { in: ["OPEN", "REOPENED"] } }, orderBy: { startDate: "desc" }, take: 1 } },
         take: 1,
       },
       profile: true,
@@ -330,6 +337,9 @@ export async function createFinancialYearWithPeriods(
     },
     include: { periods: { orderBy: { sequence: "asc" } } },
   });
+  if (await openStartedPeriods(companyId)) {
+    year.periods = await prisma.accountingPeriod.findMany({ where: { financialYearId: year.id }, orderBy: { sequence: "asc" } });
+  }
 
   await setSectionStatus(companyId, "FINANCIAL_YEAR_PERIODS", "REQUIRES_REVIEW", actor.erpUserId);
   await writeAudit({
@@ -801,6 +811,7 @@ export async function activateAccounting(
       lastValidationJson: gate as object,
     },
   });
+  await openStartedPeriods(companyId);
 
   await setSectionStatus(companyId, "REVIEW_ACTIVATION", "APPROVED", actor.erpUserId);
   await writeAudit({

@@ -17,7 +17,7 @@ import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { createAccount } from "../coa/coa.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal, linesInJournalCurrency } from "../journals/journal.service";
 
 export type Actor = {
   erpUserId?: number;
@@ -83,6 +83,7 @@ async function postBanking(
     description: string;
     referenceNumber?: string;
     currencyCode?: string;
+    exchangeRate?: number;
     sourceDocumentType: string;
     sourceDocumentId: string;
     sourceDocumentNumber?: string;
@@ -90,14 +91,15 @@ async function postBanking(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: input.currencyCode ?? "RWF",
+      currencyCode: input.currencyCode,
+      exchangeRate: input.exchangeRate,
       sourceModule: "BANKING",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -107,7 +109,6 @@ async function postBanking(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 async function assertReferenceFree(companyId: string, financialAccountId: string, input: { reference?: string | null; chequeNumber?: string | null }) {
@@ -532,7 +533,7 @@ export async function reverseTransaction(companyId: string, id: string, input: {
   const reversalDate = startOfDay(input.reversalDate ?? new Date());
   if (reversalDate < txn.transactionDate) throw new Error("A reversal can't be dated before the transaction");
   const original = await prisma.journal.findFirstOrThrow({ where: { id: txn.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
-  const lines = reverseJournalLines(original.lines.map((l) => ({ accountId: l.accountId, debit: money(l.debit), credit: money(l.credit), description: l.description ?? undefined })));
+  const lines = reverseJournalLines(linesInJournalCurrency(original.lines));
   const journal = await postBanking(
     companyId,
     {
@@ -540,6 +541,7 @@ export async function reverseTransaction(companyId: string, id: string, input: {
       description: `Reverse ${txn.number}: ${input.reason}`,
       referenceNumber: txn.number,
       currencyCode: original.currencyCode,
+      exchangeRate: Number(original.exchangeRate),
       sourceDocumentType: "BankTransactionReversal",
       sourceDocumentId: txn.id,
       sourceDocumentNumber: txn.number,

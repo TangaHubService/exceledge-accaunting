@@ -262,6 +262,14 @@ export async function updateAccount(
     nameTakenInType: nameTaken,
   });
 
+  if (input.currency !== undefined && existing.hasPostedTransactions) {
+    const functional = (await prisma.currencySettings.findUnique({ where: { companyId } }))?.functionalCurrency ?? "RWF";
+    const effective = (c: string | null | undefined) => (c?.trim() ? c.trim().toUpperCase() : functional);
+    if (effective(input.currency) !== effective(existing.currency)) {
+      throw new Error("The currency of an account with postings cannot be changed; open a new account instead");
+    }
+  }
+
   // Protected accounts: only allow non-structural field updates
   const data: Prisma.AccountUpdateInput = {};
   if (existing.systemProtected) {

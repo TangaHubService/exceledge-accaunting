@@ -4,7 +4,7 @@ import { syncSaleToSubledger } from "../ar/ar.service";
 import { syncExpenseFromEvent } from "../expense/expense.service";
 import { syncAssetFromEvent } from "../fixed-assets/fa.service";
 import { INVENTORY_EVENT_TYPES, processInventoryEvent } from "../inventory/inventory.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal } from "../journals/journal.service";
 import { resolvePostingLines } from "./posting-rules.service";
 
 const SUBLEDGER_SYNC: Record<string, { label: string; run: (eventId: string) => Promise<unknown> }> = {
@@ -198,7 +198,7 @@ export async function processIntegrationEvent(eventId: string) {
       },
     );
 
-    const journal = await createJournal(
+    const posted = await createAndPostJournal(
       event.companyId,
       {
         journalDate: event.occurredAt,
@@ -217,11 +217,6 @@ export async function processIntegrationEvent(eventId: string) {
       },
       { erpUserId: 0, erpRole: "SYSTEM" },
     );
-
-    const posted = await postJournal(event.companyId, journal.id, {
-      erpUserId: 0,
-      erpRole: "SYSTEM",
-    });
 
     const updatedEvent = await prisma.integrationEvent.update({
       where: { id: event.id },

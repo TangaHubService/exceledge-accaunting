@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as banking from "./banking.service";
 import * as recon from "./reconciliation.service";
+import { inTransaction } from "../../lib/prisma";
 
 export const bankingRouter = Router();
 
@@ -21,7 +22,8 @@ function fail(res: Response, e: unknown, status = 400) {
 type Handler = (req: AuthedRequest) => Promise<unknown>;
 const handle = (fn: Handler, status = 200) => async (req: AuthedRequest, res: Response) => {
   try {
-    res.status(status).json({ success: true, data: await fn(req) });
+    const data = req.method === "GET" ? await fn(req) : await inTransaction(async () => fn(req));
+    res.status(status).json({ success: true, data });
   } catch (e) {
     fail(res, e);
   }

@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
         include: [/node_modules/, /packages\/domain/],
       },
     },
+    optimizeDeps: {
+      include: ["@exceledge/accounting-domain"],
+    },
     server: {
       port: 5174,
       proxy: {

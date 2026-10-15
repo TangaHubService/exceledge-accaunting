@@ -19,7 +19,7 @@ import type { Prisma } from "@prisma/client";
 import { defaultsFor, money, nextNumber, settlementDefaults } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -84,6 +84,7 @@ async function postBalanced(
     description: string;
     referenceNumber?: string;
     currencyCode?: string;
+    exchangeRate?: number;
     sourceDocumentType: string;
     sourceDocumentId: string;
     sourceDocumentNumber?: string;
@@ -92,14 +93,15 @@ async function postBalanced(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: input.currencyCode ?? "RWF",
+      currencyCode: input.currencyCode,
+      exchangeRate: input.exchangeRate,
       sourceModule: "AP",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -109,7 +111,6 @@ async function postBalanced(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 export function billOutstanding(bill: {
@@ -545,6 +546,7 @@ export async function reversePayment(
       journalDate: reversalDate,
       description: `Reverse supplier payment ${payment.paymentNumber}${reason ? ` — ${reason}` : ""}`,
       referenceNumber: payment.paymentNumber,
+      ...(await reversalCurrency(companyId, payment.journalId)),
       sourceDocumentType: "ApPaymentReversal",
       sourceDocumentId: payment.id,
       sourceDocumentNumber: payment.paymentNumber,
@@ -1259,6 +1261,19 @@ export async function syncSupplierBillToSubledger(eventId: string) {
       credit: gross,
     }),
   );
+  const document = meta.document as { fileName?: string; path?: string } | undefined;
+  if (document?.path) {
+    await prisma.accountingDocument.create({
+      data: {
+        companyId: event.companyId,
+        entityType: "ApBill",
+        entityId: bill.id,
+        fileName: document.fileName || "Scanned invoice",
+        note: `Captured by scan in Excel Edge${meta.supplierTin ? `, supplier TIN ${meta.supplierTin}` : ""}`,
+        contentText: document.path,
+      },
+    });
+  }
   return bill;
 }
 

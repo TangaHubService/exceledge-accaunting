@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import {
@@ -18,10 +19,48 @@ export interface ErpTokenPayload {
   branchIds?: number[];
 }
 
+/** Read-only capabilities an API key may carry. */
+export const API_KEY_SCOPES = ["report:view", "gl:view", "ar:view", "ap:view"] as const satisfies readonly AccountingCapability[];
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 export interface AuthedRequest extends Request {
   erpUser?: ErpTokenPayload;
   organizationRole?: string;
   companyId?: string;
+  apiKey?: { id: string; scopes: string[] };
+}
+
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest();
+}
+
+function presentedApiKey(req: Request) {
+  const header = req.header("x-api-key");
+  if (header) return header.trim();
+  const auth = req.headers.authorization;
+  return auth?.startsWith("ApiKey ") ? auth.slice("ApiKey ".length).trim() : undefined;
+}
+
+/** Accepts an ERP user token, or a company API key on read-only (GET) requests. */
+export async function authenticate(req: AuthedRequest, res: Response, next: NextFunction) {
+  const token = presentedApiKey(req);
+  if (!token) return authenticateErpJwt(req, res, next);
+  if (req.method !== "GET") {
+    return res.status(403).json({ success: false, error: "API keys are read-only" });
+  }
+  const candidates = await prisma.apiCredential.findMany({ where: { prefix: token.slice(0, 8) } });
+  const presented = sha256(token);
+  const match = candidates.find((c) => {
+    const stored = Buffer.from(c.tokenHash, "hex");
+    return stored.length === presented.length && timingSafeEqual(stored, presented);
+  });
+  if (!match || match.revokedAt || (match.expiresAt && match.expiresAt <= new Date())) {
+    return res.status(401).json({ success: false, error: "Invalid, revoked or expired API key" });
+  }
+  await prisma.apiCredential.update({ where: { id: match.id }, data: { lastUsedAt: new Date() } });
+  req.apiKey = { id: match.id, scopes: match.scopes };
+  req.companyId = match.companyId;
+  return next();
 }
 
 export function authenticateErpJwt(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -45,6 +84,12 @@ export function authenticateErpJwt(req: AuthedRequest, res: Response, next: Next
 
 export function requireCapability(capability: AccountingCapability) {
   return (req: AuthedRequest, res: Response, next: NextFunction) => {
+    if (req.apiKey) {
+      if (!req.apiKey.scopes.includes(capability)) {
+        return res.status(403).json({ success: false, error: `API key lacks scope: ${capability}` });
+      }
+      return next();
+    }
     const role = req.organizationRole ?? req.erpUser?.role;
     if (!hasCapability(role, capability)) {
       return res.status(403).json({
@@ -58,6 +103,7 @@ export function requireCapability(capability: AccountingCapability) {
 
 /** Resolve or create Accounting company for ERP activeOrganizationId */
 export async function resolveCompany(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (req.apiKey) return next();
   const orgId = req.erpUser?.activeOrganizationId ?? normalizeOrgId(req.erpUser?.organizationId);
   if (!orgId) {
     return res.status(400).json({

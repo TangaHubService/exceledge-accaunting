@@ -154,9 +154,33 @@ describe("Phase 3 Integration Engine & GL", () => {
     expect(gl.body.data.totalDebits).toBeCloseTo(gl.body.data.totalCredits, 4);
   });
 
-  it("reverses a posted journal with opposite balanced entry", async () => {
+  it("refuses to reverse an automatic journal by hand", async () => {
     const list = await request(app).get("/api/v1/journals?status=POSTED").set(userHeaders);
-    const journal = list.body.data[0];
+    const automatic = list.body.data.find((j: { journalType: string }) => j.journalType === "AUTOMATIC");
+    const res = await request(app)
+      .post(`/api/v1/journals/${automatic.id}/reverse`)
+      .set(userHeaders)
+      .send({ reason: "Test reversal" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/reverse it from its source document/);
+  });
+
+  it("reverses a posted journal with opposite balanced entry", async () => {
+    const company = await prisma.company.findFirstOrThrow({ where: { externalErpOrganizationId: String(orgId) } });
+    const account = (code: string) => prisma.account.findFirstOrThrow({ where: { companyId: company.id, code } });
+    const manual = await request(app)
+      .post("/api/v1/journals")
+      .set(userHeaders)
+      .send({
+        journalDate: "2026-01-20",
+        postImmediately: true,
+        lines: [
+          { accountId: (await account("1100")).id, debit: 40, credit: 0 },
+          { accountId: (await account("4100")).id, debit: 0, credit: 40 },
+        ],
+      });
+    expect(manual.status).toBe(201);
+    const journal = manual.body.data;
     const rev = await request(app)
       .post(`/api/v1/journals/${journal.id}/reverse`)
       .set(userHeaders)

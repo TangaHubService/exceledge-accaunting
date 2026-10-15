@@ -1,8 +1,9 @@
 import { type AccountingCapability, capabilitiesForRole } from "@exceledge/accounting-domain";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { accountingUrl } from "./config";
+import { accountingUrl, erpLinks } from "./config";
 
 const TOKEN_KEY = "erp_jwt";
+const REFRESH_KEY = "erp_refresh";
 const REMEMBER_EMAIL_KEY = "erp_remember_email";
 
 type TokenClaims = { userId?: number; email?: string; role?: string; name?: string; exp?: number };
@@ -39,33 +40,62 @@ export function readInitialToken() {
   const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const handoff = hash.get("access_token");
   if (handoff) {
-    localStorage.setItem(TOKEN_KEY, handoff);
-    sessionStorage.removeItem(TOKEN_KEY);
+    storeToken(handoff, true);
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
     return handoff;
   }
   const stored = localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY) ?? "";
   const claims = decodeClaims(stored);
-  if (claims?.exp && claims.exp * 1000 < Date.now()) {
-    localStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(TOKEN_KEY);
+  if (claims?.exp && claims.exp * 1000 < Date.now() && !readRefreshToken()) {
+    clearToken();
     return "";
   }
   return stored;
+}
+
+function readRefreshToken() {
+  return localStorage.getItem(REFRESH_KEY) ?? sessionStorage.getItem(REFRESH_KEY) ?? "";
+}
+
+let refreshing: Promise<string | null> | null = null;
+
+/** ERP access tokens are short-lived; trade the refresh token for a new pair once, shared by concurrent callers. */
+function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = readRefreshToken();
+  if (!refreshToken) return Promise.resolve(null);
+  refreshing ??= (async () => {
+    try {
+      const res = await fetch(erpLinks.refresh, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { accessToken?: string; refreshToken?: string };
+      if (!body.accessToken) return null;
+      storeToken(body.accessToken, localStorage.getItem(REFRESH_KEY) !== null, body.refreshToken ?? refreshToken);
+      return body.accessToken;
+    } catch {
+      return null;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
 }
 
 export function readRememberedEmail() {
   return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? "";
 }
 
-export function storeToken(token: string, remember = true) {
-  if (remember) {
-    localStorage.setItem(TOKEN_KEY, token);
-    sessionStorage.removeItem(TOKEN_KEY);
-  } else {
-    sessionStorage.setItem(TOKEN_KEY, token);
-    localStorage.removeItem(TOKEN_KEY);
-  }
+export function storeToken(token: string, remember = true, refreshToken?: string) {
+  const keep = remember ? localStorage : sessionStorage;
+  const drop = remember ? sessionStorage : localStorage;
+  keep.setItem(TOKEN_KEY, token);
+  drop.removeItem(TOKEN_KEY);
+  drop.removeItem(REFRESH_KEY);
+  if (refreshToken) keep.setItem(REFRESH_KEY, refreshToken);
+  else keep.removeItem(REFRESH_KEY);
 }
 
 export function rememberEmail(email: string | null) {
@@ -74,8 +104,10 @@ export function rememberEmail(email: string | null) {
 }
 
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
+  for (const store of [localStorage, sessionStorage]) {
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(REFRESH_KEY);
+  }
 }
 
 function decodeClaims(token: string): TokenClaims | null {
@@ -119,10 +151,12 @@ function humanField(field: string) {
 export function SessionProvider({
   token,
   onSignOut,
+  onTokenRefreshed,
   children,
 }: {
   token: string;
   onSignOut: (reason?: "expired") => void;
+  onTokenRefreshed: (token: string) => void;
   children: ReactNode;
 }) {
   const claims = useMemo(() => decodeClaims(token), [token]);
@@ -135,16 +169,25 @@ export function SessionProvider({
 
   const call = useCallback<Session["apiWithMessage"]>(
     async <T,>(path: string, init?: RequestInit) => {
-      let res: Response;
-      try {
-        res = await fetch(accountingUrl(path), {
+      const send = (bearer: string) =>
+        fetch(accountingUrl(path), {
           ...init,
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${bearer}`,
             ...(init?.headers ?? {}),
           },
         });
+      let res: Response;
+      try {
+        res = await send(token);
+        if (res.status === 401) {
+          const renewed = await refreshAccessToken();
+          if (renewed) {
+            onTokenRefreshed(renewed);
+            res = await send(renewed);
+          }
+        }
       } catch {
         throw new ApiError("Can't reach the accounting service. Check your connection and try again.", 0);
       }
@@ -160,7 +203,7 @@ export function SessionProvider({
       }
       return { data: body.data as T, message: body.message };
     },
-    [token],
+    [token, onTokenRefreshed],
   );
 
   const session = useMemo<Session>(
@@ -172,7 +215,15 @@ export function SessionProvider({
       api: async <T,>(path: string, init?: RequestInit) => (await call<T>(path, init)).data,
       apiWithMessage: call,
       download: async (path, filename) => {
-        const res = await fetch(accountingUrl(path), { headers: { Authorization: `Bearer ${token}` } });
+        let res = await fetch(accountingUrl(path), { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 401) {
+          const renewed = await refreshAccessToken();
+          if (renewed) {
+            onTokenRefreshed(renewed);
+            res = await fetch(accountingUrl(path), { headers: { Authorization: `Bearer ${renewed}` } });
+          }
+        }
+        if (res.status === 401) setExpired(true);
         if (!res.ok) throw new ApiError(friendlyError(res.status, undefined), res.status);
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");
@@ -183,7 +234,7 @@ export function SessionProvider({
       },
       signOut: () => onSignOut(),
     }),
-    [token, claims, capabilities, call, onSignOut],
+    [token, claims, capabilities, call, onSignOut, onTokenRefreshed],
   );
 
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;

@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import "express-async-errors";
 import { env } from "./config/env";
 import { apRouter } from "./modules/ap/ap.routes";
 import { arRouter } from "./modules/ar/ar.routes";
@@ -10,6 +11,7 @@ import { bankingRouter } from "./modules/banking/banking.routes";
 import { inventoryRouter } from "./modules/inventory/inventory.routes";
 import { taxRouter } from "./modules/tax/tax.routes";
 import { expenseRouter } from "./modules/expense/expense.routes";
+import { booksRouter } from "./modules/books/books.routes";
 import { faRouter } from "./modules/fixed-assets/fa.routes";
 import { journalsRouter } from "./modules/journals/journal.routes";
 import { glRouter } from "./modules/gl/gl.routes";
@@ -26,7 +28,7 @@ export function createApp() {
     res.json({
       success: true,
       service: "exceledge-accounting-api",
-      phase: 10,
+      phase: 20,
       status: "ok",
     });
   });
@@ -45,6 +47,7 @@ export function createApp() {
   app.use("/api/v1/integration", integrationRouter);
   app.use("/api/v1/exceptions", exceptionsRouter);
   app.use("/api/v1/audit", auditRouter);
+  app.use("/api/v1/books", booksRouter);
 
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

@@ -19,7 +19,7 @@ import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { endOfDay, isoDay, startOfDay } from "../banking/banking.service";
-import { createJournal, postJournal } from "../journals/journal.service";
+import { createAndPostJournal } from "../journals/journal.service";
 
 export type Actor = {
   erpUserId?: number;
@@ -44,14 +44,13 @@ async function postFaJournal(
   },
   actor: Actor,
 ) {
-  const journal = await createJournal(
+  return createAndPostJournal(
     companyId,
     {
       journalDate: input.journalDate,
       journalType: "AUTOMATIC",
       description: input.description,
       referenceNumber: input.referenceNumber,
-      currencyCode: "RWF",
       sourceModule: "FIXED_ASSETS",
       sourceDocumentType: input.sourceDocumentType,
       sourceDocumentId: input.sourceDocumentId,
@@ -61,7 +60,6 @@ async function postFaJournal(
     },
     actor,
   );
-  return postJournal(companyId, journal.id, actor);
 }
 
 async function faDefaults(companyId: string) {

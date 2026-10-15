@@ -16,9 +16,9 @@ export async function getGlDashboard(companyId: string) {
       }),
     ]);
 
+  const now = new Date();
   const openPeriod = await prisma.accountingPeriod.findFirst({
-    where: { status: "OPEN", financialYear: { companyId } },
-    orderBy: { startDate: "asc" },
+    where: { financialYear: { companyId }, startDate: { lte: now }, endDate: { gte: now } },
   });
 
   return {

@@ -1,12 +1,13 @@
 import { AP_PAYMENT_METHODS } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
-import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import { AuthedRequest, authenticate, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import { inTransaction } from "../../lib/prisma";
 import * as ap from "./ap.service";
 
 export const apRouter = Router();
 
-apRouter.use(authenticateErpJwt, requireCapability("ap:view"), resolveCompany);
+apRouter.use(authenticate, requireCapability("ap:view"), resolveCompany);
 
 function actor(req: AuthedRequest) {
   return {
@@ -93,7 +94,7 @@ apRouter.post("/suppliers", requireCapability("ap:manage"), async (req: AuthedRe
     const body = z
       .object({ ...supplierFields, code: z.string().trim().max(40).optional(), openingBalance: z.number().min(0).optional() })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createSupplier(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createSupplier(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -114,7 +115,7 @@ apRouter.patch("/suppliers/:id", requireCapability("ap:manage"), async (req: Aut
       .partial()
       .omit({ tin: true })
       .parse(req.body);
-    res.json({ success: true, data: await ap.updateSupplier(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ap.updateSupplier(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -159,7 +160,7 @@ apRouter.post("/bills", requireCapability("ap:manage"), async (req: AuthedReques
         description: optionalText,
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createBill(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createBill(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -185,7 +186,7 @@ apRouter.post("/payments", requireCapability("ap:manage"), async (req: AuthedReq
         allocations: z.array(z.object({ billId: z.string().min(1), amount: z.number().positive() })).optional(),
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createPayment(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createPayment(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -194,7 +195,7 @@ apRouter.post("/payments", requireCapability("ap:manage"), async (req: AuthedReq
 apRouter.post("/payments/:id/reverse", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z.object({ reason: z.string().trim().max(300).optional(), reversalDate: day.optional() }).parse(req.body ?? {});
-    res.json({ success: true, data: await ap.reversePayment(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ap.reversePayment(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -214,7 +215,7 @@ apRouter.post("/credit-notes", requireCapability("ap:manage"), async (req: Authe
         description: optionalText,
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createCreditNote(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createCreditNote(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -235,7 +236,7 @@ apRouter.post("/debit-notes", requireCapability("ap:manage"), async (req: Authed
         description: optionalText,
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createDebitNote(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createDebitNote(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -260,7 +261,7 @@ apRouter.post("/advances", requireCapability("ap:manage"), async (req: AuthedReq
         description: optionalText,
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ap.createAdvance(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createAdvance(req.companyId!, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -269,7 +270,7 @@ apRouter.post("/advances", requireCapability("ap:manage"), async (req: AuthedReq
 apRouter.post("/advances/:id/allocate", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z.object({ billId: z.string().min(1), amount: z.number().positive(), allocationDate: day.optional() }).parse(req.body);
-    res.json({ success: true, data: await ap.allocateAdvance(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ap.allocateAdvance(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }
@@ -280,7 +281,7 @@ apRouter.post("/advances/:id/refund", requireCapability("ap:manage"), async (req
     const body = z
       .object({ amount: z.number().positive().optional(), method: payMethod.optional(), refundDate: day.optional() })
       .parse(req.body ?? {});
-    res.json({ success: true, data: await ap.refundAdvance(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ap.refundAdvance(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     fail(res, e);
   }

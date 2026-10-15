@@ -1,14 +1,14 @@
 import { Router } from "express";
 import {
   AuthedRequest,
-  authenticateErpJwt,
+  authenticate,
   requireCapability,
   resolveCompany,
 } from "../../middleware/auth";
 import * as gl from "./gl.service";
 
 export const glRouter = Router();
-glRouter.use(authenticateErpJwt, requireCapability("gl:view"), resolveCompany);
+glRouter.use(authenticate, requireCapability("gl:view"), resolveCompany);
 
 glRouter.get("/dashboard", async (req: AuthedRequest, res) => {
   const data = await gl.getGlDashboard(req.companyId!);
