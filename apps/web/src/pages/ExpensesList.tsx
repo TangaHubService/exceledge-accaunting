@@ -1,8 +1,9 @@
-import { Plus } from "lucide-react";
+import { Paperclip, Plus } from "lucide-react";
 import { useState } from "react";
+import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { ExpenseForm } from "../components/ExpenseForms";
 import { useFeedback } from "../components/feedback";
-import { Badge, EmptyState, Field, Loadable, PageHeader } from "../components/ui";
+import { Badge, Drawer, EmptyState, Field, Loadable, PageHeader } from "../components/ui";
 import { Select } from "../components/Select";
 import { useCompany } from "../lib/company";
 import { EXPENSE_STATUS, PAYMENT_MODE_LABELS } from "../lib/expense";
@@ -19,6 +20,7 @@ export function ExpensesList() {
   const [to, setTo] = useState(isoDay());
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState(false);
+  const [filesFor, setFilesFor] = useState<ExpenseList["rows"][number] | null>(null);
   const q = new URLSearchParams({ from, to, pageSize: "100" });
   if (status) q.set("status", status);
   const list = useResource<ExpenseList>(`/api/v1/expenses?${q}`);
@@ -145,6 +147,9 @@ export function ExpensesList() {
                             Reverse
                           </button>
                         )}
+                        <button type="button" className="btn btn-quiet" onClick={() => setFilesFor(e)} aria-label={`Files for ${e.number}`} title="Receipts and other files">
+                          <Paperclip size={15} aria-hidden="true" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -154,6 +159,16 @@ export function ExpensesList() {
           )
         }
       </Loadable>
+      {filesFor && (
+        <Drawer title={`Expense ${filesFor.number}`} subtitle={`${date(filesFor.expenseDate)} · ${amount(filesFor.grossAmount)} ${currency}`} onClose={() => setFilesFor(null)}>
+          <AttachmentsPanel
+            entityType="Expense"
+            entityId={filesFor.id}
+            title="Receipts and other files"
+            locked={filesFor.status === "DRAFT" || filesFor.status === "REJECTED" ? null : `the expense is ${EXPENSE_STATUS[filesFor.status as ExpenseStatus].label.toLowerCase()}`}
+          />
+        </Drawer>
+      )}
     </>
   );
 }

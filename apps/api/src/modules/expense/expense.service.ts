@@ -14,9 +14,11 @@ import {
   type RecurringFrequency,
 } from "@exceledge/accounting-domain";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import type { Prisma } from "@prisma/client";
+import { inTransaction, prisma } from "../../lib/prisma";
+import { decideApproval, planFor, requestApproval, resubmitApproval } from "../approvals/approval.service";
 import { writeAudit } from "../audit/audit.service";
-import { createAndPostJournal } from "../journals/journal.service";
+import { assertDimensions, createAndPostJournal } from "../journals/journal.service";
 import { endOfDay, isoDay, startOfDay } from "../banking/banking.service";
 
 export type Actor = {
@@ -29,6 +31,30 @@ export type Actor = {
 
 async function audit(companyId: string, actor: Actor, action: string, entityType: string, entityId: string, afterJson: unknown, beforeJson?: unknown) {
   await writeAudit({ companyId, erpUserId: actor.erpUserId ?? 0, erpRole: actor.erpRole, action, entityType, entityId, beforeJson, afterJson, ...actor.meta });
+}
+
+/**
+ * Splits the expense (first) line across allocations by their share of the gross amount, each
+ * carrying its cost centre and project; the last share takes the rounding difference. Without
+ * allocations the line carries the expense's own dimensions.
+ */
+function allocateExpenseLine(
+  lines: JournalLineDraft[],
+  expense: { grossAmount: { toString(): string }; costCentre: string | null; project: string | null },
+  allocations: Array<{ amount: number; costCentre: string | null; project: string | null }>,
+): JournalLineDraft[] {
+  const [expenseLine, ...rest] = lines;
+  if (!allocations.length) {
+    return [{ ...expenseLine, costCentre: expense.costCentre ?? undefined, project: expense.project ?? undefined }, ...rest];
+  }
+  const gross = money(expense.grossAmount);
+  let remaining = expenseLine.debit;
+  const split = allocations.map((a, i) => {
+    const debit = i === allocations.length - 1 ? roundMoney(remaining) : roundMoney((expenseLine.debit * a.amount) / gross);
+    remaining = roundMoney(remaining - debit);
+    return { ...expenseLine, debit, costCentre: a.costCentre ?? expense.costCentre ?? undefined, project: a.project ?? expense.project ?? undefined };
+  });
+  return [...split.filter((l) => l.debit > 0), ...rest];
 }
 
 async function postExpenseJournal(
@@ -386,6 +412,10 @@ export async function createExpense(
   const credit = await resolveCreditAccount(companyId, paymentMode, input);
   const number = await nextNumber(companyId, "EXPENSE", "EXP");
   const allocations = input.allocations?.length ? assertExpenseAllocations(input.allocations, gross) : [];
+  await assertDimensions(companyId, {
+    costCentres: [input.costCentre, ...(input.allocations ?? []).map((a) => a.costCentre)],
+    projects: [input.project, ...(input.allocations ?? []).map((a) => a.project)],
+  });
 
   const expense = await prisma.expense.create({
     data: {
@@ -439,6 +469,10 @@ export async function createExpense(
 }
 
 export async function submitExpense(companyId: string, id: string, actor: Actor = {}) {
+  return inTransaction(() => submitOnce(companyId, id, actor));
+}
+
+async function submitOnce(companyId: string, id: string, actor: Actor) {
   const expense = await prisma.expense.findFirst({ where: { id, companyId } });
   if (!expense) throw new Error("Expense does not exist");
   assertExpenseTransition(expense.status as ExpenseStatus, "SUBMITTED");
@@ -446,18 +480,42 @@ export async function submitExpense(companyId: string, id: string, actor: Actor 
     where: { id },
     data: { status: "SUBMITTED", submittedAt: new Date(), submittedByErpUserId: actor.erpUserId, rejectionReason: null },
   });
+  const gross = money(expense.grossAmount);
+  const returned = await prisma.approvalRequest.findFirst({ where: { companyId, entityType: "Expense", entityId: id, status: "RETURNED" } });
+  if (returned) await resubmitApproval(companyId, returned.id, actor, { amount: gross });
+  else await requestApproval(companyId, { entityType: "Expense", entityId: id, amount: gross, plan: await planFor(companyId, gross, true) }, actor);
   await audit(companyId, actor, "SUBMIT", "Expense", id, updated, expense);
   return serializeExpense(companyId, id);
 }
 
+/**
+ * The open approval of a submitted expense. Expenses submitted before approvals went through the
+ * engine have none, so one is raised on the submitter's behalf.
+ */
+async function pendingExpenseApproval(companyId: string, expense: { id: string; grossAmount: Prisma.Decimal; submittedByErpUserId: number | null }) {
+  const open = await prisma.approvalRequest.findFirst({ where: { companyId, entityType: "Expense", entityId: expense.id, status: "PENDING" } });
+  if (open) return open;
+  const gross = money(expense.grossAmount);
+  return requestApproval(
+    companyId,
+    { entityType: "Expense", entityId: expense.id, amount: gross, plan: await planFor(companyId, gross, true) },
+    { erpUserId: expense.submittedByErpUserId ?? undefined },
+  );
+}
+
+/** Records the actor's approval through the approval engine; the expense posts once the last level approves. */
 export async function approveExpense(companyId: string, id: string, actor: Actor = {}) {
+  return inTransaction(() => approveOnce(companyId, id, actor));
+}
+
+async function approveOnce(companyId: string, id: string, actor: Actor): Promise<Awaited<ReturnType<typeof serializeExpense>>> {
   const expense = await prisma.expense.findFirst({ where: { id, companyId } });
   if (!expense) throw new Error("Expense does not exist");
   assertExpenseTransition(expense.status as ExpenseStatus, "APPROVED");
-  await prisma.expense.update({
-    where: { id },
-    data: { status: "APPROVED", approvedAt: new Date(), approvedByErpUserId: actor.erpUserId, rejectionReason: null },
-  });
+  const approval = await pendingExpenseApproval(companyId, expense);
+  await decideApproval(companyId, approval.id, "APPROVED", actor);
+  const after = await prisma.expense.findUniqueOrThrow({ where: { id } });
+  if (after.status !== "APPROVED") return serializeExpense(companyId, id);
   await audit(companyId, actor, "APPROVE", "Expense", id, { status: "APPROVED" }, expense);
   return postExpense(companyId, id, actor);
 }
@@ -467,6 +525,12 @@ export async function rejectExpense(companyId: string, id: string, input: { reas
   if (!expense) throw new Error("Expense does not exist");
   assertExpenseTransition(expense.status as ExpenseStatus, "REJECTED");
   if (!input.reason.trim() || input.reason.trim().length < 3) throw new Error("Give a reason for rejecting the expense");
+  if (expense.status === "SUBMITTED") {
+    const approval = await pendingExpenseApproval(companyId, expense);
+    await decideApproval(companyId, approval.id, "REJECTED", actor, input.reason.trim());
+    await audit(companyId, actor, "REJECT", "Expense", id, { status: "REJECTED", reason: input.reason.trim() }, expense);
+    return serializeExpense(companyId, id);
+  }
   const updated = await prisma.expense.update({
     where: { id },
     data: { status: "REJECTED", rejectedAt: new Date(), rejectedByErpUserId: actor.erpUserId, rejectionReason: input.reason.trim() },
@@ -486,24 +550,26 @@ export async function postExpense(companyId: string, id: string, actor: Actor = 
   }
   if (expense.status === "DRAFT") assertExpenseTransition("DRAFT", "POSTED");
   else if (expense.status === "SUBMITTED") {
-    await prisma.expense.update({
-      where: { id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedByErpUserId: actor.erpUserId },
-    });
+    return approveExpense(companyId, id, actor);
   } else if (expense.status !== "APPROVED") {
     assertExpenseTransition(expense.status as ExpenseStatus, "POSTED");
   }
 
   if (!expense.creditAccountId) throw new Error("Choose the bank, cash or payable account for this expense");
   const defaults = await defaultsFor(companyId);
-  const lines = buildExpenseLines({
-    expenseAccountId: expense.expenseAccountId,
-    creditAccountId: expense.creditAccountId,
-    net: money(expense.netAmount),
-    tax: money(expense.taxAmount),
-    inputTaxAccountId: defaults.inputTaxReceivableId,
-    description: expense.description || `${expense.category.name} ${expense.number}`,
-  });
+  const allocations = await prisma.expenseAllocation.findMany({ where: { expenseId: id }, orderBy: { id: "asc" } });
+  const lines = allocateExpenseLine(
+    buildExpenseLines({
+      expenseAccountId: expense.expenseAccountId,
+      creditAccountId: expense.creditAccountId,
+      net: money(expense.netAmount),
+      tax: money(expense.taxAmount),
+      inputTaxAccountId: defaults.inputTaxReceivableId,
+      description: expense.description || `${expense.category.name} ${expense.number}`,
+    }),
+    expense,
+    allocations.map((a) => ({ amount: money(a.amount), costCentre: a.costCentre, project: a.project })),
+  );
   const journal = await postExpenseJournal(
     companyId,
     {
@@ -534,7 +600,14 @@ export async function reverseExpense(companyId: string, id: string, input: { rea
   const original = await prisma.journal.findFirst({ where: { id: expense.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
   if (!original) throw new Error("Original journal was not found");
   const lines = reverseJournalLines(
-    original.lines.map((l) => ({ accountId: l.accountId, description: l.description ?? undefined, debit: money(l.debit), credit: money(l.credit) })),
+    original.lines.map((l) => ({
+      accountId: l.accountId,
+      description: l.description ?? undefined,
+      debit: money(l.debit),
+      credit: money(l.credit),
+      costCentre: l.costCentre ?? undefined,
+      project: l.project ?? undefined,
+    })),
   );
   const reversalDate = input.reversalDate ? startOfDay(input.reversalDate) : startOfDay(new Date());
   if (reversalDate < expense.expenseDate) throw new Error("A reversal can't be dated before the expense");
@@ -696,14 +769,15 @@ export async function runRecurring(companyId: string, id: string, actor: Actor =
 
   const next = nextRecurringDate(template.nextRunDate, template.frequency as RecurringFrequency);
   const ended = template.endDate && startOfDay(next) > template.endDate;
-  await prisma.recurringExpense.update({
-    where: { id },
+  const advanced = await prisma.recurringExpense.updateMany({
+    where: { id, nextRunDate: template.nextRunDate },
     data: {
       nextRunDate: startOfDay(next),
       lastGeneratedAt: new Date(),
       isActive: ended ? false : template.isActive,
     },
   });
+  if (!advanced.count) throw new Error("This occurrence was already generated by another run");
   await audit(companyId, actor, "GENERATE", "RecurringExpense", id, { expenseId: expense.id, next });
   return serializeExpense(companyId, expense.id);
 }

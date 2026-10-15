@@ -10,20 +10,24 @@ import {
   SupplierCreditNoteForm,
   SupplierDebitNoteForm,
   SupplierForm,
+  VoidBillForm,
 } from "../components/ApForms";
+import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { type Column, DataTable } from "../components/DataTable";
-import { Badge, DueStatus, EmptyState, Figure, Loadable, Menu, PageHeader, SkeletonRows } from "../components/ui";
+import { PdfButton, PeriodStatementView } from "../components/Documents";
+import { Badge, Drawer, DueStatus, EmptyState, Figure, Loadable, Menu, PageHeader, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, daysBetween, humanize, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
 import type { ApAdvance, ApBill, ApPayment, Supplier, SupplierLedger, SupplierStatement } from "../lib/types";
 import { SupplierStatusBadge } from "./Suppliers";
 
-type Tab = "open" | "all" | "payments" | "advances" | "activity";
+type Tab = "open" | "all" | "payments" | "advances" | "activity" | "statement";
 type Dialog =
   | null
   | { kind: "bill" | "credit" | "debit" | "advance" | "edit" }
   | { kind: "pay"; billId?: string }
+  | { kind: "void" | "files"; bill: ApBill }
   | { kind: "reverse"; payment: ApPayment }
   | { kind: "allocate" | "refund"; advance: ApAdvance };
 type LedgerEntry = SupplierLedger["entries"][number];
@@ -92,23 +96,39 @@ export function SupplierDetail({ id }: { id: string }) {
       sortValue: (r) => r.outstanding,
       render: (r) => (r.outstanding > 0 ? <span className="strong">{amount(r.outstanding)}</span> : <span className="subtle">0</span>),
     },
-    ...(!showPaid && manage
+    ...(manage
       ? [
           {
             key: "act",
             header: <span className="sr-only">Actions</span>,
-            width: 80,
+            width: 130,
             render: (r: ApBill) => (
-              <button
-                type="button"
-                className="btn btn-sm row-actions no-print"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDialog({ kind: "pay", billId: r.id });
-                }}
-              >
-                Pay
-              </button>
+              <span className="row-actions no-print" style={{ display: "inline-flex", gap: 6 }}>
+                {!showPaid && r.outstanding > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDialog({ kind: "pay", billId: r.id });
+                    }}
+                  >
+                    Pay
+                  </button>
+                )}
+                {r.sourceModule === "AP" && r.paid === 0 && r.credited === 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-quiet"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDialog({ kind: "void", bill: r });
+                    }}
+                  >
+                    Void
+                  </button>
+                )}
+              </span>
             ),
           },
         ]
@@ -137,6 +157,12 @@ export function SupplierDetail({ id }: { id: string }) {
       render: (p) => <span className={p.status === "REVERSED" ? "muted strike" : "strong"}>{amount(p.amount)}</span>,
     },
     { key: "status", header: <span className="sr-only">Status</span>, width: 96, render: (p) => (p.status === "REVERSED" ? <Badge tone="negative">Reversed</Badge> : null) },
+    {
+      key: "remittance",
+      header: <span className="sr-only">Remittance advice</span>,
+      width: 120,
+      render: (p) => <PdfButton path={`/api/v1/ap/payments/${p.id}/remittance.pdf`} filename={`remittance-${p.paymentNumber}.pdf`} label="Remittance" />,
+    },
     ...(manage
       ? [
           {
@@ -300,6 +326,7 @@ export function SupplierDetail({ id }: { id: string }) {
                     ["payments", "Payments"],
                     ["advances", `Advances${advances.data?.length ? ` (${advances.data.length})` : ""}`],
                     ["activity", "Account activity"],
+                    ["statement", "Statement"],
                   ] as Array<[Tab, string]>
                 ).map(([key, label]) => (
                   <button key={key} type="button" role="tab" aria-selected={tab === key} className={`tab ${tab === key ? "on" : ""}`} onClick={() => setTab(key)}>
@@ -315,6 +342,7 @@ export function SupplierDetail({ id }: { id: string }) {
                       columns={billColumns(false)}
                       rows={st.rows}
                       rowKey={(r) => r.id}
+                      onRowClick={(r) => setDialog({ kind: "files", bill: r })}
                       initialSort={{ key: "due", dir: "asc" }}
                       empty={<EmptyState title="No open bills" body={`Everything billed by ${s.name} has been paid.`} />}
                       footer={
@@ -340,6 +368,7 @@ export function SupplierDetail({ id }: { id: string }) {
                       columns={billColumns(true)}
                       rows={st.rows}
                       rowKey={(r) => r.id}
+                      onRowClick={(r) => setDialog({ kind: "files", bill: r })}
                       initialSort={{ key: "date", dir: "desc" }}
                       empty={<EmptyState title="No bills yet" body="Bills from this supplier will be listed here." />}
                     />
@@ -375,6 +404,8 @@ export function SupplierDetail({ id }: { id: string }) {
                 </Loadable>
               )}
 
+              {tab === "statement" && <PeriodStatementView kind="supplier" partyId={s.id} partyCode={s.code} />}
+
               {tab === "activity" && (
                 <Loadable resource={ledger}>
                   {(l) => (
@@ -395,6 +426,12 @@ export function SupplierDetail({ id }: { id: string }) {
             {dialog?.kind === "debit" && <SupplierDebitNoteForm supplier={s} onClose={close} onSaved={saved} />}
             {dialog?.kind === "advance" && <AdvanceForm supplier={s} onClose={close} onSaved={saved} />}
             {dialog?.kind === "edit" && <SupplierForm supplier={s} onClose={close} onSaved={saved} />}
+            {dialog?.kind === "void" && <VoidBillForm bill={dialog.bill} onClose={close} onSaved={saved} />}
+            {dialog?.kind === "files" && (
+              <Drawer title={`Bill ${dialog.bill.billNumber}`} subtitle={`${s.name} · ${date(dialog.bill.billDate)} · ${amount(dialog.bill.gross)} ${currency}`} onClose={close}>
+                <AttachmentsPanel entityType="ApBill" entityId={dialog.bill.id} title="Supplier invoice and other files" />
+              </Drawer>
+            )}
             {dialog?.kind === "reverse" && <ReversePaymentForm payment={dialog.payment} onClose={close} onSaved={saved} />}
             {dialog?.kind === "allocate" && <AllocateAdvanceForm advance={dialog.advance} onClose={close} onSaved={saved} />}
             {dialog?.kind === "refund" && <RefundAdvanceForm advance={dialog.advance} onClose={close} onSaved={saved} />}

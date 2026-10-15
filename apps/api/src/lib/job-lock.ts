@@ -1,35 +1,49 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
-import { prisma } from "./prisma";
-
-function isUniqueViolation(e: unknown) {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-}
+import { autonomousPrisma as db } from "./prisma";
 
 async function acquire(key: string, holder: string, ttlMs: number) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMs);
-  try {
-    await prisma.jobLock.create({ data: { key, holder, expiresAt } });
-    return true;
-  } catch (e) {
-    if (!isUniqueViolation(e)) throw e;
-  }
-  const taken = await prisma.jobLock.updateMany({ where: { key, expiresAt: { lt: now } }, data: { holder, expiresAt } });
+  const created = await db.jobLock.createMany({ data: [{ key, holder, expiresAt }], skipDuplicates: true });
+  if (created.count) return true;
+  const taken = await db.jobLock.updateMany({ where: { key, expiresAt: { lt: now } }, data: { holder, expiresAt } });
   return taken.count > 0;
 }
 
 /**
  * Runs `fn` only if this process can take the lease on `key`; returns `null` otherwise.
  * A lease left behind by a crashed process is taken over once it expires.
+ *
+ * Leases are written outside any open transaction so other instances see them immediately. Call
+ * this outside the transaction that does the work: the lease is released when `fn` returns, which
+ * must not be before that work commits.
+ *
+ * With `renew`, the lease is extended every third of `ttlMs` while `fn` runs, so long work keeps
+ * it and only a crashed holder's lease expires.
  */
-export async function withJobLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T | null> {
+export async function withJobLock<T>(
+  key: string,
+  ttlMs: number,
+  fn: () => Promise<T>,
+  opts: { renew?: boolean } = {},
+): Promise<T | null> {
   const holder = randomUUID();
   if (!(await acquire(key, holder, ttlMs))) return null;
+  const timer = opts.renew
+    ? setInterval(() => {
+        db.jobLock
+          .updateMany({ where: { key, holder }, data: { expiresAt: new Date(Date.now() + ttlMs) } })
+          .then((r) => {
+            if (!r.count) console.warn(`[job-lock] lost lease ${key}`);
+          })
+          .catch((e) => console.error(`[job-lock] renewing ${key}`, e));
+      }, Math.max(Math.floor(ttlMs / 3), 1)).unref()
+    : null;
   try {
     return await fn();
   } finally {
-    await prisma.jobLock.deleteMany({ where: { key, holder } });
+    if (timer) clearInterval(timer);
+    await db.jobLock.deleteMany({ where: { key, holder } });
   }
 }
 

@@ -13,8 +13,10 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { FinancialAccount, Prisma } from "@prisma/client";
-import { defaultsFor, money, nextNumber } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import { assertFunctionalDocument, controlAccounts, defaultsFor, explicitCurrency, money, nextNumber } from "../../lib/documents";
+import { inTransaction, prisma } from "../../lib/prisma";
+import { createPayment, reversePayment } from "../ap/ap.service";
+import { createReceipt, reverseReceipt } from "../ar/ar.service";
 import { writeAudit } from "../audit/audit.service";
 import { createAccount } from "../coa/coa.service";
 import { createAndPostJournal, linesInJournalCurrency } from "../journals/journal.service";
@@ -362,7 +364,14 @@ export async function getFinancialAccount(companyId: string, id: string) {
 type MoneyInput = {
   financialAccountId: string;
   transactionDate: string | Date;
-  lines: AllocationLine[];
+  /** Account lines; not used with a customer or supplier, whose money posts to their control account. */
+  lines?: AllocationLine[];
+  /** Amount received from a customer or paid to a supplier. */
+  amount?: number;
+  customerId?: string;
+  supplierId?: string;
+  /** Invoices (customer) or bills (supplier) settled by the amount; the rest stays on account. */
+  allocations?: Array<{ documentId: string; amount: number }>;
   kind?: BankTransactionKind;
   method?: string;
   reference?: string;
@@ -374,7 +383,113 @@ type MoneyInput = {
   skipFundsCheck?: boolean;
 };
 
+const AR_METHODS: Record<string, "CASH" | "BANK" | "MOBILE_MONEY" | "CARD" | "CHEQUE"> = { CASH: "CASH", BANK_TRANSFER: "BANK", EFT: "BANK", MOBILE_MONEY: "MOBILE_MONEY", CARD: "CARD", CHEQUE: "CHEQUE" };
+const AP_METHODS: Record<string, "CASH" | "BANK" | "MOBILE_MONEY" | "CHEQUE" | "EFT"> = { CASH: "CASH", BANK_TRANSFER: "BANK", CARD: "BANK", EFT: "EFT", MOBILE_MONEY: "MOBILE_MONEY", CHEQUE: "CHEQUE" };
+const KIND_METHOD: Record<FinancialAccountKind, "CASH" | "BANK" | "MOBILE_MONEY"> = { CASH: "CASH", PETTY_CASH: "CASH", BANK: "BANK", MOBILE_MONEY: "MOBILE_MONEY" };
+
+/** Receivables and payables control accounts carry a subledger, so money reaches them only through a customer or supplier. */
+async function assertNoControlAccounts(companyId: string, lines: AllocationLine[]) {
+  const controls = await controlAccounts(companyId);
+  const hit = lines.find((l) => ["receivables", "payables"].includes(controls.get(l.accountId) ?? ""));
+  if (!hit) return;
+  const receivables = controls.get(hit.accountId) === "receivables";
+  const gl = await prisma.account.findFirst({ where: { id: hit.accountId, companyId }, select: { code: true, name: true } });
+  throw new Error(
+    `${gl ? `${gl.code} ${gl.name}` : "This account"} is a ${receivables ? "receivables" : "payables"} control account; choose the ${receivables ? "customer" : "supplier"} so their ledger is updated, or record it in ${receivables ? "Receivables" : "Payables"}`,
+  );
+}
+
+/**
+ * Money from a customer or to a supplier is recorded as an AR receipt or AP payment, which posts the one journal
+ * (to the party's control account and their subledger); the bank transaction points at that journal and document.
+ */
+async function recordPartyMoney(companyId: string, direction: "IN" | "OUT", input: MoneyInput, actor: Actor) {
+  const kind: BankTransactionKind = input.kind ?? (direction === "IN" ? "RECEIPT" : "PAYMENT");
+  if (input.customerId && input.supplierId) throw new Error("Choose either a customer or a supplier, not both");
+  if (input.customerId && (direction !== "IN" || kind !== "RECEIPT")) throw new Error("A customer can only be chosen on money received");
+  if (input.supplierId && (direction !== "OUT" || kind !== "PAYMENT")) throw new Error("A supplier can only be chosen on a payment");
+  if (input.lines?.length) throw new Error(`Money ${input.customerId ? "from a customer" : "to a supplier"} posts to their account; give the amount instead of account lines`);
+  if (!(Number(input.amount) > 0)) throw new Error("Amount must be positive");
+  const account = await loadFinancialAccount(companyId, input.financialAccountId, { active: true });
+  await assertFunctionalDocument(companyId, account.currency);
+  const amount = roundMoney(input.amount!);
+  const date = startOfDay(input.transactionDate);
+  if (direction === "OUT" && !input.skipFundsCheck) {
+    assertFundsAvailable({ balance: await glBalance(companyId, account.glAccountId), amount, allowOverdraft: account.allowOverdraft, accountName: account.name });
+  }
+  await assertReferenceFree(companyId, account.id, { reference: input.reference, chequeNumber: input.chequeNumber });
+  const defaults = await defaultsFor(companyId);
+  const allocations = input.allocations ?? [];
+  const description = input.description?.trim() || undefined;
+  let party: { name: string; controlAccountId?: string | null };
+  let link: { customerId?: string; supplierId?: string; arReceiptId?: string; apPaymentId?: string; journalId: string | null; partyType: string };
+  if (input.customerId) {
+    const receipt = await createReceipt(
+      companyId,
+      {
+        customerId: input.customerId,
+        receiptDate: date,
+        method: AR_METHODS[input.method ?? ""] ?? KIND_METHOD[account.kind],
+        amount,
+        reference: input.reference || input.chequeNumber || undefined,
+        description,
+        allocations: allocations.map((a) => ({ invoiceId: a.documentId, amount: a.amount })),
+        financialAccountId: account.id,
+      },
+      actor,
+    );
+    const customer = await prisma.customer.findUniqueOrThrow({ where: { id: receipt.customerId } });
+    party = { name: customer.name, controlAccountId: customer.arAccountId ?? defaults.accountsReceivableId };
+    link = { customerId: customer.id, arReceiptId: receipt.id, journalId: receipt.journalId, partyType: "CUSTOMER" };
+  } else {
+    const payment = await createPayment(
+      companyId,
+      {
+        supplierId: input.supplierId!,
+        paymentDate: date,
+        method: AP_METHODS[input.method ?? ""] ?? KIND_METHOD[account.kind],
+        amount,
+        reference: input.reference || input.chequeNumber || undefined,
+        description,
+        allocations: allocations.map((a) => ({ billId: a.documentId, amount: a.amount })),
+        financialAccountId: account.id,
+      },
+      actor,
+    );
+    const supplier = await prisma.supplier.findUniqueOrThrow({ where: { id: payment.supplierId } });
+    party = { name: supplier.name, controlAccountId: supplier.apAccountId ?? defaults.accountsPayableId };
+    link = { supplierId: supplier.id, apPaymentId: payment.id, journalId: payment.journalId, partyType: "SUPPLIER" };
+  }
+  const [sequence, prefix] = NUMBERING[kind];
+  const number = await nextNumber(companyId, sequence, prefix);
+  const txn = await prisma.bankTransaction.create({
+    data: {
+      ...link,
+      companyId,
+      number,
+      kind,
+      financialAccountId: account.id,
+      transactionDate: date,
+      amount,
+      method: input.method,
+      reference: input.reference || undefined,
+      chequeNumber: input.chequeNumber || undefined,
+      partyName: party.name,
+      description: description ?? (direction === "IN" ? `Received from ${party.name}` : `Paid to ${party.name}`),
+      lines: [{ accountId: party.controlAccountId, amount, description: allocations.length ? `${allocations.length} document(s) settled` : "On account" }],
+      statementLineId: input.statementLineId,
+      createdByErpUserId: actor.erpUserId,
+    },
+  });
+  await audit(companyId, actor, "POST", "BankTransaction", txn.id, { number, kind, amount, account: account.name, party: party.name, arReceiptId: txn.arReceiptId, apPaymentId: txn.apPaymentId, allocations });
+  return getTransaction(companyId, txn.id);
+}
+
 async function recordMoney(companyId: string, direction: "IN" | "OUT", input: MoneyInput, actor: Actor) {
+  if (input.customerId || input.supplierId) return recordPartyMoney(companyId, direction, input, actor);
+  if (!input.lines?.length) throw new Error("Add at least one account line, or choose a customer or supplier");
+  if (input.allocations?.length) throw new Error("Invoices and bills can only be settled when a customer or supplier is chosen");
+  await assertNoControlAccounts(companyId, input.lines);
   const account = await loadFinancialAccount(companyId, input.financialAccountId, { active: true });
   const kind: BankTransactionKind = input.kind ?? (direction === "IN" ? "RECEIPT" : "PAYMENT");
   const date = startOfDay(input.transactionDate);
@@ -407,34 +522,32 @@ async function recordMoney(companyId: string, direction: "IN" | "OUT", input: Mo
       createdByErpUserId: actor.erpUserId,
     },
   });
-  try {
-    const journal = await postBanking(
-      companyId,
-      { journalDate: date, description, referenceNumber: input.reference || number, currencyCode: account.currency, sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
-      actor,
-    );
-    await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
-  } catch (e) {
-    await prisma.bankTransaction.delete({ where: { id: txn.id } });
-    throw e;
-  }
+  const journal = await postBanking(
+    companyId,
+    { journalDate: date, description, referenceNumber: input.reference || number, currencyCode: explicitCurrency(account.currency), sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
+    actor,
+  );
+  await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
   await audit(companyId, actor, "POST", "BankTransaction", txn.id, { number, kind, amount, account: account.name, lines: input.lines });
   return getTransaction(companyId, txn.id);
 }
 
+// A transaction row and its journal commit together; a failed posting rolls the row back and its error surfaces as is.
 export function receiveMoney(companyId: string, input: MoneyInput, actor: Actor = {}) {
-  return recordMoney(companyId, "IN", { ...input, kind: input.kind ?? "RECEIPT" }, actor);
+  return inTransaction(() => recordMoney(companyId, "IN", { ...input, kind: input.kind ?? "RECEIPT" }, actor));
 }
 
 export function makePayment(companyId: string, input: MoneyInput, actor: Actor = {}) {
-  return recordMoney(companyId, "OUT", { ...input, kind: input.kind ?? "PAYMENT" }, actor);
+  return inTransaction(() => recordMoney(companyId, "OUT", { ...input, kind: input.kind ?? "PAYMENT" }, actor));
 }
 
-export async function transferFunds(
-  companyId: string,
-  input: { fromAccountId: string; toAccountId: string; transactionDate: string | Date; amount: number; fee?: number; reference?: string; chequeNumber?: string; description?: string },
-  actor: Actor = {},
-) {
+type TransferInput = { fromAccountId: string; toAccountId: string; transactionDate: string | Date; amount: number; fee?: number; reference?: string; chequeNumber?: string; description?: string };
+
+export function transferFunds(companyId: string, input: TransferInput, actor: Actor = {}) {
+  return inTransaction(() => transfer(companyId, input, actor));
+}
+
+async function transfer(companyId: string, input: TransferInput, actor: Actor) {
   const from = await loadFinancialAccount(companyId, input.fromAccountId, { active: true });
   const to = await loadFinancialAccount(companyId, input.toAccountId, { active: true });
   if (from.currency !== to.currency) throw new Error(`${from.name} is in ${from.currency} and ${to.name} is in ${to.currency}; transfers between currencies aren't supported yet`);
@@ -466,26 +579,23 @@ export async function transferFunds(
       createdByErpUserId: actor.erpUserId,
     },
   });
-  try {
-    const journal = await postBanking(
-      companyId,
-      { journalDate: date, description, referenceNumber: input.reference || number, currencyCode: from.currency, sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
-      actor,
-    );
-    await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
-  } catch (e) {
-    await prisma.bankTransaction.delete({ where: { id: txn.id } });
-    throw e;
-  }
+  const journal = await postBanking(
+    companyId,
+    { journalDate: date, description, referenceNumber: input.reference || number, currencyCode: explicitCurrency(from.currency), sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
+    actor,
+  );
+  await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
   await audit(companyId, actor, "POST", "BankTransaction", txn.id, { number, kind: "TRANSFER", transferType, amount, fee, from: from.name, to: to.name });
   return getTransaction(companyId, txn.id);
 }
 
-export async function recordCashCount(
-  companyId: string,
-  input: { financialAccountId: string; countDate: string | Date; counted: number; overShortAccountId?: string; description?: string },
-  actor: Actor = {},
-) {
+type CashCountInput = { financialAccountId: string; countDate: string | Date; counted: number; overShortAccountId?: string; description?: string };
+
+export function recordCashCount(companyId: string, input: CashCountInput, actor: Actor = {}) {
+  return inTransaction(() => cashCount(companyId, input, actor));
+}
+
+async function cashCount(companyId: string, input: CashCountInput, actor: Actor) {
   const account = await loadFinancialAccount(companyId, input.financialAccountId, { active: true });
   if (account.kind !== "CASH" && account.kind !== "PETTY_CASH") throw new Error("Cash counts are for cash and petty cash accounts");
   const date = startOfDay(input.countDate);
@@ -509,51 +619,63 @@ export async function recordCashCount(
     },
   });
   if (lines.length) {
-    try {
-      const journal = await postBanking(
-        companyId,
-        { journalDate: date, description, referenceNumber: number, currencyCode: account.currency, sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
-        actor,
-      );
-      await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
-    } catch (e) {
-      await prisma.bankTransaction.delete({ where: { id: txn.id } });
-      throw e;
-    }
+    const journal = await postBanking(
+      companyId,
+      { journalDate: date, description, referenceNumber: number, currencyCode: explicitCurrency(account.currency), sourceDocumentType: "BankTransaction", sourceDocumentId: txn.id, sourceDocumentNumber: number, lines },
+      actor,
+    );
+    await prisma.bankTransaction.update({ where: { id: txn.id }, data: { journalId: journal.id } });
   }
   await audit(companyId, actor, "POST", "BankTransaction", txn.id, { number, kind: "CASH_COUNT", counted: input.counted, bookBalance, difference });
   return getTransaction(companyId, txn.id);
 }
 
-export async function reverseTransaction(companyId: string, id: string, input: { reason: string; reversalDate?: string | Date }, actor: Actor = {}) {
+type ReversalInput = { reason: string; reversalDate?: string | Date };
+
+export function reverseTransaction(companyId: string, id: string, input: ReversalInput, actor: Actor = {}) {
+  return inTransaction(() => reverseOnce(companyId, id, input, actor));
+}
+
+async function reverseOnce(companyId: string, id: string, input: ReversalInput, actor: Actor) {
   const txn = await prisma.bankTransaction.findFirst({ where: { id, companyId } });
   if (!txn) throw new Error("Transaction does not exist");
   if (txn.status === "REVERSED") throw new Error("Transaction is already reversed");
   if (!txn.journalId) throw new Error("This cash count posted nothing, so there is nothing to reverse");
   const reversalDate = startOfDay(input.reversalDate ?? new Date());
   if (reversalDate < txn.transactionDate) throw new Error("A reversal can't be dated before the transaction");
-  const original = await prisma.journal.findFirstOrThrow({ where: { id: txn.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
-  const lines = reverseJournalLines(linesInJournalCurrency(original.lines));
-  const journal = await postBanking(
-    companyId,
-    {
-      journalDate: reversalDate,
-      description: `Reverse ${txn.number}: ${input.reason}`,
-      referenceNumber: txn.number,
-      currencyCode: original.currencyCode,
-      exchangeRate: Number(original.exchangeRate),
-      sourceDocumentType: "BankTransactionReversal",
-      sourceDocumentId: txn.id,
-      sourceDocumentNumber: txn.number,
-      lines,
-    },
-    actor,
-  );
+  // The conditional update row-locks the transaction, so a concurrent reversal waits and then finds it reversed.
+  const claimed = await prisma.bankTransaction.updateMany({ where: { id, companyId, status: { not: "REVERSED" } }, data: { status: "REVERSED" } });
+  if (!claimed.count) throw new Error("Transaction is already reversed");
+  let reversalJournalId: string;
+  if (txn.arReceiptId) {
+    reversalJournalId = (await reverseReceipt(companyId, txn.arReceiptId, actor, { reason: input.reason, reversalDate })).journalId;
+  } else if (txn.apPaymentId) {
+    reversalJournalId = (await reversePayment(companyId, txn.apPaymentId, { reason: input.reason, reversalDate }, actor)).journalId;
+  } else {
+    const original = await prisma.journal.findFirstOrThrow({ where: { id: txn.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
+    const lines = reverseJournalLines(linesInJournalCurrency(original.lines));
+    const journal = await postBanking(
+      companyId,
+      {
+        journalDate: reversalDate,
+        description: `Reverse ${txn.number}: ${input.reason}`,
+        referenceNumber: txn.number,
+        currencyCode: original.currencyCode,
+        exchangeRate: Number(original.exchangeRate),
+        sourceDocumentType: "BankTransactionReversal",
+        sourceDocumentId: txn.id,
+        sourceDocumentNumber: txn.number,
+        lines,
+      },
+      actor,
+    );
+    reversalJournalId = journal.id;
+  }
   await prisma.bankTransaction.update({
     where: { id },
-    data: { status: "REVERSED", reversalJournalId: journal.id, reversedAt: reversalDate, reversedByErpUserId: actor.erpUserId, reversalReason: input.reason },
+    data: { status: "REVERSED", reversalJournalId, reversedAt: reversalDate, reversedByErpUserId: actor.erpUserId, reversalReason: input.reason },
   });
-  await audit(companyId, actor, "REVERSE", "BankTransaction", id, { status: "REVERSED", reason: input.reason, journalId: journal.id }, { status: "POSTED" });
+  await audit(companyId, actor, "REVERSE", "BankTransaction", id, { status: "REVERSED", reason: input.reason, journalId: reversalJournalId }, { status: "POSTED" });
   return getTransaction(companyId, id);
 }
 
@@ -564,6 +686,8 @@ async function serializeTransactions(companyId: string, rows: TxnWithAccounts[])
   const journals = await prisma.journal.findMany({ where: { companyId, id: { in: journalIds } }, select: { id: true, journalNumber: true } });
   const accountIds = [...new Set(rows.flatMap((r) => ((r.lines as Array<{ accountId: string }> | null) ?? []).map((l) => l.accountId)))];
   const accounts = await prisma.account.findMany({ where: { companyId, id: { in: accountIds } }, select: { id: true, code: true, name: true } });
+  const receipts = await prisma.arReceipt.findMany({ where: { companyId, id: { in: rows.map((r) => r.arReceiptId).filter((x): x is string => !!x) } }, select: { id: true, receiptNumber: true } });
+  const payments = await prisma.apPayment.findMany({ where: { companyId, id: { in: rows.map((r) => r.apPaymentId).filter((x): x is string => !!x) } }, select: { id: true, paymentNumber: true } });
   const number = (id: string | null) => journals.find((j) => j.id === id)?.journalNumber ?? null;
   return rows.map((r) => ({
     id: r.id,
@@ -583,6 +707,12 @@ async function serializeTransactions(companyId: string, rows: TxnWithAccounts[])
     chequeNumber: r.chequeNumber,
     partyType: r.partyType,
     partyName: r.partyName,
+    customerId: r.customerId,
+    supplierId: r.supplierId,
+    arReceiptId: r.arReceiptId,
+    arReceiptNumber: receipts.find((x) => x.id === r.arReceiptId)?.receiptNumber ?? null,
+    apPaymentId: r.apPaymentId,
+    apPaymentNumber: payments.find((x) => x.id === r.apPaymentId)?.paymentNumber ?? null,
     description: r.description,
     countedAmount: r.countedAmount === null ? null : money(r.countedAmount),
     bookAmount: r.bookAmount === null ? null : money(r.bookAmount),

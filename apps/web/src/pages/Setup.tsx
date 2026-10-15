@@ -1,8 +1,26 @@
-import { useState } from "react";
+import { type ComponentType, type KeyboardEvent, useState } from "react";
 import { useFeedback } from "../components/feedback";
+import {
+  ApprovalsForm,
+  BankingForm,
+  BusinessInfoForm,
+  CurrencyForm,
+  DefaultAccountsForm,
+  FinancialYearsForm,
+  type FullSnapshot,
+  InventorySettingsForm,
+  LocalizationForm,
+  NumberingForm,
+  OpeningBalancesForm,
+  PartyDefaultsForm,
+  PoliciesForm,
+  ProfileForm,
+  type SectionProps,
+} from "../components/SetupForms";
 import { Badge, ErrorState, PageHeader, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { calendarDate, date, dateTime, humanize } from "../lib/format";
+import { setQueryParam, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
 
 const SECTION_LABELS: Record<string, string> = {
@@ -22,23 +40,23 @@ const SECTION_LABELS: Record<string, string> = {
   REVIEW_ACTIVATION: "Review and activate",
 };
 
-type Gate = { canActivate: boolean; status: string; missing: string[]; errors: string[] };
+const SECTION_FORMS: Record<string, ComponentType<SectionProps>> = {
+  COMPANY_PROFILE: ProfileForm,
+  BUSINESS_ACCOUNTING_INFO: BusinessInfoForm,
+  FINANCIAL_YEAR_PERIODS: FinancialYearsForm,
+  CURRENCY: CurrencyForm,
+  ACCOUNTING_POLICIES: PoliciesForm,
+  LOCALIZATION: LocalizationForm,
+  DEFAULT_POSTING_ACCOUNTS: DefaultAccountsForm,
+  INVENTORY_SETTINGS: InventorySettingsForm,
+  PARTY_DEFAULTS: PartyDefaultsForm,
+  BANKING_PAYMENT: BankingForm,
+  TRANSACTION_NUMBERING: NumberingForm,
+  APPROVAL_POSTING_CONTROLS: ApprovalsForm,
+  OPENING_BALANCES: OpeningBalancesForm,
+};
 
-/** Steps the guided quick setup has always run: standard Rwandan retail defaults and sample company details. */
-const QUICK_SETUP_STEPS: Array<[string, RequestInit]> = [
-  ["/api/v1/setup/profile", { method: "PUT", body: JSON.stringify({ registeredName: "Excel Edge Demo Co", taxIdentificationNumber: "999999999", country: "RW", businessEmail: "accounts@exceledge.demo" }) }],
-  ["/api/v1/setup/business-info", { method: "PUT", body: JSON.stringify({ businessType: "RETAIL", accountingBasis: "ACCRUAL", reportingFramework: "IFRS_SME" }) }],
-  ["/api/v1/setup/financial-years", { method: "POST", body: JSON.stringify({ name: "FY 2026", startDate: "2026-01-01", endDate: "2026-12-31", periodFrequency: "MONTHLY" }) }],
-  ["/api/v1/setup/currency", { method: "PUT", body: JSON.stringify({ functionalCurrency: "RWF", decimalPrecision: 0 }) }],
-  ["/api/v1/setup/policies", { method: "PUT", body: JSON.stringify({ accountingBasis: "ACCRUAL", inventoryValuationMethod: "WEIGHTED_AVERAGE" }) }],
-  ["/api/v1/setup/localization", { method: "PUT", body: JSON.stringify({ countryOfRegistration: "RW", localizationPackage: "RW", taxAuthority: "RRA", electronicInvoicingRequired: true }) }],
-  ["/api/v1/setup/default-accounts/ensure", { method: "POST" }],
-  ["/api/v1/setup/inventory-settings", { method: "PUT", body: JSON.stringify({ automaticCogsPosting: true }) }],
-  ["/api/v1/setup/party-defaults", { method: "PUT", body: JSON.stringify({ customerPaymentTerms: "NET30" }) }],
-  ["/api/v1/setup/banking", { method: "PUT", body: JSON.stringify({ defaultReceiptMethod: "CASH", defaultPaymentMethod: "MOBILE_MONEY" }) }],
-  ["/api/v1/setup/numbering/ensure", { method: "POST" }],
-  ["/api/v1/setup/approvals", { method: "PUT", body: JSON.stringify({ approvalWorkflowEnabled: true, approvalLevels: 1, periodLockEnforcement: true }) }],
-];
+type Gate = { canActivate: boolean; status: string; missing: string[]; errors: string[] };
 
 function sectionState(status: string) {
   if (status === "COMPLETED" || status === "APPROVED") return { tick: "done", badge: <span className="muted small">{humanize(status)}</span> };
@@ -52,11 +70,12 @@ export function Setup() {
   const { api, apiWithMessage, can } = useSession();
   const { toast, confirm } = useFeedback();
   const company = useCompany();
+  const { query } = useLocation();
   const [gate, setGate] = useState<Gate | null>(null);
-  const [busy, setBusy] = useState<"" | "check" | "activate" | "quick">("");
+  const [busy, setBusy] = useState<"" | "check" | "activate">("");
 
   const d = company.dashboard;
-  const snap = company.snapshot;
+  const snap = company.snapshot as unknown as FullSnapshot | undefined;
 
   async function check() {
     setBusy("check");
@@ -74,7 +93,7 @@ export function Setup() {
   async function activate() {
     const ok = await confirm({
       title: "Activate accounting?",
-      body: "Once active, sales and purchases from Excel Edge start posting to the general ledger, and the financial year settings are locked in.",
+      body: "Once active, sales and purchases from Excel Edge start posting to the general ledger. The functional currency and inventory valuation method are locked in.",
       confirmLabel: "Activate",
     });
     if (!ok) return;
@@ -91,31 +110,7 @@ export function Setup() {
     }
   }
 
-  async function quickSetup() {
-    const ok = await confirm({
-      title: "Run quick setup?",
-      body: "This fills every section with standard Rwandan retail defaults and sample company details (Excel Edge Demo Co, TIN 999999999), then activates accounting. Use it for demos and testing, not for a real company.",
-      confirmLabel: "Run quick setup",
-    });
-    if (!ok) return;
-    setBusy("quick");
-    try {
-      for (const [path, init] of QUICK_SETUP_STEPS) await api(path, init);
-      for (const key of ["FINANCIAL_YEAR_PERIODS", "CURRENCY", "ACCOUNTING_POLICIES"]) {
-        await api(`/api/v1/setup/sections/${key}/approve`, { method: "POST" });
-      }
-      const res = await apiWithMessage("/api/v1/setup/activation/activate", { method: "POST" });
-      toast(res.message ?? "Accounting activated");
-      company.reload();
-    } catch (e) {
-      toast((e as Error).message, { error: true });
-      company.reload();
-    } finally {
-      setBusy("");
-    }
-  }
-
-  if (!d) {
+  if (!d || !snap) {
     return (
       <>
         <PageHeader title="Company setup" />
@@ -132,7 +127,23 @@ export function Setup() {
 
   const activated = d.activationStatus === "ACTIVATED";
   const pct = Math.round((d.counts.completed / Math.max(1, d.counts.total)) * 100);
-  const year = snap?.years.find((y) => y.isCurrent) ?? snap?.years[0];
+  const firstOpen = d.sections.find((s) => s.status !== "COMPLETED" && s.status !== "APPROVED")?.key;
+  const requested = query.get("section");
+  const selected = requested && SECTION_LABELS[requested] ? requested : (firstOpen ?? "COMPANY_PROFILE");
+  const selectedStatus = d.sections.find((s) => s.key === selected)?.status ?? "NOT_STARTED";
+  const Form = SECTION_FORMS[selected];
+  const year = snap.years.find((y) => y.isCurrent) ?? snap.years[0];
+
+  function choose(key: string) {
+    setQueryParam("section", key);
+  }
+
+  function onKey(e: KeyboardEvent<HTMLLIElement>, key: string) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      choose(key);
+    }
+  }
 
   return (
     <>
@@ -140,8 +151,8 @@ export function Setup() {
         title="Company setup"
         description={
           activated
-            ? `Accounting is active${d.activatedAt ? ` since ${date(d.activatedAt)}` : ""}.`
-            : "Complete these sections, then activate accounting to start posting."
+            ? `Accounting is active${d.activatedAt ? ` since ${date(d.activatedAt)}` : ""}. Settings can still be adjusted; the currency and valuation method are locked.`
+            : "Complete each section, then activate accounting to start posting."
         }
         actions={
           !activated && (
@@ -165,9 +176,7 @@ export function Setup() {
         }
       />
 
-      {d.activationStatus === "CONFIGURATION_ERROR" && (
-        <div className="notice error">Some sections have configuration errors. Fix them before activating.</div>
-      )}
+      {d.activationStatus === "CONFIGURATION_ERROR" && <div className="notice error">Some sections have configuration errors. Fix them before activating.</div>}
       {gate && !gate.canActivate && (
         <div className="notice">
           <div className="grow">
@@ -182,7 +191,7 @@ export function Setup() {
       )}
       {gate?.canActivate && !activated && <div className="notice info">Everything required is in place. You can activate accounting.</div>}
 
-      <div className="overview-grid" style={{ marginTop: 0 }}>
+      <div className="setup-grid">
         <section>
           <div className="section-head">
             <h2 className="section-title">Setup checklist</h2>
@@ -196,11 +205,20 @@ export function Setup() {
                 <div style={{ width: `${pct}%` }} />
               </div>
             </div>
-            <ul className="checklist">
+            <ul className="checklist" role="listbox" aria-label="Setup sections">
               {d.sections.map((s) => {
                 const st = sectionState(s.status);
+                const on = s.key === selected;
                 return (
-                  <li key={s.key}>
+                  <li
+                    key={s.key}
+                    role="option"
+                    aria-selected={on}
+                    tabIndex={0}
+                    className={`selectable ${on ? "on" : ""}`}
+                    onClick={() => choose(s.key)}
+                    onKeyDown={(e) => onKey(e, s.key)}
+                  >
                     <span className={`tick ${st.tick}`} aria-hidden="true">
                       {st.tick === "done" ? "✓" : st.tick === "error" ? "!" : ""}
                     </span>
@@ -217,45 +235,46 @@ export function Setup() {
         </section>
 
         <section>
-          <div className="section-head">
-            <h2 className="section-title">Company details</h2>
-          </div>
-          <div className="panel panel-body">
-            <dl className="dl">
-              <dt>Registered name</dt>
-              <dd>{snap?.profile?.registeredName ?? <span className="muted">Not set</span>}</dd>
-              <dt>TIN</dt>
-              <dd>{snap?.profile?.taxIdentificationNumber ?? <span className="muted">Not set</span>}</dd>
-              <dt>Country</dt>
-              <dd>{d.country ? (d.country === "RW" ? "Rwanda" : d.country) : <span className="muted">Not set</span>}</dd>
-              <dt>Currency</dt>
-              <dd>{d.functionalCurrency ?? <span className="muted">Not set</span>}</dd>
-              <dt>Tax authority</dt>
-              <dd>
-                {snap?.localization?.taxAuthority ?? <span className="muted">Not set</span>}
-                {snap?.localization?.electronicInvoicingRequired && <span className="muted"> · EBM e-invoicing required</span>}
-              </dd>
-              <dt>Financial year</dt>
-              <dd>{year ? `${year.name} (${calendarDate(year.startDate)} – ${calendarDate(year.endDate)})` : <span className="muted">Not set</span>}</dd>
-              <dt>Open period</dt>
-              <dd>{d.currentOpenPeriod?.name ?? <span className="muted">None open</span>}</dd>
-              <dt>ERP organisation</dt>
-              <dd className="muted">#{d.externalErpOrganizationId}</dd>
-            </dl>
-          </div>
-
-          {!activated && can("setup:prepare") && can("setup:approve") && can("setup:activate") && (
-            <div className="panel panel-body" style={{ marginTop: 16 }}>
-              <h3 className="section-title">Quick setup for demos</h3>
-              <p className="muted small" style={{ margin: "4px 0 12px" }}>
-                Fills every section with standard Rwandan retail defaults and sample company details, then activates. Not for real companies.
+          {Form ? (
+            <Form key={selected} snap={snap} sectionKey={selected} status={selectedStatus} activated={activated} onSaved={company.reload} />
+          ) : (
+            <div className="panel panel-body">
+              <h2 className="section-title">Review and activate</h2>
+              <p className="muted small" style={{ margin: "4px 0 14px" }}>
+                {activated
+                  ? `Accounting was activated ${d.activatedAt ? dateTime(d.activatedAt) : ""}.`
+                  : "Check readiness to see what is still missing. Once every required section is complete, activate accounting."}
               </p>
-              <button type="button" className="btn" disabled={Boolean(busy)} onClick={() => void quickSetup()}>
-                {busy === "quick" ? "Running setup…" : "Run quick setup"}
-              </button>
+              <dl className="dl">
+                <dt>Registered name</dt>
+                <dd>{snap.profile?.registeredName ? String(snap.profile.registeredName) : <span className="muted">Not set</span>}</dd>
+                <dt>TIN</dt>
+                <dd>{snap.profile?.taxIdentificationNumber ? String(snap.profile.taxIdentificationNumber) : <span className="muted">Not set</span>}</dd>
+                <dt>Country</dt>
+                <dd>{d.country ? (d.country === "RW" ? "Rwanda" : d.country) : <span className="muted">Not set</span>}</dd>
+                <dt>Currency</dt>
+                <dd>{d.functionalCurrency ?? <span className="muted">Not set</span>}</dd>
+                <dt>Financial year</dt>
+                <dd>{year ? `${year.name} (${calendarDate(year.startDate)} – ${calendarDate(year.endDate)})` : <span className="muted">Not set</span>}</dd>
+                <dt>Open period</dt>
+                <dd>{d.currentOpenPeriod?.name ?? <span className="muted">None open</span>}</dd>
+                <dt>ERP organisation</dt>
+                <dd className="muted">#{d.externalErpOrganizationId}</dd>
+              </dl>
+              {!activated && (
+                <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={() => void check()}>
+                    {busy === "check" ? "Checking…" : "Check readiness"}
+                  </button>
+                  {can("setup:activate") && (
+                    <button type="button" className="btn btn-primary" disabled={Boolean(busy) || d.activationStatus !== "READY"} onClick={() => void activate()}>
+                      {busy === "activate" ? "Activating…" : "Activate accounting"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
-          {activated && d.activatedAt && <p className="muted small" style={{ marginTop: 10 }}>Activated {dateTime(d.activatedAt)}</p>}
         </section>
       </div>
     </>

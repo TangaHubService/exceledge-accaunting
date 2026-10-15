@@ -302,6 +302,7 @@ export type AccountingCapability =
   | "journal:view"
   | "journal:create"
   | "journal:post"
+  | "journal:approve"
   | "journal:reverse"
   | "gl:view"
   | "exceptions:view"
@@ -351,6 +352,7 @@ const ALL_FINANCE: AccountingCapability[] = [
   "journal:view",
   "journal:create",
   "journal:post",
+  "journal:approve",
   "journal:reverse",
   "gl:view",
   "exceptions:view",
@@ -426,6 +428,7 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "journal:view",
     "journal:create",
     "journal:post",
+    "journal:approve",
     "journal:reverse",
     "gl:view",
     "exceptions:view",
@@ -500,12 +503,13 @@ export const SYSTEM_ACCOUNT_SEED: Array<{
   { code: "2300", name: "PAYE Payable", type: "LIABILITY", systemProtected: true },
   { code: "2310", name: "RSSB Contributions Payable", type: "LIABILITY", systemProtected: true },
   { code: "2320", name: "Net Salaries Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2400", name: "Bank Charges", type: "EXPENSE", systemProtected: true },
   { code: "3100", name: "Retained Earnings", type: "EQUITY", systemProtected: true },
   { code: "3200", name: "Current Year Earnings", type: "EQUITY", systemProtected: true },
   { code: "3300", name: "Asset Revaluation Reserve", type: "EQUITY", systemProtected: true },
   { code: "4100", name: "Sales Revenue", type: "INCOME", systemProtected: true },
   { code: "4110", name: "Service Revenue", type: "INCOME", systemProtected: true },
+  { code: "4400", name: "Sales Discounts", type: "INCOME", systemProtected: true },
+  { code: "4410", name: "Sales Returns", type: "INCOME", systemProtected: true },
   { code: "4200", name: "Interest Income", type: "OTHER_INCOME", systemProtected: true },
   { code: "4300", name: "Foreign Exchange Gain", type: "OTHER_INCOME", systemProtected: true },
   { code: "5100", name: "Cost of Sales", type: "COST_OF_SALES", systemProtected: true },
@@ -517,15 +521,26 @@ export const SYSTEM_ACCOUNT_SEED: Array<{
   { code: "6400", name: "Inventory Adjustment", type: "EXPENSE", systemProtected: true },
   { code: "6410", name: "Inventory Write-Off", type: "EXPENSE", systemProtected: true },
   { code: "6420", name: "Inventory Loss", type: "EXPENSE", systemProtected: true },
+  { code: "6430", name: "Bank Charges", type: "EXPENSE", systemProtected: true },
   { code: "6500", name: "Foreign Exchange Loss", type: "OTHER_EXPENSE", systemProtected: true },
-  { code: "6600", name: "Suspense Account", type: "ASSET", systemProtected: true },
+  { code: "1900", name: "Suspense Account", type: "ASSET", systemProtected: true },
+  { code: "1590", name: "Asset Disposal", type: "ASSET", systemProtected: true },
   { code: "6700", name: "Rounding Difference", type: "EXPENSE", systemProtected: true },
-  { code: "6800", name: "Sales Discounts", type: "INCOME", systemProtected: true },
-  { code: "6810", name: "Sales Returns", type: "INCOME", systemProtected: true },
-  { code: "6900", name: "Inventory Gain", type: "OTHER_INCOME", systemProtected: true },
-  { code: "7100", name: "Asset Disposal", type: "ASSET", systemProtected: true },
-  { code: "7110", name: "Gain on Disposal", type: "OTHER_INCOME", systemProtected: true },
-  { code: "7120", name: "Loss on Disposal", type: "OTHER_EXPENSE", systemProtected: true },
+  { code: "7200", name: "Inventory Gain", type: "OTHER_INCOME", systemProtected: true },
+  { code: "7300", name: "Gain on Disposal", type: "OTHER_INCOME", systemProtected: true },
+  { code: "8100", name: "Loss on Disposal", type: "OTHER_EXPENSE", systemProtected: true },
+];
+
+/** Old → new system account codes (Seg 3.7 ranges). Applied on seed and by migration for existing companies. */
+export const SYSTEM_ACCOUNT_CODE_REMAP: ReadonlyArray<{ from: string; to: string; name: string }> = [
+  { from: "2400", to: "6430", name: "Bank Charges" },
+  { from: "6600", to: "1900", name: "Suspense Account" },
+  { from: "6800", to: "4400", name: "Sales Discounts" },
+  { from: "6810", to: "4410", name: "Sales Returns" },
+  { from: "6900", to: "7200", name: "Inventory Gain" },
+  { from: "7100", to: "1590", name: "Asset Disposal" },
+  { from: "7110", to: "7300", name: "Gain on Disposal" },
+  { from: "7120", to: "8100", name: "Loss on Disposal" },
 ];
 
 export const MANDATORY_DEFAULT_ACCOUNT_KEYS = [
@@ -767,9 +782,14 @@ export interface JournalLineDraft {
   description?: string;
   debit: number;
   credit: number;
+  /** Debit-positive foreign amount when the journal is already in functional money */
+  amountForeign?: number;
   taxCode?: string;
   customerRef?: string;
   supplierRef?: string;
+  costCentre?: string;
+  project?: string;
+  branchId?: string;
 }
 
 export function sumJournalLines(lines: JournalLineDraft[]) {
@@ -851,6 +871,9 @@ export interface DefaultAccountMap {
   gainOnDisposalId?: string | null;
   lossOnDisposalId?: string | null;
   assetRevaluationReserveId?: string | null;
+  revaluationLossId?: string | null;
+  fxGainId?: string | null;
+  fxLossId?: string | null;
 }
 
 export interface SaleEventAmounts {
@@ -1389,6 +1412,7 @@ export const INVENTORY_MOVEMENT_KINDS = [
   "EXPIRED",
   "TRANSFER_IN",
   "TRANSFER_OUT",
+  "SUPPLIER_RETURN",
 ] as const;
 export type InventoryMovementKind = (typeof INVENTORY_MOVEMENT_KINDS)[number];
 export type InventoryCostingMethod = "FIFO" | "WEIGHTED_AVERAGE" | "SPECIFIC_IDENTIFICATION";
@@ -1550,20 +1574,22 @@ function inventoryContraAccount(defaults: DefaultAccountMap, kind: InventoryMove
     case "TRANSFER_OUT":
       return { accountId: defaults.goodsInTransitId, label: "Goods in transit" };
     case "SALE":
-      return { accountId: null, label: "" };
+      return { accountId: defaults.costOfSalesId, label: "Cost of goods sold" };
+    case "SUPPLIER_RETURN":
+      return { accountId: defaults.purchaseReturnsId || defaults.purchasesId, label: "Goods returned to supplier" };
   }
 }
 
 /**
- * GL lines for an inventory movement. Sales return no lines because their cost of goods sold is posted
- * with the sale journal. A negative value (e.g. an opening snapshot below the recorded value) reverses sides.
+ * GL lines for an inventory movement. Sales post cost of goods sold at valuation cost.
+ * A negative value (e.g. an opening snapshot below the recorded value) reverses sides.
  */
 export function buildInventoryMovementLines(
   defaults: DefaultAccountMap,
   input: { kind: InventoryMovementKind; value: number },
 ): JournalLineDraft[] {
   const value = roundMoney(input.value);
-  if (input.kind === "SALE" || value === 0) return [];
+  if (value === 0) return [];
   if (!defaults.inventoryAssetId) throw new Error("Inventory asset account is not configured");
   const contra = inventoryContraAccount(defaults, input.kind);
   if (!contra.accountId) throw new Error(`No account is mapped for ${contra.label.toLowerCase()}`);
@@ -2387,7 +2413,7 @@ export const EXPENSE_CATEGORY_SEED: Array<{ code: string; name: string; glAccoun
   { code: "MAINT", name: "Repairs and maintenance", glAccountCode: "6180" },
   { code: "SOFT", name: "Software subscriptions", glAccountCode: "6190" },
   { code: "SALARY", name: "Salaries and wages", glAccountCode: "6100" },
-  { code: "BANK", name: "Bank charges", glAccountCode: "2400" },
+  { code: "BANK", name: "Bank charges", glAccountCode: "6430" },
   { code: "MISC", name: "Miscellaneous expenses" },
 ];
 
@@ -2475,8 +2501,11 @@ export function expenseByCategoryTotals(rows: Array<{ categoryName: string; amou
 
 /* ── Fixed assets (Phase 10 / Segment 13) ───────────────── */
 
-export const DEPRECIATION_METHODS = ["STRAIGHT_LINE", "REDUCING_BALANCE"] as const;
+export const DEPRECIATION_METHODS = ["STRAIGHT_LINE", "REDUCING_BALANCE", "SUM_OF_YEARS_DIGITS", "UNITS_OF_PRODUCTION"] as const;
 export type DepreciationMethod = (typeof DEPRECIATION_METHODS)[number];
+
+export const DEPRECIATION_FREQUENCIES = ["MONTHLY", "QUARTERLY", "ANNUAL"] as const;
+export type DepreciationFrequency = (typeof DEPRECIATION_FREQUENCIES)[number];
 
 export const ASSET_STATUSES = ["REGISTERED", "ACTIVE", "FULLY_DEPRECIATED", "DISPOSED"] as const;
 export type AssetStatus = (typeof ASSET_STATUSES)[number];
@@ -2515,15 +2544,78 @@ export function netBookValue(cost: number, accumulated: number) {
   return roundMoney(Math.max(0, roundMoney(cost) - roundMoney(accumulated)));
 }
 
-/** Monthly straight-line charge. Land (life 0) and fully depreciated assets return 0. */
-export function straightLineMonthly(input: { cost: number; residual: number; usefulLifeMonths: number; accumulated: number }) {
+/**
+ * Where the current depreciation schedule starts. A revaluation restarts it: `base` is the
+ * depreciable amount then and `baseMonth` the months already depreciated, so the rest of the
+ * useful life spreads the revalued amount. Without a restart the base is cost less residual.
+ */
+export type DepreciationSchedule = { monthsElapsed?: number; base?: number | null; baseMonth?: number };
+
+/**
+ * Monthly straight-line charge. Land (life 0) and fully depreciated assets return 0. With
+ * `monthsElapsed`, the last month of life takes whatever is left above residual (rounding).
+ */
+export function straightLineMonthly(input: { cost: number; residual: number; usefulLifeMonths: number; accumulated: number } & DepreciationSchedule) {
   const { cost, residual, depreciable } = assertResidualOk(input.cost, input.residual);
   const life = Math.floor(input.usefulLifeMonths);
-  if (life <= 0 || depreciable <= 0) return 0;
+  const baseMonth = Math.max(0, Math.floor(input.baseMonth ?? 0));
+  const base = input.base == null ? depreciable : roundMoney(input.base);
+  if (life - baseMonth <= 0 || base <= 0) return 0;
   const nbv = netBookValue(cost, input.accumulated);
   if (nbv <= residual) return 0;
-  const monthly = roundMoney(depreciable / life);
+  if (input.monthsElapsed !== undefined && input.monthsElapsed >= life - 1) return roundMoney(nbv - residual);
+  const monthly = roundMoney(base / (life - baseMonth));
   return roundMoney(Math.min(monthly, nbv - residual));
+}
+
+/**
+ * Sum-of-years-digits charge for one month. Asset years count from the first depreciated month
+ * (a full month's charge from the first run, as for straight-line); each year's share is spread
+ * evenly over its months, a short final year over the months it has. The last month of life takes
+ * whatever is left above residual.
+ */
+export function sumOfYearsDigitsMonthly(
+  input: { cost: number; residual: number; usefulLifeMonths: number; accumulated: number; monthsElapsed: number } & DepreciationSchedule,
+) {
+  const { cost, residual, depreciable } = assertResidualOk(input.cost, input.residual);
+  const baseMonth = Math.max(0, Math.floor(input.baseMonth ?? 0));
+  const life = Math.floor(input.usefulLifeMonths) - baseMonth;
+  const month = Math.floor(input.monthsElapsed) - baseMonth;
+  const base = input.base == null ? depreciable : roundMoney(input.base);
+  const remaining = roundMoney(netBookValue(cost, input.accumulated) - residual);
+  if (life <= 0 || month < 0 || base <= 0 || remaining <= 0) return 0;
+  if (month >= life - 1) return remaining;
+  const years = Math.ceil(life / 12);
+  const year = Math.floor(month / 12);
+  const monthsInYear = year === years - 1 ? life - 12 * (years - 1) : 12;
+  const digits = (years * (years + 1)) / 2;
+  const monthly = roundMoney((base * (years - year)) / digits / monthsInYear);
+  return roundMoney(Math.min(monthly, remaining));
+}
+
+/**
+ * Units-of-production charge: (cost − residual) × units used ÷ total estimated units. Charged on
+ * what is left (carrying amount above residual over units not yet depreciated), which equals that
+ * formula until a revaluation or impairment changes the carrying amount. Never goes below residual.
+ */
+export function unitsOfProductionCharge(input: {
+  cost: number;
+  residual: number;
+  accumulated: number;
+  totalUnits?: number | null;
+  unitsDepreciated: number;
+  units: number;
+}) {
+  const { cost, residual } = assertResidualOk(input.cost, input.residual);
+  const total = Number(input.totalUnits ?? 0);
+  if (!(total > 0)) throw new Error("Units-of-production assets need total estimated units");
+  const units = Number(input.units);
+  if (!(units >= 0)) throw new Error("Units used cannot be negative");
+  const remaining = roundMoney(netBookValue(cost, input.accumulated) - residual);
+  if (units === 0 || remaining <= 0) return 0;
+  const unitsLeft = total - Math.max(0, Number(input.unitsDepreciated));
+  if (units >= unitsLeft) return remaining;
+  return roundMoney(Math.min(remaining, (remaining * units) / unitsLeft));
 }
 
 /** Monthly reducing-balance charge using an annual rate percent. */
@@ -2538,17 +2630,95 @@ export function reducingBalanceMonthly(input: { cost: number; residual: number; 
   return roundMoney(Math.min(monthly, nbv - residual));
 }
 
-export function depreciationCharge(
-  method: DepreciationMethod,
-  input: { cost: number; residual: number; usefulLifeMonths: number; ratePercent?: number; accumulated: number },
-) {
+export type DepreciationInput = {
+  cost: number;
+  residual: number;
+  usefulLifeMonths: number;
+  ratePercent?: number;
+  accumulated: number;
+  totalUnits?: number | null;
+  unitsDepreciated?: number;
+  units?: number;
+} & DepreciationSchedule;
+
+/** One month's charge (units-of-production: the charge for `units`). */
+export function depreciationCharge(method: DepreciationMethod, input: DepreciationInput) {
   if (method === "STRAIGHT_LINE") return straightLineMonthly(input);
+  if (method === "SUM_OF_YEARS_DIGITS") return sumOfYearsDigitsMonthly({ ...input, monthsElapsed: input.monthsElapsed ?? 0 });
+  if (method === "UNITS_OF_PRODUCTION") {
+    return unitsOfProductionCharge({ ...input, unitsDepreciated: input.unitsDepreciated ?? 0, units: input.units ?? 0 });
+  }
   return reducingBalanceMonthly({
     cost: input.cost,
     residual: input.residual,
     ratePercent: input.ratePercent ?? 0,
     accumulated: input.accumulated,
   });
+}
+
+/** Charge for `months` consecutive months starting at `input.monthsElapsed` (units-of-production: for `input.units`). */
+export function depreciationForMonths(method: DepreciationMethod, input: DepreciationInput, months: number) {
+  if (method === "UNITS_OF_PRODUCTION") return depreciationCharge(method, input);
+  let accumulated = roundMoney(input.accumulated);
+  let total = 0;
+  for (let i = 0; i < Math.floor(months); i += 1) {
+    const charge = depreciationCharge(method, { ...input, accumulated, monthsElapsed: (input.monthsElapsed ?? 0) + i });
+    if (!(charge > 0)) break;
+    total = roundMoney(total + charge);
+    accumulated = roundMoney(accumulated + charge);
+  }
+  return total;
+}
+
+function periodMonthIndex(period: string) {
+  if (!/^\d{4}-\d{2}$/.test(period)) throw new Error("Use a yyyy-mm depreciation period");
+  const [y, m] = period.split("-").map(Number);
+  if (m < 1 || m > 12) throw new Error("Use a yyyy-mm depreciation period");
+  return y * 12 + (m - 1);
+}
+
+/** Months from `from` to `to` inclusive (yyyy-mm); 0 when `to` is before `from`. */
+export function periodsBetween(from: string, to: string) {
+  return Math.max(0, periodMonthIndex(to) - periodMonthIndex(from) + 1);
+}
+
+export function shiftPeriod(period: string, months: number) {
+  const i = periodMonthIndex(period) + months;
+  return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+}
+
+/** Whether `period` closes a depreciation interval: every month, each financial quarter, or the financial year's last month. */
+export function isDepreciationBoundary(frequency: DepreciationFrequency, period: string, yearStartMonth = 1) {
+  const month = (periodMonthIndex(period) % 12) + 1;
+  const offset = (month - Math.floor(yearStartMonth) + 12) % 12;
+  if (frequency === "QUARTERLY") return offset % 3 === 2;
+  if (frequency === "ANNUAL") return offset === 11;
+  return true;
+}
+
+/**
+ * IAS 16 revaluation split. An increase first reverses decreases previously charged to profit or
+ * loss, the rest goes to the revaluation surplus; a decrease first uses the asset's surplus, the
+ * rest is charged to profit or loss.
+ */
+export function revaluationSplit(input: { carrying: number; fairValue: number; surplusBalance: number; lossInPl: number }) {
+  const carrying = roundMoney(input.carrying);
+  const fairValue = roundMoney(input.fairValue);
+  if (fairValue < 0) throw new Error("Fair value cannot be negative");
+  const surplus = Math.max(0, roundMoney(input.surplusBalance));
+  const lossInPl = Math.max(0, roundMoney(input.lossInPl));
+  const increase = fairValue > carrying;
+  const amount = roundMoney(Math.abs(fairValue - carrying));
+  const pl = increase ? Math.min(amount, lossInPl) : roundMoney(amount - Math.min(amount, surplus));
+  const reserve = roundMoney(amount - pl);
+  return {
+    increase,
+    amount,
+    reserveAmount: reserve,
+    plAmount: roundMoney(pl),
+    surplusAfter: roundMoney(increase ? surplus + reserve : surplus - reserve),
+    lossInPlAfter: roundMoney(increase ? lossInPl - pl : lossInPl + pl),
+  };
 }
 
 export function buildAssetCapitalizationLines(input: {
@@ -2587,7 +2757,7 @@ export function buildDepreciationLines(input: {
   return lines;
 }
 
-/** Dispose: remove cost and accum dep; record proceeds and gain/loss. */
+/** Dispose: remove cost and accum dep; record proceeds and gain/loss; move any revaluation surplus left to retained earnings. */
 export function buildDisposalLines(input: {
   assetAccountId: string;
   accumulatedAccountId: string;
@@ -2597,6 +2767,9 @@ export function buildDisposalLines(input: {
   cost: number;
   accumulated: number;
   proceeds: number;
+  revaluationSurplus?: number;
+  reserveAccountId?: string | null;
+  retainedEarningsId?: string | null;
   description?: string;
 }): JournalLineDraft[] {
   const cost = roundMoney(input.cost);
@@ -2608,10 +2781,10 @@ export function buildDisposalLines(input: {
   const nbv = netBookValue(cost, accumulated);
   const gain = roundMoney(proceeds - nbv);
   const description = input.description || "Asset disposal";
-  const lines: JournalLineDraft[] = [
-    { accountId: input.accumulatedAccountId, description, debit: accumulated, credit: 0 },
-    { accountId: input.assetAccountId, description, debit: 0, credit: cost },
-  ];
+  const lines: JournalLineDraft[] = [{ accountId: input.assetAccountId, description, debit: 0, credit: cost }];
+  if (accumulated > 0) {
+    lines.unshift({ accountId: input.accumulatedAccountId, description, debit: accumulated, credit: 0 });
+  }
   if (proceeds > 0) {
     if (!input.proceedsAccountId) throw new Error("Choose the bank or receivable account for disposal proceeds");
     lines.push({ accountId: input.proceedsAccountId, description, debit: proceeds, credit: 0 });
@@ -2623,48 +2796,91 @@ export function buildDisposalLines(input: {
     if (!input.lossAccountId) throw new Error("Map a loss on disposal account");
     lines.push({ accountId: input.lossAccountId, description, debit: roundMoney(-gain), credit: 0 });
   }
+  const surplus = roundMoney(input.revaluationSurplus ?? 0);
+  if (surplus > 0) {
+    if (!input.reserveAccountId || !input.retainedEarningsId) throw new Error("Map the revaluation reserve and retained earnings accounts");
+    lines.push(
+      { accountId: input.reserveAccountId, description, debit: surplus, credit: 0 },
+      { accountId: input.retainedEarningsId, description, debit: 0, credit: surplus },
+    );
+  }
   assertJournalBalanced(lines);
   return lines;
 }
 
+/** `reserveAmount` (default 0) of the loss is charged against the asset's revaluation surplus, the rest to `lossAccountId`. */
 export function buildImpairmentLines(input: {
   lossAccountId: string;
   accumulatedAccountId: string;
   amount: number;
+  reserveAccountId?: string | null;
+  reserveAmount?: number;
   description?: string;
 }): JournalLineDraft[] {
   const amount = roundMoney(input.amount);
   if (!(amount > 0)) throw new Error("Impairment amount must be greater than zero");
+  const reserve = roundMoney(input.reserveAmount ?? 0);
+  if (reserve < 0 || reserve > amount) throw new Error("Impairment reserve part must be between zero and the impairment amount");
+  if (reserve > 0 && !input.reserveAccountId) throw new Error("Map an asset revaluation reserve account");
+  const pl = roundMoney(amount - reserve);
   const description = input.description || "Asset impairment";
-  const lines: JournalLineDraft[] = [
-    { accountId: input.lossAccountId, description, debit: amount, credit: 0 },
-    { accountId: input.accumulatedAccountId, description, debit: 0, credit: amount },
-  ];
+  const lines: JournalLineDraft[] = [];
+  if (reserve > 0) lines.push({ accountId: input.reserveAccountId!, description, debit: reserve, credit: 0 });
+  if (pl > 0) lines.push({ accountId: input.lossAccountId, description, debit: pl, credit: 0 });
+  lines.push({ accountId: input.accumulatedAccountId, description, debit: 0, credit: amount });
   assertJournalBalanced(lines);
   return lines;
 }
 
+/**
+ * IAS 16 revaluation lines. When accumulated depreciation is given, it is eliminated against
+ * cost first (restating the gross amount), then cost is moved from carrying amount to fair value
+ * through the reserve / P&L. Without accumulated depreciation the net carrying amount is adjusted
+ * directly (legacy behaviour).
+ */
 export function buildRevaluationLines(input: {
   assetAccountId: string;
   reserveAccountId: string;
   amount: number;
   increase: boolean;
+  plAmount?: number;
+  plAccountId?: string | null;
+  /** When set with `accumulated`, restates by eliminating accum dep before the fair-value step. */
+  accumAccountId?: string | null;
+  accumulated?: number;
   description?: string;
 }): JournalLineDraft[] {
   const amount = roundMoney(input.amount);
   if (!(amount > 0)) throw new Error("Revaluation amount must be greater than zero");
+  const pl = roundMoney(input.plAmount ?? 0);
+  if (pl < 0 || pl > amount) throw new Error("Revaluation profit or loss part must be between zero and the revaluation amount");
+  if (pl > 0 && !input.plAccountId) throw new Error("Map a revaluation loss account");
+  const reserve = roundMoney(amount - pl);
   const description = input.description || "Asset revaluation";
-  const lines: JournalLineDraft[] = input.increase
-    ? [
-        { accountId: input.assetAccountId, description, debit: amount, credit: 0 },
-        { accountId: input.reserveAccountId, description, debit: 0, credit: amount },
-      ]
-    : [
-        { accountId: input.reserveAccountId, description, debit: amount, credit: 0 },
-        { accountId: input.assetAccountId, description, debit: 0, credit: amount },
-      ];
+  const lines: JournalLineDraft[] = [];
+  const accumulated = roundMoney(input.accumulated ?? 0);
+  if (accumulated > 0) {
+    if (!input.accumAccountId) throw new Error("Map an accumulated depreciation account to restate on revaluation");
+    if (input.accumAccountId === input.assetAccountId) throw new Error("Asset and accumulated depreciation accounts must differ");
+    lines.push({ accountId: input.accumAccountId, description: `${description} (eliminate accum)`, debit: accumulated, credit: 0 });
+    lines.push({ accountId: input.assetAccountId, description: `${description} (eliminate accum)`, debit: 0, credit: accumulated });
+  }
+  if (input.increase) {
+    lines.push({ accountId: input.assetAccountId, description, debit: amount, credit: 0 });
+  }
+  if (reserve > 0) {
+    lines.push({ accountId: input.reserveAccountId, description, debit: input.increase ? 0 : reserve, credit: input.increase ? reserve : 0 });
+  }
+  if (pl > 0) {
+    lines.push({ accountId: input.plAccountId!, description, debit: input.increase ? 0 : pl, credit: input.increase ? pl : 0 });
+  }
+  if (!input.increase) lines.push({ accountId: input.assetAccountId, description, debit: 0, credit: amount });
   assertJournalBalanced(lines);
   return lines;
 }
 
 export * from "./platform";
+export * from "./controls";
+export * from "./integration";
+export * from "./documents";
+export * from "./insights";

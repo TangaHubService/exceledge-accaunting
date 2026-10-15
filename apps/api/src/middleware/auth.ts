@@ -57,7 +57,22 @@ export async function authenticate(req: AuthedRequest, res: Response, next: Next
   if (!match || match.revokedAt || (match.expiresAt && match.expiresAt <= new Date())) {
     return res.status(401).json({ success: false, error: "Invalid, revoked or expired API key" });
   }
-  await prisma.apiCredential.update({ where: { id: match.id }, data: { lastUsedAt: new Date() } });
+  const now = new Date();
+  const usage = await prisma.apiKeyUsage.create({
+    data: { credentialId: match.id, companyId: match.companyId, method: req.method, path: req.originalUrl.split("?")[0].slice(0, 300), ipAddress: req.ip },
+  });
+  const recent = await prisma.apiKeyUsage.count({ where: { credentialId: match.id, createdAt: { gt: new Date(now.getTime() - 60_000) } } });
+  if (recent > match.rateLimitPerMinute) {
+    await prisma.apiKeyUsage.update({ where: { id: usage.id }, data: { status: 429 } });
+    res.setHeader("Retry-After", "60");
+    return res.status(429).json({ success: false, error: `Rate limit of ${match.rateLimitPerMinute} requests per minute exceeded` });
+  }
+  res.setHeader("X-RateLimit-Limit", String(match.rateLimitPerMinute));
+  res.setHeader("X-RateLimit-Remaining", String(Math.max(0, match.rateLimitPerMinute - recent)));
+  res.on("finish", () => {
+    prisma.apiKeyUsage.update({ where: { id: usage.id }, data: { status: res.statusCode } }).catch(() => undefined);
+  });
+  await prisma.apiCredential.update({ where: { id: match.id }, data: { lastUsedAt: now } });
   req.apiKey = { id: match.id, scopes: match.scopes };
   req.companyId = match.companyId;
   return next();
@@ -83,7 +98,7 @@ export function authenticateErpJwt(req: AuthedRequest, res: Response, next: Next
 }
 
 export function requireCapability(capability: AccountingCapability) {
-  return (req: AuthedRequest, res: Response, next: NextFunction) => {
+  const check = (req: AuthedRequest, res: Response, next: NextFunction) => {
     if (req.apiKey) {
       if (!req.apiKey.scopes.includes(capability)) {
         return res.status(403).json({ success: false, error: `API key lacks scope: ${capability}` });
@@ -99,6 +114,7 @@ export function requireCapability(capability: AccountingCapability) {
     }
     return next();
   };
+  return Object.assign(check, { capability });
 }
 
 /** Resolve or create Accounting company for ERP activeOrganizationId */

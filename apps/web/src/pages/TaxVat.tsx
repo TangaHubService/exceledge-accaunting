@@ -1,8 +1,9 @@
 import { Printer } from "lucide-react";
 import { useState } from "react";
+import { ExportButtons } from "../components/ExportButtons";
 import { EmptyState, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { amount, date, isoDay, moduleLabel } from "../lib/format";
+import { amount, calendarDate, date, isoDay, moduleLabel } from "../lib/format";
 import { Link } from "../lib/router";
 import { useResource } from "../lib/session";
 import type { VatReport } from "../lib/types";
@@ -22,10 +23,13 @@ export function TaxVat() {
         description="Output and input VAT from posted sales, purchases and adjustments. Payments are shown separately."
         back={{ to: "/tax", label: "Tax" }}
         actions={
-          <button type="button" className="btn" onClick={() => window.print()}>
-            <Printer size={16} aria-hidden="true" />
-            Print
-          </button>
+          <>
+            <ExportButtons path={`/api/v1/tax/reports/vat?from=${from}&to=${to}`} filename={`vat-return-${from}-${to}`} />
+            <button type="button" className="btn" onClick={() => window.print()}>
+              <Printer size={16} aria-hidden="true" />
+              Print
+            </button>
+          </>
         }
       />
       <PeriodFilter from={from} to={to} onFrom={setFrom} onTo={setTo} />
@@ -40,7 +44,7 @@ export function TaxVat() {
               </div>
               <div className="title">VAT return schedule</div>
               <div className="period">
-                {date(r.from)} to {date(r.to)} · Amounts in {currency}
+                {calendarDate(r.from)} to {calendarDate(r.to)} · Amounts in {currency}
               </div>
             </div>
 
@@ -153,6 +157,74 @@ export function TaxVat() {
                       <td className="num strong">{amount(r.totals.input)}</td>
                     </tr>
                   </tfoot>
+                </table>
+              </div>
+            )}
+
+            <h3 className="section-title">Zero-rated (memo)</h3>
+            <p className="muted small">
+              Sales {amount(r.totals.zeroRatedSales ?? 0)} · Purchases {amount(r.totals.zeroRatedPurchases ?? 0)}. These lines do not create VAT.
+            </p>
+            {(r.zeroRated ?? []).length === 0 ? (
+              <EmptyState title="No zero-rated lines" body="No posted invoices or bills used a zero-rated tax code in this period." />
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Document</th>
+                      <th>Tax code</th>
+                      <th className="num">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.zeroRated.map((l) => (
+                      <tr key={l.id}>
+                        <td className="nowrap">{date(l.date)}</td>
+                        <td>
+                          {l.documentNumber}
+                          <span className="sub">{l.side === "SALE" ? "Sale" : "Purchase"}{l.description ? ` · ${l.description}` : ""}</span>
+                        </td>
+                        <td>{l.taxCode}</td>
+                        <td className="num">{amount(l.net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h3 className="section-title">Exempt (memo)</h3>
+            <p className="muted small">
+              Sales {amount(r.totals.exemptSales ?? 0)} · Purchases {amount(r.totals.exemptPurchases ?? 0)}. These lines do not create VAT.
+            </p>
+            {(r.exempt ?? []).length === 0 ? (
+              <EmptyState title="No exempt lines" body="No posted invoices or bills used an exempt tax code in this period." />
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Document</th>
+                      <th>Tax code</th>
+                      <th className="num">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.exempt.map((l) => (
+                      <tr key={l.id}>
+                        <td className="nowrap">{date(l.date)}</td>
+                        <td>
+                          {l.documentNumber}
+                          <span className="sub">{l.side === "SALE" ? "Sale" : "Purchase"}{l.description ? ` · ${l.description}` : ""}</span>
+                        </td>
+                        <td>{l.taxCode}</td>
+                        <td className="num">{amount(l.net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
             )}

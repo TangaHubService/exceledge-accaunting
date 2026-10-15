@@ -1,9 +1,15 @@
 import {
   MANDATORY_DEFAULT_ACCOUNT_KEYS,
   SETUP_SECTIONS,
+  SYSTEM_ACCOUNT_CODE_REMAP,
   SYSTEM_ACCOUNT_SEED,
+  MAX_APPROVAL_LEVELS,
+  assertNumberFormat,
   evaluateActivationGate,
   generateAccountingPeriods,
+  numberPeriodKey,
+  parseApprovalTiers,
+  roundMoney,
   openingBalancesBalanced,
   type SetupSectionKey,
   type SetupSectionStatusValue,
@@ -14,9 +20,11 @@ import type {
   SetupSectionKey as PrismaSectionKey,
   SetupSectionStatusValue as PrismaSectionStatus,
 } from "@prisma/client";
-import { prisma } from "../../lib/prisma";
+import { Prisma as PrismaNs } from "@prisma/client";
+import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { openStartedPeriods } from "../journals/journal.service";
+import { ensureDefaultAutomation } from "../books/books.service";
+import { createAndPostJournal, openStartedPeriods } from "../journals/journal.service";
 
 const DEFAULT_DOCUMENT_TYPES = [
   "CUSTOMER",
@@ -62,12 +70,25 @@ async function setSectionStatus(
   });
 }
 
+async function isActivated(companyId: string) {
+  return (await prisma.accountingActivation.findUnique({ where: { companyId } }))?.status === "ACTIVATED";
+}
+
 /** Receivables, payables, inventory and current-year earnings only move through their own modules. */
 export const NO_MANUAL_POSTING_CODES = new Set(["1200", "2100", "1300", "3200"]);
 
 export async function ensureSystemChartOfAccounts(companyId: string) {
   const existing = await prisma.account.findMany({ where: { companyId } });
-  const have = new Set(existing.map((a) => a.code));
+  // Renumber legacy system codes that sat outside Seg 3.7 type ranges (idempotent).
+  const byCode = new Map(existing.map((a) => [a.code, a]));
+  for (const { from, to, name } of SYSTEM_ACCOUNT_CODE_REMAP) {
+    const row = byCode.get(from);
+    if (!row || byCode.has(to)) continue;
+    await prisma.account.update({ where: { id: row.id }, data: { code: to, name } });
+    byCode.delete(from);
+    byCode.set(to, { ...row, code: to, name });
+  }
+  const have = new Set(byCode.keys());
   const missing = SYSTEM_ACCOUNT_SEED.filter((a) => !have.has(a.code));
   if (missing.length > 0) {
     await prisma.account.createMany({
@@ -97,9 +118,9 @@ export async function ensureDefaultAccountMappings(companyId: string) {
     fixedAssetCostId: existing?.fixedAssetCostId ?? by("1500"),
     accumulatedDepreciationId: existing?.accumulatedDepreciationId ?? by("1510"),
     depreciationExpenseId: existing?.depreciationExpenseId ?? by("6300"),
-    assetDisposalId: existing?.assetDisposalId ?? by("7100"),
-    gainOnDisposalId: existing?.gainOnDisposalId ?? by("7110"),
-    lossOnDisposalId: existing?.lossOnDisposalId ?? by("7120"),
+    assetDisposalId: existing?.assetDisposalId ?? by("1590") ?? by("7100"),
+    gainOnDisposalId: existing?.gainOnDisposalId ?? by("7300") ?? by("7110"),
+    lossOnDisposalId: existing?.lossOnDisposalId ?? by("8100") ?? by("7120"),
     assetRevaluationReserveId: existing?.assetRevaluationReserveId ?? by("3300"),
   };
 
@@ -110,8 +131,8 @@ export async function ensureDefaultAccountMappings(companyId: string) {
       accountsReceivableId: by("1200"),
       salesRevenueId: by("4100"),
       serviceRevenueId: by("4110"),
-      salesDiscountsId: by("6800"),
-      salesReturnsId: by("6810"),
+      salesDiscountsId: by("4400") ?? by("6800"),
+      salesReturnsId: by("4410") ?? by("6810"),
       customerDepositsId: by("2120"),
       badDebtExpenseId: by("6200"),
       accountsPayableId: by("2100"),
@@ -122,12 +143,12 @@ export async function ensureDefaultAccountMappings(companyId: string) {
       pettyCashAccountId: by("1120"),
       mobileMoneyClearingId: by("1130"),
       undepositedFundsId: by("1140"),
-      bankChargesId: by("2400"),
+      bankChargesId: by("6430") ?? by("2400"),
       interestIncomeId: by("4200"),
       inventoryAssetId: by("1300"),
       costOfSalesId: by("5100"),
       inventoryAdjustmentId: by("6400"),
-      inventoryGainId: by("6900"),
+      inventoryGainId: by("7200") ?? by("6900"),
       inventoryLossId: by("6420"),
       inventoryWriteOffId: by("6410"),
       grniId: by("2130"),
@@ -141,7 +162,7 @@ export async function ensureDefaultAccountMappings(companyId: string) {
       ...faPatch,
       retainedEarningsId: by("3100"),
       currentYearEarningsId: by("3200"),
-      suspenseAccountId: by("6600"),
+      suspenseAccountId: by("1900") ?? by("6600"),
       roundingDifferenceId: by("6700"),
       fxGainId: by("4300"),
       fxLossId: by("6500"),
@@ -363,6 +384,9 @@ export async function upsertCurrency(
 ) {
   if (!data.functionalCurrency) throw new Error("Functional currency is mandatory");
   const before = await prisma.currencySettings.findUnique({ where: { companyId } });
+  if (before && before.functionalCurrency !== data.functionalCurrency && (await isActivated(companyId))) {
+    throw new Error("The functional currency cannot change after accounting is activated");
+  }
   const after = await prisma.currencySettings.upsert({
     where: { companyId },
     create: { ...data, companyId },
@@ -390,6 +414,14 @@ export async function upsertPolicies(
   actor: { erpUserId: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } },
 ) {
   const before = await prisma.accountingPolicy.findUnique({ where: { companyId } });
+  if (
+    data.inventoryValuationMethod &&
+    before?.inventoryValuationMethod &&
+    data.inventoryValuationMethod !== before.inventoryValuationMethod &&
+    (await isActivated(companyId))
+  ) {
+    throw new Error("The inventory valuation method cannot change after accounting is activated");
+  }
   const after = await prisma.accountingPolicy.upsert({
     where: { companyId },
     create: { ...data, companyId },
@@ -491,6 +523,9 @@ export async function upsertInventorySettings(
     goodsInTransitAccountId: data.goodsInTransitAccountId ?? defaults.goodsInTransitId,
   };
   const before = await prisma.inventoryAccountingSettings.findUnique({ where: { companyId } });
+  if (payload.valuationMethod && before?.valuationMethod && payload.valuationMethod !== before.valuationMethod && (await isActivated(companyId))) {
+    throw new Error("The inventory valuation method cannot change after accounting is activated");
+  }
   const after = await prisma.inventoryAccountingSettings.upsert({
     where: { companyId },
     create: { ...payload, companyId },
@@ -624,6 +659,20 @@ export async function upsertApprovalControls(
   data: Omit<Prisma.ApprovalPostingControlsUncheckedCreateInput, "companyId">,
   actor: { erpUserId: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } },
 ) {
+  if (data.amountBasedApprovalLimits === null) {
+    data = { ...data, amountBasedApprovalLimits: PrismaNs.DbNull };
+  } else if (data.amountBasedApprovalLimits !== undefined) {
+    data = { ...data, amountBasedApprovalLimits: parseApprovalTiers(data.amountBasedApprovalLimits) as unknown as Prisma.InputJsonValue };
+  }
+  if (data.approvalLevels !== undefined && (data.approvalLevels < 0 || data.approvalLevels > MAX_APPROVAL_LEVELS)) {
+    throw new Error(`Approval levels must be between 0 and ${MAX_APPROVAL_LEVELS}`);
+  }
+  for (const key of ["backdatedTransactionPolicy", "futureDatedTransactionPolicy"] as const) {
+    const value = data[key];
+    if (value !== undefined && value !== null && !["ALLOW", "REQUIRE_APPROVAL", "BLOCK"].includes(value)) {
+      throw new Error(`${key} must be ALLOW, REQUIRE_APPROVAL or BLOCK`);
+    }
+  }
   const before = await prisma.approvalPostingControls.findUnique({ where: { companyId } });
   const after = await prisma.approvalPostingControls.upsert({
     where: { companyId },
@@ -650,10 +699,20 @@ export async function saveOpeningBalances(
   companyId: string,
   input: {
     name: string;
-    lines: Array<{ accountId?: string; memo?: string; debit: number; credit: number }>;
+    lines: Array<{
+      accountId?: string;
+      memo?: string;
+      debit: number;
+      credit: number;
+      partyType?: "CUSTOMER" | "SUPPLIER";
+      partyRef?: string;
+    }>;
   },
   actor: { erpUserId: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } },
 ) {
+  for (const l of input.lines) {
+    if (l.partyType && !l.partyRef) throw new Error("A customer or supplier opening balance needs the party");
+  }
   if (!openingBalancesBalanced(input.lines)) {
     await setSectionStatus(
       companyId,
@@ -670,9 +729,12 @@ export async function saveOpeningBalances(
       companyId,
       name: input.name,
       status: "REQUIRES_REVIEW",
+      createdByErpUserId: actor.erpUserId,
       lines: {
         create: input.lines.map((l) => ({
           accountId: l.accountId,
+          partyType: l.partyType,
+          partyRef: l.partyRef,
           memo: l.memo,
           debit: l.debit,
           credit: l.credit,
@@ -695,6 +757,260 @@ export async function saveOpeningBalances(
     ...actor.meta,
   });
   return batch;
+}
+
+type SetupActor = { erpUserId: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } };
+
+export async function listOpeningBalances(companyId: string) {
+  return prisma.openingBalanceBatch.findMany({
+    where: { companyId },
+    include: { lines: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function approveOpeningBalances(companyId: string, id: string, actor: SetupActor) {
+  const batch = await prisma.openingBalanceBatch.findFirst({ where: { id, companyId } });
+  if (!batch) throw new Error("Opening balance batch not found");
+  if (batch.status !== "REQUIRES_REVIEW") throw new Error(`Opening balances are ${batch.status.toLowerCase()}, not awaiting review`);
+  if (batch.createdByErpUserId != null && batch.createdByErpUserId === actor.erpUserId) {
+    throw new Error("You entered these opening balances; someone else must approve them");
+  }
+  const claimed = await prisma.openingBalanceBatch.updateMany({
+    where: { id, companyId, status: "REQUIRES_REVIEW" },
+    data: { status: "APPROVED", approvedByErpUserId: actor.erpUserId, approvedAt: new Date() },
+  });
+  if (claimed.count !== 1) throw new Error("Opening balances changed while approving; reload and try again");
+  const after = await prisma.openingBalanceBatch.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId,
+    erpRole: actor.erpRole,
+    action: "APPROVE",
+    entityType: "OpeningBalanceBatch",
+    entityId: id,
+    sectionKey: "OPENING_BALANCES",
+    beforeJson: batch,
+    afterJson: after,
+    ...actor.meta,
+  });
+  return after;
+}
+
+/**
+ * Posts an approved batch as one OPENING_BALANCE journal on the first day of the earliest financial
+ * year. Customer and supplier lines must sit on the AR/AP control account and also open the party's
+ * subledger, so the control account and the subledger agree from day one.
+ */
+export async function postOpeningBalances(companyId: string, id: string, actor: SetupActor) {
+  const batch = await prisma.openingBalanceBatch.findFirst({ where: { id, companyId }, include: { lines: true } });
+  if (!batch) throw new Error("Opening balance batch not found");
+  if (batch.status !== "APPROVED") throw new Error("Opening balances must be approved before posting");
+  const year = await prisma.financialYear.findFirst({ where: { companyId }, orderBy: { startDate: "asc" } });
+  if (!year) throw new Error("Create a financial year before posting opening balances");
+  const defaults = await prisma.defaultPostingAccounts.findUnique({ where: { companyId } });
+
+  const lines: Array<{ accountId: string; description: string; debit: number; credit: number; customerRef?: string; supplierRef?: string }> = [];
+  const parties: Array<{ kind: "CUSTOMER" | "SUPPLIER"; partyId: string; debit: number; credit: number; memo?: string | null }> = [];
+  for (const l of batch.lines) {
+    const debit = Number(l.debit);
+    const credit = Number(l.credit);
+    let accountId = l.accountId ?? undefined;
+    let customerRef: string | undefined;
+    let supplierRef: string | undefined;
+    if (l.partyType === "CUSTOMER" || l.partyType === "SUPPLIER") {
+      const control = l.partyType === "CUSTOMER" ? defaults?.accountsReceivableId : defaults?.accountsPayableId;
+      if (!control) throw new Error(`Map the ${l.partyType === "CUSTOMER" ? "receivables" : "payables"} control account first`);
+      if (accountId && accountId !== control) throw new Error("Customer and supplier opening balances must use the AR/AP control account");
+      accountId = control;
+      const party =
+        l.partyType === "CUSTOMER"
+          ? await prisma.customer.findFirst({ where: { companyId, OR: [{ id: l.partyRef ?? "" }, { code: l.partyRef ?? "" }] } })
+          : await prisma.supplier.findFirst({ where: { companyId, OR: [{ id: l.partyRef ?? "" }, { code: l.partyRef ?? "" }] } });
+      if (!party) throw new Error(`${l.partyType === "CUSTOMER" ? "Customer" : "Supplier"} ${l.partyRef} not found`);
+      if (l.partyType === "CUSTOMER") customerRef = party.id;
+      else supplierRef = party.id;
+      parties.push({ kind: l.partyType, partyId: party.id, debit, credit, memo: l.memo });
+    } else if (accountId && (accountId === defaults?.accountsReceivableId || accountId === defaults?.accountsPayableId)) {
+      throw new Error("Receivable and payable opening balances need the customer or supplier on the line");
+    }
+    if (!accountId) throw new Error("Every opening balance line needs an account");
+    lines.push({ accountId, description: l.memo ?? batch.name, debit, credit, customerRef, supplierRef });
+  }
+
+  return inTransaction(async () => {
+    const claimed = await prisma.openingBalanceBatch.updateMany({
+      where: { id, companyId, status: "APPROVED" },
+      data: { status: "POSTED", postedAt: new Date() },
+    });
+    if (claimed.count !== 1) throw new Error("Opening balances were already posted");
+    const journal = await createAndPostJournal(
+      companyId,
+      {
+        journalDate: year.startDate,
+        journalType: "OPENING_BALANCE",
+        sourceModule: "OPENING_BALANCE",
+        sourceDocumentType: "OpeningBalanceBatch",
+        sourceDocumentId: batch.id,
+        description: `Opening balances: ${batch.name}`,
+        lines,
+      },
+      actor,
+    );
+    for (const p of parties) {
+      if (p.kind === "CUSTOMER") {
+        const c = await prisma.customer.findUniqueOrThrow({ where: { id: p.partyId } });
+        const next = roundMoney(Number(c.balance) + p.debit - p.credit);
+        await prisma.customer.update({ where: { id: c.id }, data: { balance: next } });
+        await prisma.arLedgerEntry.create({
+          data: {
+            companyId, customerId: c.id, entryDate: year.startDate, docType: "OPENING_BALANCE", docId: batch.id,
+            docNumber: journal.journalNumber, description: p.memo ?? batch.name, debit: p.debit, credit: p.credit, runningBalance: next,
+          },
+        });
+      } else {
+        const s = await prisma.supplier.findUniqueOrThrow({ where: { id: p.partyId } });
+        const next = roundMoney(Number(s.balance) + p.credit - p.debit);
+        await prisma.supplier.update({ where: { id: s.id }, data: { balance: next } });
+        await prisma.apLedgerEntry.create({
+          data: {
+            companyId, supplierId: s.id, entryDate: year.startDate, docType: "OPENING_BALANCE", docId: batch.id,
+            docNumber: journal.journalNumber, description: p.memo ?? batch.name, debit: p.debit, credit: p.credit, runningBalance: next,
+          },
+        });
+      }
+    }
+    const after = await prisma.openingBalanceBatch.update({ where: { id }, data: { journalId: journal.id }, include: { lines: true } });
+    await setSectionStatus(companyId, "OPENING_BALANCES", "COMPLETED", actor.erpUserId);
+    await writeAudit({
+      companyId,
+      erpUserId: actor.erpUserId,
+      erpRole: actor.erpRole,
+      action: "POST",
+      entityType: "OpeningBalanceBatch",
+      entityId: id,
+      sectionKey: "OPENING_BALANCES",
+      beforeJson: batch,
+      afterJson: after,
+      ...actor.meta,
+    });
+    return { batch: after, journal };
+  });
+}
+
+/** Partial remap of default posting accounts; every account must belong to the company and be active. */
+export async function updateDefaultAccounts(companyId: string, changes: Record<string, string | null>, actor: SetupActor) {
+  const known = new Set<string>(Object.values(PrismaNs.DefaultPostingAccountsScalarFieldEnum));
+  const data: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (!key.endsWith("Id") || key === "companyId" || !known.has(key)) throw new Error(`Unknown default account ${key}`);
+    data[key] = value;
+  }
+  const ids = Object.values(data).filter((v): v is string => Boolean(v));
+  if (ids.length) {
+    const found = await prisma.account.findMany({ where: { companyId, id: { in: ids }, isActive: true } });
+    if (found.length !== new Set(ids).size) throw new Error("Every default account must be an active account of this company");
+  }
+  const mandatory = new Set<string>(MANDATORY_DEFAULT_ACCOUNT_KEYS);
+  for (const [key, value] of Object.entries(data)) {
+    if (!value && mandatory.has(key)) throw new Error(`${key} is mandatory and cannot be cleared`);
+  }
+  await ensureDefaultAccountMappings(companyId);
+  const before = await prisma.defaultPostingAccounts.findUniqueOrThrow({ where: { companyId } });
+  const after = await prisma.defaultPostingAccounts.update({ where: { companyId }, data });
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId,
+    erpRole: actor.erpRole,
+    action: "UPDATE",
+    entityType: "DefaultPostingAccounts",
+    entityId: after.id,
+    sectionKey: "DEFAULT_POSTING_ACCOUNTS",
+    beforeJson: before,
+    afterJson: after,
+    ...actor.meta,
+  });
+  return after;
+}
+
+/** `nextNumber` is the number the current period's counter will issue next (see lib/numbering). */
+export async function listNumberSequences(companyId: string) {
+  const sequences = await prisma.numberSequence.findMany({
+    where: { companyId },
+    orderBy: { documentType: "asc" },
+    include: { counters: true },
+  });
+  const now = new Date();
+  return sequences.map(({ counters, ...seq }) => {
+    const periodKey = numberPeriodKey(seq.resetFrequency, now);
+    const counter = counters.find((c) => c.periodKey === periodKey);
+    return { ...seq, nextNumber: counter?.nextNumber ?? Math.max(seq.startingNumber, seq.legacyFloor, 1) };
+  });
+}
+
+export async function updateNumberSequence(
+  companyId: string,
+  documentType: string,
+  input: Partial<{ prefix: string; includeYear: boolean; includeMonth: boolean; includeBranch: boolean; sequenceLength: number; resetFrequency: string; startingNumber: number }>,
+  actor: SetupActor,
+) {
+  const before = await prisma.numberSequence.findUnique({ where: { companyId_documentType: { companyId, documentType } } });
+  if (!before) throw new Error(`No numbering sequence for ${documentType}`);
+  const format = {
+    prefix: input.prefix ?? before.prefix ?? documentType.slice(0, 3),
+    includeYear: input.includeYear ?? before.includeYear,
+    includeMonth: input.includeMonth ?? before.includeMonth,
+    includeBranch: input.includeBranch ?? before.includeBranch,
+    sequenceLength: input.sequenceLength ?? before.sequenceLength,
+    resetFrequency: (input.resetFrequency ?? before.resetFrequency).toUpperCase(),
+  };
+  assertNumberFormat(format);
+  if (input.startingNumber !== undefined && (!Number.isInteger(input.startingNumber) || input.startingNumber < 1)) {
+    throw new Error("The starting number must be a whole number of 1 or more");
+  }
+  const after = await prisma.numberSequence.update({
+    where: { id: before.id },
+    data: { ...format, ...(input.startingNumber !== undefined ? { startingNumber: input.startingNumber } : {}) },
+  });
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId,
+    erpRole: actor.erpRole,
+    action: "UPDATE",
+    entityType: "NumberSequence",
+    entityId: after.id,
+    sectionKey: "TRANSACTION_NUMBERING",
+    beforeJson: before,
+    afterJson: after,
+    ...actor.meta,
+  });
+  return after;
+}
+
+export async function updateFinancialYear(companyId: string, id: string, input: { name?: string; isCurrent?: boolean }, actor: SetupActor) {
+  const before = await prisma.financialYear.findFirst({ where: { id, companyId } });
+  if (!before) throw new Error("Financial year not found");
+  if (input.name !== undefined && !input.name.trim()) throw new Error("A financial year needs a name");
+  const after = await inTransaction(async () => {
+    if (input.isCurrent) await prisma.financialYear.updateMany({ where: { companyId, NOT: { id } }, data: { isCurrent: false } });
+    return prisma.financialYear.update({
+      where: { id },
+      data: { name: input.name?.trim(), isCurrent: input.isCurrent },
+    });
+  });
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId,
+    erpRole: actor.erpRole,
+    action: "UPDATE",
+    entityType: "FinancialYear",
+    entityId: id,
+    sectionKey: "FINANCIAL_YEAR_PERIODS",
+    beforeJson: before,
+    afterJson: after,
+    ...actor.meta,
+  });
+  return after;
 }
 
 export async function approveSection(
@@ -812,6 +1128,7 @@ export async function activateAccounting(
     },
   });
   await openStartedPeriods(companyId);
+  await ensureDefaultAutomation(companyId);
 
   await setSectionStatus(companyId, "REVIEW_ACTIVATION", "APPROVED", actor.erpUserId);
   await writeAudit({

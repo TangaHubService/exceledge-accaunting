@@ -1,216 +1,75 @@
-import { Plus, Printer } from "lucide-react";
-import { type CSSProperties, type FormEvent, Fragment, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
+import { type FormEvent, Fragment, useMemo, useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { Footer, FormError, MoneyInput, parseAmount, useSubmit } from "../components/forms";
 import { Select } from "../components/Select";
-import { Badge, Drawer, EmptyState, Field, Figure, Loadable, PageHeader, type Tone } from "../components/ui";
+import { Badge, Drawer, EmptyState, Field, Loadable, PageHeader, type Tone } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, calendarDate, date, dateTime, humanize } from "../lib/format";
+import { Link } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
-import type { Account } from "../lib/types";
+import { ApiKeysPanel, AssistantPanel, type ControlWithTests, ControlTestsDrawer, EmailSettingsPanel, ForecastPanel, KpiPanel, RiskRegister, WebhooksPanel } from "./Insights";
 
-type Line = { code: string; name: string; amount: number };
-
-type StatementPack = {
-  periodStart: string;
-  asOf: string;
-  income: { revenue: Line[]; expenses: Line[]; totalRevenue: number; totalExpenses: number; profit: number };
-  position: { assets: Line[]; liabilities: Line[]; equity: Line[]; totalAssets: number; totalLiabilities: number; totalEquity: number; balanced: boolean };
-  cashFlow: { operating: number; investing: number; financing: number; netChange: number; cashChange: number; depreciation: number; profit: number };
-  ratios: { currentRatio: number | null; grossMargin: number | null; netMargin: number | null; debtToEquity: number | null };
-};
-
-const percent = (n: number | null) => (n == null ? "—" : `${amount(n * 100, 1)}%`);
-const ratio = (n: number | null) => (n == null ? "—" : amount(n, 2));
-
-function StatementSection({ title, rows, total, totalLabel }: { title: string; rows: Line[]; total: number; totalLabel: string }) {
-  return (
-    <>
-      <tr className="group-row">
-        <td colSpan={3}>{title}</td>
-      </tr>
-      {rows.length === 0 ? (
-        <tr>
-          <td />
-          <td className="muted">Nothing posted</td>
-          <td />
-        </tr>
-      ) : (
-        rows.map((r) => (
-          <tr key={r.code + r.name}>
-            <td className="mono muted">{r.code}</td>
-            <td>{r.name}</td>
-            <td className="num">{amount(r.amount)}</td>
-          </tr>
-        ))
-      )}
-      <tr className="subtotal">
-        <td />
-        <td>{totalLabel}</td>
-        <td className="num">{amount(total)}</td>
-      </tr>
-    </>
-  );
-}
-
-export function Statements() {
-  const { name, tin, currency } = useCompany();
-  const pack = useResource<StatementPack>("/api/v1/books/statements");
-  return (
-    <>
-      <PageHeader
-        title="Financial statements"
-        description="Profit, financial position and cash flow from posted journals."
-        actions={
-          <button type="button" className="btn" onClick={() => window.print()}>
-            <Printer size={16} aria-hidden="true" />
-            Print
-          </button>
-        }
-      />
-      <Loadable resource={pack}>
-        {(d) => {
-          const reconciled = Math.abs(d.cashFlow.netChange - d.cashFlow.cashChange) < 0.5;
-          return (
-            <>
-              <section className="figures" aria-label="Headline figures" style={{ "--cols": 4, marginBottom: 16 } as CSSProperties}>
-                <Figure lead label="Profit" currency={currency} value={amount(d.income.profit)} tone={d.income.profit < 0 ? "negative" : undefined} />
-                <Figure label="Total assets" currency={currency} value={amount(d.position.totalAssets)} />
-                <Figure label="Net margin" value={percent(d.ratios.netMargin)} note={`Gross margin ${percent(d.ratios.grossMargin)}`} />
-                <Figure label="Current ratio" value={ratio(d.ratios.currentRatio)} note={`Debt to equity ${ratio(d.ratios.debtToEquity)}`} />
-              </section>
-
-              <div className="report" style={{ marginBottom: 16 }}>
-                <div className="report-head">
-                  <div className="company">{name}</div>
-                  <div className="title">Income statement</div>
-                  <div className="period">
-                    To {date(d.asOf)} · Amounts in {currency}
-                    {tin && ` · TIN ${tin}`}
-                  </div>
-                </div>
-                <table className="table">
-                  <tbody>
-                    <StatementSection title="Revenue" rows={d.income.revenue} total={d.income.totalRevenue} totalLabel="Total revenue" />
-                    <StatementSection title="Costs and expenses" rows={d.income.expenses} total={d.income.totalExpenses} totalLabel="Total costs and expenses" />
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td />
-                      <td>Profit</td>
-                      <td className="num">{amount(d.income.profit)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              <div className="report" style={{ marginBottom: 16 }}>
-                <div className="report-head">
-                  <div className="title">Statement of financial position</div>
-                  <div className="period">As at {date(d.asOf)}</div>
-                </div>
-                <table className="table">
-                  <tbody>
-                    <StatementSection title="Assets" rows={d.position.assets} total={d.position.totalAssets} totalLabel="Total assets" />
-                    <StatementSection title="Liabilities" rows={d.position.liabilities} total={d.position.totalLiabilities} totalLabel="Total liabilities" />
-                    <StatementSection title="Equity" rows={d.position.equity} total={d.position.totalEquity} totalLabel="Total equity" />
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td />
-                      <td>Liabilities and equity</td>
-                      <td className="num">{amount(d.position.totalLiabilities + d.position.totalEquity)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-                <div className="report-foot">
-                  <span className={d.position.balanced ? undefined : "text-negative strong"}>
-                    {d.position.balanced ? "Assets equal liabilities plus equity." : "Assets do not equal liabilities plus equity. Review the trial balance."}
-                  </span>
-                </div>
-              </div>
-
-              <div className="report">
-                <div className="report-head">
-                  <div className="title">Cash flow (indirect)</div>
-                  <div className="period">
-                    {date(d.periodStart)} to {date(d.asOf)}
-                  </div>
-                </div>
-                <table className="table">
-                  <tbody>
-                    <tr>
-                      <td>Profit for the period</td>
-                      <td className="num">{amount(d.cashFlow.profit)}</td>
-                    </tr>
-                    <tr>
-                      <td>Add back depreciation</td>
-                      <td className="num">{amount(d.cashFlow.depreciation)}</td>
-                    </tr>
-                    <tr>
-                      <td>Working capital movements</td>
-                      <td className="num">{amount(d.cashFlow.operating - d.cashFlow.profit - d.cashFlow.depreciation)}</td>
-                    </tr>
-                    <tr className="subtotal">
-                      <td>Cash from operating activities</td>
-                      <td className="num">{amount(d.cashFlow.operating)}</td>
-                    </tr>
-                    <tr className="subtotal">
-                      <td>Cash from investing activities</td>
-                      <td className="num">{amount(d.cashFlow.investing)}</td>
-                    </tr>
-                    <tr className="subtotal">
-                      <td>Cash from financing activities</td>
-                      <td className="num">{amount(d.cashFlow.financing)}</td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td>Net change in cash and bank</td>
-                      <td className="num">{amount(d.cashFlow.netChange)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-                <div className="report-foot">
-                  <span className={reconciled ? undefined : "text-negative strong"}>
-                    {reconciled
-                      ? `Agrees with the movement on cash and bank accounts (${amount(d.cashFlow.cashChange)}).`
-                      : `Cash and bank accounts moved by ${amount(d.cashFlow.cashChange)}. The difference needs review.`}
-                  </span>
-                </div>
-              </div>
-            </>
-          );
-        }}
-      </Loadable>
-    </>
-  );
-}
+export { Statements } from "./Statements";
 
 type Period = { id: string; name: string; sequence: number; startDate: string; endDate: string; status: string; reopenReason: string | null };
 type Year = { id: string; name: string; startDate: string; endDate: string; periods: Period[] };
+type CloseItemStatus = "DONE" | "FAILING" | "NOT_APPLICABLE" | "OVERRIDDEN";
+type CloseItem = { key: string; label: string; status: CloseItemStatus; detail: string; override: { note: string; erpUserId: number; at: string } | null };
 type Checklist = {
   canClose: boolean;
   blockers: string[];
-  drafts: number;
-  openExceptions: number;
-  pendingApprovals: number;
+  warnings: string[];
+  items: CloseItem[];
+  counts: { unpostedJournals: number; unpostedExpenses: number; heldBills: number; pendingApprovals: number; openExceptions: number; unreconciledBankItems: number };
   earlierOpen: number;
   lastOfYear: boolean;
   difference: number;
+  approvalRequired: boolean;
+  pendingRequest: { id: string; approvalRequestId: string | null; requestedByErpUserId: number | null; requestedAt: string } | null;
+};
+type CloseHistoryRow = {
+  id: string;
+  periodName: string | null;
+  yearName: string | null;
+  kind: "MONTH" | "YEAR";
+  status: string;
+  requestedByErpUserId: number | null;
+  requestedAt: string;
+  approvalRequestId: string | null;
+  decidedByErpUserId: number | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  closedAt: string | null;
+  reopenReason: string | null;
+  reopenedByErpUserId: number | null;
+  reopenedAt: string | null;
+  checklist: { items?: Array<{ key: string; label: string; status: CloseItemStatus; override: { note: string } | null }> } | null;
 };
 
 const PERIOD_TONE: Record<string, Tone> = { OPEN: "positive", REOPENED: "warning", CLOSED: "neutral", FUTURE: "neutral", TEMPORARILY_LOCKED: "warning" };
+const ITEM_TONE: Record<CloseItemStatus, Tone> = { DONE: "positive", FAILING: "negative", NOT_APPLICABLE: "neutral", OVERRIDDEN: "warning" };
+const ITEM_STATUS: Record<CloseItemStatus, string> = { DONE: "Done", FAILING: "Not done", NOT_APPLICABLE: "Not applicable", OVERRIDDEN: "Accepted" };
+const CLOSE_TONE: Record<string, Tone> = { PENDING_APPROVAL: "warning", CLOSED: "positive", REOPENED: "info", REJECTED: "negative" };
+const userLabel = (id: number | null | undefined) => (id ? `User #${id}` : "—");
 
 export function PeriodClose() {
   const { can } = useSession();
   const years = useResource<Year[]>("/api/v1/books/periods");
+  const history = useResource<CloseHistoryRow[]>("/api/v1/books/close/history");
   const [reviewing, setReviewing] = useState<Period | null>(null);
   const [reopening, setReopening] = useState<Period | null>(null);
+  const reload = () => {
+    years.reload();
+    history.reload();
+  };
 
   return (
     <>
-      <PageHeader title="Period close" description="Close a month once the trial balance is clean. Closing the last month of the year moves profit to retained earnings." />
+      <PageHeader
+        title="Period close"
+        description="Work through the checklist for a month, then close it. Closing the last month of the year moves profit to retained earnings."
+      />
       <Loadable resource={years}>
         {(rows) =>
           rows.length === 0 ? (
@@ -241,9 +100,9 @@ export function PeriodClose() {
                           {p.reopenReason && <span className="sub">{p.reopenReason}</span>}
                         </td>
                         <td className="num">
-                          {can("close:manage") && (p.status === "OPEN" || p.status === "REOPENED") && (
+                          {(p.status === "OPEN" || p.status === "REOPENED" || p.status === "TEMPORARILY_LOCKED") && (
                             <button type="button" className="btn" onClick={() => setReviewing(p)}>
-                              Review close
+                              {can("close:manage") ? "Review close" : "Checklist"}
                             </button>
                           )}
                           {can("close:manage") && p.status === "CLOSED" && (
@@ -261,13 +120,15 @@ export function PeriodClose() {
           )
         }
       </Loadable>
+      <CloseHistory history={history} />
       {reviewing && (
         <CloseDrawer
           period={reviewing}
           onClose={() => setReviewing(null)}
+          onChanged={history.reload}
           onDone={() => {
             setReviewing(null);
-            years.reload();
+            reload();
           }}
         />
       )}
@@ -277,7 +138,7 @@ export function PeriodClose() {
           onClose={() => setReopening(null)}
           onDone={() => {
             setReopening(null);
-            years.reload();
+            reload();
           }}
         />
       )}
@@ -285,27 +146,143 @@ export function PeriodClose() {
   );
 }
 
-function CloseDrawer({ period, onClose, onDone }: { period: Period; onClose: () => void; onDone: () => void }) {
-  const { api } = useSession();
-  const { confirm } = useFeedback();
+function CloseHistory({ history }: { history: { data?: CloseHistoryRow[]; error?: string; loading: boolean; reload: () => void } }) {
+  return (
+    <Loadable resource={history}>
+      {(rows) => (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Closing history</th>
+                <th>Status</th>
+                <th>Requested</th>
+                <th>Approved or decided</th>
+                <th>Closed</th>
+                <th>Reopened</th>
+                <th>Checklist at close</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    No period has been closed yet.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => {
+                  const accepted = (r.checklist?.items ?? []).filter((i) => i.status === "OVERRIDDEN");
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        {r.periodName ?? "—"}
+                        <span className="sub">
+                          {r.yearName}
+                          {r.kind === "YEAR" ? " · year-end" : ""}
+                        </span>
+                      </td>
+                      <td>
+                        <Badge tone={CLOSE_TONE[r.status] ?? "neutral"}>{humanize(r.status)}</Badge>
+                      </td>
+                      <td>
+                        {userLabel(r.requestedByErpUserId)}
+                        <span className="sub">{dateTime(r.requestedAt)}</span>
+                      </td>
+                      <td>
+                        {r.approvalRequestId ? (
+                          <>
+                            <Link to={`/approvals?id=${r.approvalRequestId}`}>{r.decidedAt ? userLabel(r.decidedByErpUserId) : "Waiting"}</Link>
+                            {r.decidedAt && <span className="sub">{dateTime(r.decidedAt)}</span>}
+                            {r.decisionNote && <span className="sub">{r.decisionNote}</span>}
+                          </>
+                        ) : (
+                          <span className="muted">No approval step</span>
+                        )}
+                      </td>
+                      <td>{r.closedAt ? dateTime(r.closedAt) : "—"}</td>
+                      <td>
+                        {r.reopenedAt ? (
+                          <>
+                            {userLabel(r.reopenedByErpUserId)}
+                            <span className="sub">{dateTime(r.reopenedAt)}</span>
+                            {r.reopenReason && <span className="sub">{r.reopenReason}</span>}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
+                        {accepted.length === 0 ? (
+                          <span className="muted">All items done or not applicable</span>
+                        ) : (
+                          accepted.map((i) => (
+                            <span key={i.key} className="sub">
+                              {i.label} accepted: {i.override?.note}
+                            </span>
+                          ))
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Loadable>
+  );
+}
+
+function CloseDrawer({ period, onClose, onChanged, onDone }: { period: Period; onClose: () => void; onChanged: () => void; onDone: () => void }) {
+  const { api, can } = useSession();
+  const { confirm, toast } = useFeedback();
   const check = useResource<Checklist>(`/api/v1/books/close/checklist?periodId=${period.id}`);
   const { busy, error, run } = useSubmit(onDone);
+  const [accepting, setAccepting] = useState<CloseItem | null>(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const manage = can("close:manage");
   const lastOfYear = check.data?.lastOfYear ?? false;
   const kind = lastOfYear ? "YEAR" : "MONTH";
+  const needsApproval = check.data?.approvalRequired ?? false;
+  const pending = check.data?.pendingRequest ?? null;
 
   async function close() {
     const ok = await confirm({
-      title: lastOfYear ? `Close ${period.name} and the year?` : `Close ${period.name}?`,
-      body: lastOfYear
-        ? "Profit and loss balances will be moved to retained earnings, and no more journals can be posted to this period."
-        : "No more journals can be posted to this period until it is reopened.",
-      confirmLabel: lastOfYear ? "Close year" : "Close month",
+      title: needsApproval ? `Request approval to close ${period.name}?` : lastOfYear ? `Close ${period.name} and the year?` : `Close ${period.name}?`,
+      body: needsApproval
+        ? "Another person with close rights must approve the request. The period closes when they approve it."
+        : lastOfYear
+          ? "Profit and loss balances will be moved to retained earnings, and no more journals can be posted to this period."
+          : "No more journals can be posted to this period until it is reopened.",
+      confirmLabel: needsApproval ? "Request close" : lastOfYear ? "Close year" : "Close month",
     });
     if (!ok) return;
     void run(async () => {
-      await api("/api/v1/books/close", { method: "POST", body: JSON.stringify({ periodId: period.id, kind }) });
-      return `${period.name} closed`;
+      await api(needsApproval ? "/api/v1/books/close/request" : "/api/v1/books/close", { method: "POST", body: JSON.stringify({ periodId: period.id, kind }) });
+      return needsApproval ? `Close of ${period.name} sent for approval` : `${period.name} closed`;
     });
+  }
+
+  async function changeOverride(item: CloseItem, accept: boolean) {
+    setSaving(true);
+    try {
+      await api(accept ? "/api/v1/books/close/overrides" : "/api/v1/books/close/overrides/remove", {
+        method: "POST",
+        body: JSON.stringify({ periodId: period.id, item: item.key, ...(accept ? { note: note.trim() } : {}) }),
+      });
+      toast(accept ? `${item.label} accepted` : `${item.label} is checked again`);
+      setAccepting(null);
+      setNote("");
+      check.reload();
+      onChanged();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -316,11 +293,18 @@ function CloseDrawer({ period, onClose, onDone }: { period: Period; onClose: () 
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {manage ? "Cancel" : "Close"}
           </button>
-          <button type="button" className="btn btn-primary" disabled={busy || !check.data?.canClose} onClick={() => void close()}>
-            {busy ? "Closing…" : lastOfYear ? "Close year" : "Close month"}
-          </button>
+          {manage && pending?.approvalRequestId && (
+            <Link to={`/approvals?id=${pending.approvalRequestId}`} className="btn btn-primary">
+              Open approval
+            </Link>
+          )}
+          {manage && !pending && (
+            <button type="button" className="btn btn-primary" disabled={busy || !check.data?.canClose} onClick={() => void close()}>
+              {busy ? "Saving…" : needsApproval ? "Request close" : lastOfYear ? "Close year" : "Close month"}
+            </button>
+          )}
         </>
       }
     >
@@ -328,26 +312,117 @@ function CloseDrawer({ period, onClose, onDone }: { period: Period; onClose: () 
       <Loadable resource={check}>
         {(c) => (
           <>
-            <div className={`notice ${c.canClose ? "info" : "error"}`} role="status">
-              {c.canClose ? "Everything is in place to close this period." : "Fix these before closing:"}
+            <div className={`notice ${pending ? "info" : c.canClose ? "info" : "error"}`} role="status">
+              {pending
+                ? `Close requested by ${userLabel(pending.requestedByErpUserId)} on ${dateTime(pending.requestedAt)}; waiting for approval.`
+                : c.canClose
+                  ? c.approvalRequired
+                    ? "Everything is in place. Closing needs a second person's approval."
+                    : "Everything is in place to close this period."
+                  : "Fix or accept these before closing:"}
             </div>
+            {!pending && c.blockers.length > 0 && (
+              <ul style={{ marginTop: 12 }}>
+                {c.blockers.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            )}
+
             <table className="table" style={{ marginTop: 16 }}>
+              <thead>
+                <tr>
+                  <th>Checklist</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {c.items.map((i) => (
+                  <Fragment key={i.key}>
+                    <tr>
+                      <td>
+                        {i.label}
+                        <span className="sub">{i.detail}</span>
+                        {i.override && (
+                          <span className="sub">
+                            Accepted by {userLabel(i.override.erpUserId)} on {dateTime(i.override.at)}: {i.override.note}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <Badge tone={ITEM_TONE[i.status]}>{ITEM_STATUS[i.status]}</Badge>
+                      </td>
+                      <td className="num">
+                        {manage && !pending && i.status === "FAILING" && accepting?.key !== i.key && (
+                          <button type="button" className="btn" onClick={() => setAccepting(i)}>
+                            Accept…
+                          </button>
+                        )}
+                        {manage && !pending && i.status === "OVERRIDDEN" && (
+                          <button type="button" className="btn" disabled={saving} onClick={() => void changeOverride(i, false)}>
+                            Check again
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {accepting?.key === i.key && (
+                      <tr>
+                        <td colSpan={3}>
+                          <Field label={`Why can ${i.label.toLowerCase()} be accepted?`} required hint="Recorded with your name in the closing history.">
+                            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="No payroll this month: staff are paid quarterly" />
+                          </Field>
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button type="button" className="btn btn-primary" disabled={saving || note.trim().length < 3} onClick={() => void changeOverride(i, true)}>
+                              {saving ? "Saving…" : "Accept item"}
+                            </button>
+                            <button type="button" className="btn" onClick={() => setAccepting(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+
+            <table className="table" style={{ marginTop: 16 }}>
+              <thead>
+                <tr>
+                  <th>In this period</th>
+                  <th className="num">Count</th>
+                </tr>
+              </thead>
               <tbody>
                 <tr>
                   <td>Earlier periods still open</td>
                   <td className="num">{c.earlierOpen}</td>
                 </tr>
                 <tr>
-                  <td>Draft journals in the period</td>
-                  <td className="num">{c.drafts}</td>
-                </tr>
-                <tr>
-                  <td>Open posting exceptions</td>
-                  <td className="num">{c.openExceptions}</td>
+                  <td>Journals not posted (draft or waiting for approval)</td>
+                  <td className="num">{c.counts.unpostedJournals}</td>
                 </tr>
                 <tr>
                   <td>Approvals waiting</td>
-                  <td className="num">{c.pendingApprovals}</td>
+                  <td className="num">{c.counts.pendingApprovals}</td>
+                </tr>
+                <tr>
+                  <td>Open posting exceptions</td>
+                  <td className="num">{c.counts.openExceptions}</td>
+                </tr>
+                <tr>
+                  <td>Expenses not posted</td>
+                  <td className="num">{c.counts.unpostedExpenses}</td>
+                </tr>
+                <tr>
+                  <td>Supplier bills held for approval</td>
+                  <td className="num">{c.counts.heldBills}</td>
+                </tr>
+                <tr>
+                  <td>Bank and mobile money entries not reconciled</td>
+                  <td className="num">{c.counts.unreconciledBankItems}</td>
                 </tr>
                 <tr>
                   <td>Trial balance difference</td>
@@ -355,12 +430,10 @@ function CloseDrawer({ period, onClose, onDone }: { period: Period; onClose: () 
                 </tr>
               </tbody>
             </table>
-            {c.blockers.length > 0 && (
-              <ul style={{ marginTop: 12 }}>
-                {c.blockers.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
+            {c.warnings.length > 0 && (
+              <div className="notice" style={{ marginTop: 12 }}>
+                {c.warnings.join(". ")}.
+              </div>
             )}
           </>
         )}
@@ -388,237 +461,6 @@ function ReopenDrawer({ period, onClose, onDone }: { period: Period; onClose: ()
           <textarea className="input" required minLength={3} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Late supplier invoice for January" />
         </Field>
       </form>
-    </Drawer>
-  );
-}
-
-type Budget = { id: string; name: string; status: string; financialYearId: string | null; createdAt: string; lines: { accountId: string; amount: string | number }[] };
-type Variance = { budget: { name: string; year: string | null }; rows: { key: string; budget: number; actual: number; variance: number; variancePercent: number | null; favorable: boolean }[] };
-
-const PNL = new Set(["INCOME", "OTHER_INCOME", "COST_OF_SALES", "EXPENSE", "OTHER_EXPENSE"]);
-
-export function Budgets() {
-  const { can, api } = useSession();
-  const { toast } = useFeedback();
-  const { currency } = useCompany();
-  const budgets = useResource<Budget[]>("/api/v1/books/budgets");
-  const [creating, setCreating] = useState(false);
-  const [variance, setVariance] = useState<Budget | null>(null);
-
-  async function approve(b: Budget) {
-    try {
-      await api(`/api/v1/books/budgets/${b.id}/approve`, { method: "POST", body: "{}" });
-      toast(`${b.name} approved`);
-      budgets.reload();
-    } catch (e) {
-      toast((e as Error).message, { error: true });
-    }
-  }
-
-  return (
-    <>
-      <PageHeader
-        title="Budgets"
-        description="Plan income and spending by account, approve the plan, then compare it with what was posted."
-        actions={
-          can("budget:manage") && (
-            <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Plus size={16} aria-hidden="true" />
-              New budget
-            </button>
-          )
-        }
-      />
-      <Loadable resource={budgets}>
-        {(rows) =>
-          rows.length === 0 ? (
-            <div className="panel">
-              <EmptyState title="No budgets yet" body="Create a budget to compare planned and actual income and spending." />
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Budget</th>
-                    <th className="num">Lines</th>
-                    <th className="num">Total ({currency})</th>
-                    <th>Status</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((b) => (
-                    <tr key={b.id}>
-                      <td>
-                        {b.name}
-                        <span className="sub">Created {date(b.createdAt)}</span>
-                      </td>
-                      <td className="num">{b.lines.length}</td>
-                      <td className="num">{amount(b.lines.reduce((s, l) => s + Number(l.amount), 0))}</td>
-                      <td>
-                        <Badge tone={b.status === "APPROVED" ? "positive" : "neutral"}>{humanize(b.status)}</Badge>
-                      </td>
-                      <td className="num nowrap">
-                        <button type="button" className="btn" onClick={() => setVariance(b)}>
-                          Budget vs actual
-                        </button>{" "}
-                        {b.status === "DRAFT" && can("budget:manage") && (
-                          <button type="button" className="btn" onClick={() => void approve(b)}>
-                            Approve
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-      </Loadable>
-      {creating && (
-        <BudgetForm
-          onClose={() => setCreating(false)}
-          onSaved={() => {
-            setCreating(false);
-            budgets.reload();
-          }}
-        />
-      )}
-      {variance && <VarianceDrawer budget={variance} onClose={() => setVariance(null)} />}
-    </>
-  );
-}
-
-function BudgetForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { api } = useSession();
-  const accounts = useResource<Account[]>("/api/v1/coa");
-  const years = useResource<Year[]>("/api/v1/books/periods");
-  const [name, setName] = useState("");
-  const [yearId, setYearId] = useState("");
-  const [lines, setLines] = useState([{ accountId: "", amount: "" }]);
-  const { busy, error, setError, run } = useSubmit(onSaved);
-
-  const options = useMemo(
-    () =>
-      (accounts.data ?? [])
-        .filter((a) => a.isActive && PNL.has(a.type))
-        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
-        .map((a) => ({ value: a.id, label: a.name, prefix: a.code, group: humanize(a.type) })),
-    [accounts.data],
-  );
-
-  function update(i: number, patch: Partial<{ accountId: string; amount: string }>) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const parsed = lines.filter((l) => l.accountId).map((l) => ({ accountId: l.accountId, amount: parseAmount(l.amount) }));
-    if (!name.trim()) return setError("Give the budget a name.");
-    if (parsed.length === 0) return setError("Add at least one account.");
-    if (parsed.some((l) => !(l.amount > 0))) return setError("Every line needs an amount above zero.");
-    void run(async () => {
-      await api("/api/v1/books/budgets", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), financialYearId: yearId || undefined, lines: parsed }),
-      });
-      return "Budget saved as draft";
-    });
-  }
-
-  return (
-    <Drawer title="New budget" wide onClose={onClose} footer={<Footer onCancel={onClose} busy={busy} label="Save draft" formId="budget-form" />}>
-      <FormError message={error} />
-      <form id="budget-form" onSubmit={submit} className="form-grid">
-        <Field label="Name" required>
-          <input className="input" required value={name} onChange={(e) => setName(e.target.value)} placeholder="FY 2026 operating budget" />
-        </Field>
-        <Field label="Financial year" hint="Actuals are taken from this year.">
-          <Select
-            value={yearId}
-            onChange={setYearId}
-            options={[{ value: "", label: "Current year" }, ...(years.data ?? []).map((y) => ({ value: y.id, label: y.name }))]}
-          />
-        </Field>
-        <div className="span-2">
-          <table className="table lines-table">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th className="num" style={{ width: 200 }}>
-                  Annual amount
-                </th>
-                <th style={{ width: 40 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l, i) => (
-                <tr key={i}>
-                  <td>
-                    <Select value={l.accountId} onChange={(v) => update(i, { accountId: v })} options={options} placeholder="Choose an income or expense account" aria-label={`Account for line ${i + 1}`} />
-                  </td>
-                  <td>
-                    <MoneyInput value={l.amount} onChange={(v) => update(i, { amount: v })} aria-label={`Amount for line ${i + 1}`} />
-                  </td>
-                  <td>
-                    {lines.length > 1 && (
-                      <button type="button" className="icon-button" aria-label={`Remove line ${i + 1}`} onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}>
-                        ×
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setLines((ls) => [...ls, { accountId: "", amount: "" }])}>
-            <Plus size={16} aria-hidden="true" />
-            Add line
-          </button>
-        </div>
-      </form>
-    </Drawer>
-  );
-}
-
-function VarianceDrawer({ budget, onClose }: { budget: Budget; onClose: () => void }) {
-  const { currency } = useCompany();
-  const report = useResource<Variance>(`/api/v1/books/budgets/${budget.id}/variance`);
-  return (
-    <Drawer title={`${budget.name}: budget vs actual`} subtitle={`Amounts in ${currency}`} wide onClose={onClose}>
-      <Loadable resource={report}>
-        {(r) => (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th className="num">Budget</th>
-                <th className="num">Actual</th>
-                <th className="num">Variance</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {r.rows.map((row) => (
-                <tr key={row.key}>
-                  <td>{row.key}</td>
-                  <td className="num">{amount(row.budget)}</td>
-                  <td className="num">{amount(row.actual)}</td>
-                  <td className={`num ${row.favorable ? "text-positive" : "text-negative"}`}>
-                    {amount(row.variance)}
-                    {row.variancePercent != null && <span className="sub">{percent(row.variancePercent)}</span>}
-                  </td>
-                  <td>
-                    <Badge tone={row.favorable ? "positive" : "negative"}>{row.favorable ? "Favourable" : "Unfavourable"}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Loadable>
     </Drawer>
   );
 }
@@ -783,7 +625,7 @@ function RateForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
   );
 }
 
-type Control = { id: string; code: string; title: string; category: string; status: string; notes: string | null; updatedAt: string };
+type Control = { id: string; code: string; title: string; category: string; status: string; notes: string | null };
 type Approval = { id: string; entityType: string; entityId: string; amount: string; status: string; reason: string | null; requestedByErpUserId: number | null; createdAt: string };
 
 const CONTROL_TONE: Record<string, Tone> = { EFFECTIVE: "positive", DEFICIENT: "negative", OPEN: "warning" };
@@ -791,9 +633,10 @@ const CONTROL_TONE: Record<string, Tone> = { EFFECTIVE: "positive", DEFICIENT: "
 export function Controls() {
   const { can, api } = useSession();
   const { toast } = useFeedback();
-  const controls = useResource<Control[]>("/api/v1/books/controls");
+  const controls = useResource<ControlWithTests[]>("/api/v1/books/controls");
   const approvals = useResource<Approval[]>("/api/v1/books/approvals");
   const [editing, setEditing] = useState<Control | "new" | null>(null);
+  const [testing, setTesting] = useState<ControlWithTests | null>(null);
 
   async function decide(a: Approval, status: "APPROVED" | "REJECTED") {
     try {
@@ -809,7 +652,7 @@ export function Controls() {
     <>
       <PageHeader
         title="Controls and approvals"
-        description="Keep a register of internal controls and decide pending approvals. The person who asked for an approval cannot give it."
+        description="Keep a register of risks and the internal controls that address them, record control tests with evidence, and decide pending approvals. The person who asked for an approval cannot give it."
         actions={
           can("control:manage") && (
             <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}>
@@ -819,6 +662,7 @@ export function Controls() {
           )
         }
       />
+      <RiskRegister controls={controls.data ?? []} />
       <h2 className="section-title" style={{ marginBottom: 8 }}>
         Control register
       </h2>
@@ -837,6 +681,7 @@ export function Controls() {
                     <th>Control</th>
                     <th>Area</th>
                     <th>Status</th>
+                    <th>Last tested</th>
                     <th />
                   </tr>
                 </thead>
@@ -851,8 +696,22 @@ export function Controls() {
                       <td>{c.category}</td>
                       <td>
                         <Badge tone={CONTROL_TONE[c.status] ?? "neutral"}>{humanize(c.status)}</Badge>
+                        {c.riskCount > 0 && <span className="sub">{c.riskCount === 1 ? "1 risk" : `${c.riskCount} risks`}</span>}
                       </td>
-                      <td className="num">
+                      <td className="nowrap">
+                        {c.lastTest ? (
+                          <>
+                            {date(c.lastTest.testedAt)}
+                            <span className="sub">{c.lastTest.result === "PASS" ? "Passed" : "Failed"}</span>
+                          </>
+                        ) : (
+                          <span className="muted">Never</span>
+                        )}
+                      </td>
+                      <td className="num nowrap">
+                        <button type="button" className="btn" onClick={() => setTesting(c)}>
+                          Tests
+                        </button>{" "}
                         {can("control:manage") && (
                           <button type="button" className="btn" onClick={() => setEditing(c)}>
                             Update
@@ -923,6 +782,7 @@ export function Controls() {
           )
         }
       </Loadable>
+      {testing && <ControlTestsDrawer control={testing} onClose={() => setTesting(null)} onChanged={() => controls.reload()} />}
       {editing && (
         <ControlForm
           control={editing === "new" ? undefined : editing}
@@ -991,15 +851,6 @@ function ControlForm({ control, onClose, onSaved }: { control?: Control; onClose
 
 type Notice = { id: string; title: string; body: string; severity: string; readAt: string | null; createdAt: string };
 type Group = { id: string; name: string; members: { id: string; name: string; ownershipPercent: string }[] };
-type ApiKey = { id: string; name: string; prefix: string; revokedAt: string | null; createdAt: string };
-type Forecast = { name: string; horizonMonths: number; resultJson: { months?: string[]; history: number[]; forecast: number[] } };
-
-const monthLabel = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
-
-function monthsAfter(last: string | undefined, count: number): string[] {
-  const [y, m] = (last ?? new Date().toISOString().slice(0, 7)).split("-").map(Number);
-  return Array.from({ length: count }, (_, i) => monthLabel.format(new Date(Date.UTC(y, m + i, 1))));
-}
 type Consolidated = { rows: { code: string; name: string; debit: number; credit: number }[]; totals: { debit: number; credit: number; difference: number } };
 
 export function Platform() {
@@ -1008,12 +859,6 @@ export function Platform() {
   const { currency } = useCompany();
   const notes = useResource<Notice[]>("/api/v1/books/notifications");
   const groups = useResource<Group[]>("/api/v1/books/groups");
-  const keys = useResource<ApiKey[]>(can("platform:manage") ? "/api/v1/books/api-keys" : null);
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [forecast, setForecast] = useState<Forecast | null>(null);
-  const [newKey, setNewKey] = useState<{ name: string; token: string } | null>(null);
   const [consolidated, setConsolidated] = useState<{ group: Group; data: Consolidated } | null>(null);
 
   async function act<T>(fn: () => Promise<T>, onOk: (v: T) => void) {
@@ -1026,77 +871,12 @@ export function Platform() {
 
   return (
     <>
-      <PageHeader title="Insights and integrations" description="Ask questions of the posted books, forecast profit, manage alerts, groups and API keys." />
+      <PageHeader title="Insights and integrations" description="Ask questions of the posted books, track key indicators, forecast, and manage alerts, groups, API keys and webhooks." />
 
-      <div className="panel panel-body" style={{ marginBottom: 16 }}>
-        <h2 className="section-title">Ask the books</h2>
-        <p className="muted" style={{ margin: "4px 0 12px" }}>
-          Answers come from posted totals for profit, cash, receivables and payables.
-        </p>
-        <form
-          className="filter-bar"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!question.trim()) return;
-            setAsking(true);
-            void act(
-              () => api<{ answer: string }>("/api/v1/books/assistant", { method: "POST", body: JSON.stringify({ question: question.trim() }) }),
-              (r) => setAnswer(r.answer),
-            ).finally(() => setAsking(false));
-          }}
-        >
-          <input className="input grow" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="How much cash do we have?" aria-label="Question" />
-          <button className="btn btn-primary" type="submit" disabled={asking}>
-            {asking ? "Asking…" : "Ask"}
-          </button>
-        </form>
-        {answer && <div className="notice info">{answer}</div>}
-      </div>
-
-      <div className="panel panel-body" style={{ marginBottom: 16 }}>
-        <div className="filter-bar">
-          <h2 className="section-title grow">Profit forecast</h2>
-          <button
-            type="button"
-            className="btn"
-            onClick={() =>
-              void act(
-                () => api<Forecast>("/api/v1/books/forecast", { method: "POST", body: JSON.stringify({ name: "Next 3 months", horizonMonths: 3 }) }),
-                setForecast,
-              )
-            }
-          >
-            Forecast next 3 months
-          </button>
-        </div>
-        {!forecast ? (
-          <p className="muted">A straight-line trend of monthly profit from posted journals.</p>
-        ) : forecast.resultJson.history.length < 2 ? (
-          <p className="muted">At least two completed months of posted income and expenses are needed for a trend.</p>
-        ) : (
-          <>
-            <p className="muted" style={{ marginBottom: 8 }}>
-              Based on {forecast.resultJson.history.length} completed months of posted profit, including months with no activity.
-            </p>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  <th className="num">Projected profit ({currency})</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthsAfter(forecast.resultJson.months?.at(-1), forecast.resultJson.forecast.length).map((label, i) => (
-                  <tr key={label}>
-                    <td>{label}</td>
-                    <td className="num">{amount(forecast.resultJson.forecast[i])}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </div>
+      <AssistantPanel />
+      <KpiPanel />
+      <ForecastPanel />
+      <EmailSettingsPanel />
 
       <div className="panel panel-body" style={{ marginBottom: 16 }}>
         <h2 className="section-title" style={{ marginBottom: 8 }}>
@@ -1183,67 +963,10 @@ export function Platform() {
       </div>
 
       {can("platform:manage") && (
-        <div className="panel panel-body">
-          <div className="filter-bar">
-            <h2 className="section-title grow">API keys</h2>
-            <button
-              type="button"
-              className="btn"
-              onClick={() =>
-                void act(
-                  () => api<{ name: string; token: string }>("/api/v1/books/api-keys", { method: "POST", body: JSON.stringify({ name: "Integration" }) }),
-                  (k) => {
-                    setNewKey(k);
-                    keys.reload();
-                  },
-                )
-              }
-            >
-              <Plus size={16} aria-hidden="true" />
-              Issue key
-            </button>
-          </div>
-          {newKey && (
-            <div className="notice info" style={{ marginBottom: 12 }}>
-              Copy this key now. It will not be shown again: <code className="mono">{newKey.token}</code>
-            </div>
-          )}
-          <Loadable resource={keys}>
-            {(rows) =>
-              rows.length === 0 ? (
-                <p className="muted">No API keys issued.</p>
-              ) : (
-                <table className="table">
-                  <tbody>
-                    {rows.map((k) => (
-                      <tr key={k.id} className={k.revokedAt ? "row-inactive" : undefined}>
-                        <td>
-                          {k.name}
-                          <span className="sub mono">{k.prefix}…</span>
-                        </td>
-                        <td>{k.revokedAt ? `Revoked ${date(k.revokedAt)}` : `Issued ${date(k.createdAt)}`}</td>
-                        <td className="num">
-                          {!k.revokedAt && (
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={async () => {
-                                if (!(await confirm({ title: `Revoke ${k.name}?`, body: "Anything using this key will stop working.", confirmLabel: "Revoke", danger: true }))) return;
-                                void act(() => api(`/api/v1/books/api-keys/${k.id}/revoke`, { method: "POST", body: "{}" }), () => keys.reload());
-                              }}
-                            >
-                              Revoke
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            }
-          </Loadable>
-        </div>
+        <>
+          <ApiKeysPanel />
+          <WebhooksPanel />
+        </>
       )}
 
       {consolidated && (

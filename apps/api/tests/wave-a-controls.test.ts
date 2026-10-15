@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { automationDue } from "../src/modules/books/books.service";
+import { createAndPostJournal, createJournal } from "../src/modules/journals/journal.service";
 import { activateCompany, authHeaders, resetCompany, signErpToken } from "./helpers";
 
 const app = createApp();
@@ -124,6 +125,59 @@ describe("Wave A controls", () => {
     expect(functional.body.data.skipped).toBeTruthy();
   });
 
+  it("refuses to revalue an account whose postings carry no foreign amount", async () => {
+    const legacy = await prisma.account.create({ data: { companyId, code: "1116", name: "Old EUR bank", type: "ASSET" } });
+    await createAndPostJournal(companyId, {
+      journalDate: "2026-01-10",
+      journalType: "ADJUSTMENT",
+      lines: [
+        { accountId: legacy.id, debit: 100, credit: 0 },
+        { accountId: (await account("4100")).id, debit: 0, credit: 100 },
+      ],
+    });
+    await prisma.account.update({ where: { id: legacy.id }, data: { currency: "EUR" } });
+    await request(app).post(`${base}/fx/rates`).set(admin).send({ currency: "EUR", rateDate: "2026-01-31", rate: 1500 });
+    const refused = await request(app).post(`${base}/fx/revalue`).set(admin).send({ currency: "EUR", asOf: "2026-01-31" });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatch(/1116/);
+    expect(Number((await account("1116")).currentBalance)).toBe(100);
+    await prisma.account.update({ where: { id: legacy.id }, data: { isActive: false } });
+  });
+
+  it("posts functional-currency AR and AP documents at rate 1", async () => {
+    const customer = await request(app).post("/api/v1/ar/customers").set(admin).send({ name: "Franc Buyer", customerType: "CREDIT", creditLimit: 1_000_000 });
+    const invoice = await request(app).post("/api/v1/ar/invoices").set(admin).send({ customerId: customer.body.data.id, invoiceDate: "2026-01-15", net: 100 });
+    expect(invoice.status).toBe(201);
+    expect(invoice.body.data.currency).toBe("RWF");
+    const posted = await prisma.journal.findUniqueOrThrow({ where: { id: invoice.body.data.journalId } });
+    expect(posted.currencyCode).toBe("RWF");
+    expect(Number(posted.exchangeRate)).toBe(1);
+    expect(Number(posted.totalDebit)).toBe(100);
+
+    const supplier = await request(app).post("/api/v1/ap/suppliers").set(admin).send({ name: "Local Vendor" });
+    const bill = await request(app).post("/api/v1/ap/bills").set(admin).send({ supplierId: supplier.body.data.id, billDate: "2026-01-15", net: 100 });
+    expect(bill.status).toBe(201);
+    expect(bill.body.data.currency).toBe("RWF");
+  });
+
+  it("posts and reverses a journal once under concurrent requests", async () => {
+    const { id } = await createJournal(companyId, {
+      journalDate: "2026-01-10",
+      journalType: "ADJUSTMENT",
+      lines: [
+        { accountId: (await account("1100")).id, debit: 70, credit: 0 },
+        { accountId: (await account("4100")).id, debit: 0, credit: 70 },
+      ],
+    });
+    const posts = await Promise.all([1, 2].map(() => request(app).post(`/api/v1/journals/${id}/post`).set(admin)));
+    expect(posts.map((r) => r.status)).toEqual([200, 200]);
+    expect(await prisma.glEntry.count({ where: { journalId: id } })).toBe(2);
+
+    const reversals = await Promise.all([1, 2].map(() => request(app).post(`/api/v1/journals/${id}/reverse`).set(admin).send({})));
+    expect(reversals.map((r) => r.status).sort()).toEqual([200, 400]);
+    expect(await prisma.journal.count({ where: { companyId, reversesJournalId: id } })).toBe(1);
+  });
+
   it("consolidates only companies the user belongs to, in full, with balanced eliminations", async () => {
     const sale = await journal(
       [
@@ -219,8 +273,9 @@ describe("Wave A controls", () => {
     expect(duplicate.status).toBe(400);
 
     const id = approval.body.data.id;
-    expect((await request(app).post(`${base}/approvals/${id}/decide`).set(admin).send({ status: "APPROVED" })).body.data.status).toBe("APPROVED");
-    const flip = await request(app).post(`${base}/approvals/${id}/decide`).set(admin).send({ status: "REJECTED" });
+    const approver = authHeaders(orgA, "ADMIN", 443);
+    expect((await request(app).post(`${base}/approvals/${id}/decide`).set(approver).send({ status: "APPROVED" })).body.data.status).toBe("APPROVED");
+    const flip = await request(app).post(`${base}/approvals/${id}/decide`).set(approver).send({ status: "REJECTED", note: "changed my mind" });
     expect(flip.status).toBe(400);
     expect(flip.body.error).toMatch(/already approved/);
     expect(await prisma.auditEvent.count({ where: { companyId, entityType: "ApprovalRequest", entityId: id } })).toBe(2);

@@ -173,7 +173,7 @@ export function SessionProvider({
         fetch(accountingUrl(path), {
           ...init,
           headers: {
-            "Content-Type": "application/json",
+            ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
             Authorization: `Bearer ${bearer}`,
             ...(init?.headers ?? {}),
           },
@@ -224,7 +224,10 @@ export function SessionProvider({
           }
         }
         if (res.status === 401) setExpired(true);
-        if (!res.ok) throw new ApiError(friendlyError(res.status, undefined), res.status);
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+          throw new ApiError(friendlyError(res.status, body?.error ?? body?.message), res.status);
+        }
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");
         a.href = url;

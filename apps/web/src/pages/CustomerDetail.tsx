@@ -1,16 +1,17 @@
 import { useCallback, useMemo, useState } from "react";
-import { CreditNoteForm, CustomerForm, DepositForm, InvoiceForm, ReceiptForm } from "../components/ArForms";
+import { AllocateDepositForm, CreditNoteForm, CustomerForm, DebitNoteForm, DepositForm, InvoiceForm, ReceiptForm } from "../components/ArForms";
 import { type Column, DataTable } from "../components/DataTable";
+import { PeriodStatementView } from "../components/Documents";
 import { useFeedback } from "../components/feedback";
 import { DueStatus, EmptyState, Figure, Loadable, Menu, PageHeader, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, daysBetween, humanize, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
-import type { Customer, CustomerLedger, CustomerStatement } from "../lib/types";
+import type { ArDeposit, Customer, CustomerLedger, CustomerStatement } from "../lib/types";
 import { CustomerStatusBadge } from "./Customers";
 
-type Tab = "open" | "all" | "activity";
-type Dialog = null | "invoice" | "receipt" | "credit" | "deposit" | "edit";
+type Tab = "open" | "all" | "deposits" | "activity" | "statement";
+type Dialog = null | "invoice" | "receipt" | "credit" | "debit" | "deposit" | "edit";
 type StatementRow = CustomerStatement["rows"][number];
 type LedgerEntry = CustomerLedger["entries"][number];
 
@@ -31,22 +32,26 @@ export function CustomerDetail({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("open");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [receiveFor, setReceiveFor] = useState<string | undefined>();
+  const [applying, setApplying] = useState<ArDeposit | null>(null);
 
   const customer = useResource<Customer>(`/api/v1/ar/customers/${id}`);
   const open = useResource<CustomerStatement>(`/api/v1/ar/customers/${id}/statement`);
   const full = useResource<CustomerStatement>(tab === "all" ? `/api/v1/ar/customers/${id}/statement?type=FULL` : null);
   const ledger = useResource<CustomerLedger>(`/api/v1/ar/customers/${id}/ledger`);
+  const deposits = useResource<ArDeposit[]>(`/api/v1/ar/customers/${id}/deposits`);
 
   const refresh = useCallback(() => {
     customer.reload();
     open.reload();
     full.reload();
     ledger.reload();
-  }, [customer, open, full, ledger]);
+    deposits.reload();
+  }, [customer, open, full, ledger, deposits]);
 
   const close = useCallback(() => {
     setDialog(null);
     setReceiveFor(undefined);
+    setApplying(null);
   }, []);
   const saved = useCallback(() => {
     close();
@@ -78,6 +83,64 @@ export function CustomerDetail({ id }: { id: string }) {
       toast((e as Error).message, { error: true });
     }
   }
+
+  async function refundDeposit(deposit: ArDeposit) {
+    const ok = await confirm({
+      title: `Refund deposit ${deposit.depositNumber}?`,
+      body: `This pays back the unused ${currency} ${amount(deposit.remaining)} by ${humanize(deposit.method).toLowerCase()} today and posts the journal. It can't be undone.`,
+      confirmLabel: "Refund deposit",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/v1/ar/deposits/${deposit.id}/refund`, { method: "POST" });
+      toast(`Deposit ${deposit.depositNumber} refunded`);
+      refresh();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
+
+  const depositColumns: Column<ArDeposit>[] = [
+    { key: "date", header: "Date", className: "nowrap", sortValue: (d) => d.depositDate, render: (d) => date(d.depositDate) },
+    {
+      key: "number",
+      header: "Deposit",
+      render: (d) => (
+        <>
+          <span className="strong nowrap">{d.depositNumber}</span>
+          <span className="sub">{[humanize(d.method), d.reference, d.description].filter(Boolean).join(" · ")}</span>
+        </>
+      ),
+    },
+    { key: "amount", header: "Received", numeric: true, className: "hide-sm", render: (d) => amount(d.amount) },
+    {
+      key: "remaining",
+      header: `Available (${currency})`,
+      numeric: true,
+      render: (d) => (d.remaining > 0 ? <span className="strong">{amount(d.remaining)}</span> : <span className="subtle">0</span>),
+    },
+    ...(can("ar:manage")
+      ? [
+          {
+            key: "act",
+            header: <span className="sr-only">Actions</span>,
+            width: 160,
+            render: (d: ArDeposit) =>
+              d.status === "POSTED" && d.remaining > 0 ? (
+                <span className="row-actions no-print" style={{ display: "inline-flex", gap: 6 }}>
+                  <button type="button" className="btn btn-sm" onClick={() => setApplying(d)}>
+                    Apply
+                  </button>
+                  <button type="button" className="btn btn-sm btn-quiet" onClick={() => void refundDeposit(d)}>
+                    Refund
+                  </button>
+                </span>
+              ) : null,
+          },
+        ]
+      : []),
+  ];
 
   const invoiceColumns = (showPaid: boolean): Column<StatementRow>[] => [
     {
@@ -198,6 +261,7 @@ export function CustomerDetail({ id }: { id: string }) {
                     label="More"
                     items={[
                       can("ar:manage") && { label: "Issue credit note", onSelect: () => setDialog("credit") },
+                      can("ar:manage") && { label: "Issue debit note", onSelect: () => setDialog("debit") },
                       can("ar:manage") && { label: "Record deposit", onSelect: () => setDialog("deposit") },
                       can("ar:manage") && { label: "Edit customer", onSelect: () => setDialog("edit") },
                       { label: "Print statement", onSelect: () => window.print() },
@@ -236,7 +300,9 @@ export function CustomerDetail({ id }: { id: string }) {
                   [
                     ["open", `Open invoices${open.data ? ` (${open.data.rows.length})` : ""}`],
                     ["all", "All invoices"],
+                    ["deposits", `Deposits${deposits.data?.length ? ` (${deposits.data.length})` : ""}`],
                     ["activity", "Account activity"],
+                    ["statement", "Statement"],
                   ] as Array<[Tab, string]>
                 ).map(([key, label]) => (
                   <button key={key} type="button" role="tab" aria-selected={tab === key} className={`tab ${tab === key ? "on" : ""}`} onClick={() => setTab(key)}>
@@ -284,6 +350,22 @@ export function CustomerDetail({ id }: { id: string }) {
                 </Loadable>
               )}
 
+              {tab === "deposits" && (
+                <Loadable resource={deposits}>
+                  {(rows) => (
+                    <DataTable
+                      columns={depositColumns}
+                      rows={rows}
+                      rowKey={(d) => d.id}
+                      initialSort={{ key: "date", dir: "desc" }}
+                      empty={<EmptyState title="No deposits" body="Money received before invoicing is held here until it's applied to an invoice or refunded." />}
+                    />
+                  )}
+                </Loadable>
+              )}
+
+              {tab === "statement" && <PeriodStatementView kind="customer" partyId={c.id} partyCode={c.code} />}
+
               {tab === "activity" && (
                 <Loadable resource={ledger}>
                   {(l) => (
@@ -301,7 +383,9 @@ export function CustomerDetail({ id }: { id: string }) {
             {dialog === "invoice" && <InvoiceForm customer={c} onClose={close} onSaved={saved} />}
             {dialog === "receipt" && <ReceiptForm customer={c} invoiceNumber={receiveFor} onClose={close} onSaved={saved} />}
             {dialog === "credit" && <CreditNoteForm customer={c} onClose={close} onSaved={saved} />}
+            {dialog === "debit" && <DebitNoteForm customer={c} onClose={close} onSaved={saved} />}
             {dialog === "deposit" && <DepositForm customer={c} onClose={close} onSaved={saved} />}
+            {applying && <AllocateDepositForm customer={c} deposit={applying} onClose={close} onSaved={saved} />}
             {dialog === "edit" && <CustomerForm customer={c} onClose={close} onSaved={saved} />}
           </>
         );

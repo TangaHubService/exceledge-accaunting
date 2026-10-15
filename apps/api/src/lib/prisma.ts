@@ -29,6 +29,19 @@ export const prisma = new Proxy(client, {
   },
 }) as PrismaClient;
 
+/** Never joins the current transaction, so what it writes is visible to other connections at once. */
+export const autonomousPrisma: PrismaClient = client;
+
+/**
+ * Holds a Postgres advisory lock on `key` until the current transaction ends, so work on the same key from
+ * other connections waits. Must be called inside `inTransaction`.
+ */
+export async function lockForTransaction(key: string): Promise<void> {
+  const tx = scope.getStore();
+  if (!tx) throw new Error("lockForTransaction must run inside a transaction");
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+}
+
 export function inTransaction<T>(fn: () => Promise<T>): Promise<T> {
   if (scope.getStore()) return fn();
   return client.$transaction((tx) => scope.run(tx, fn), { maxWait: 10_000, timeout: 60_000 });

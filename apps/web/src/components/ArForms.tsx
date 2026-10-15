@@ -3,8 +3,9 @@ import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSu
 import { useCompany } from "../lib/company";
 import { amount, date, humanize, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
-import type { Customer, CustomerLedger, CustomerStatement, CustomerType } from "../lib/types";
+import type { ArDeposit, Customer, CustomerLedger, CustomerStatement, CustomerType } from "../lib/types";
 import { SettlementAccountField } from "./BankingForms";
+import { emptyLine, EntryModeSwitch, LineItemsEditor, type LineDraft, linesPayload, priceLines, useLineTaxCodes } from "./Documents";
 import { Select } from "./Select";
 import { Drawer, Field, Skeleton } from "./ui";
 
@@ -249,6 +250,9 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
   const [tax, setTax] = useState("");
   const [discount, setDiscount] = useState("");
   const [override, setOverride] = useState(false);
+  const [lined, setLined] = useState(false);
+  const taxCodes = useLineTaxCodes("sales");
+  const [lines, setLines] = useState<LineDraft[]>(() => [emptyLine()]);
   const { busy, error, run } = useSubmit(onSaved);
 
   const customer = preset ?? picked;
@@ -259,7 +263,7 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
   const n = parseAmount(net);
   const t = parseAmount(tax) || 0;
   const d = parseAmount(discount) || 0;
-  const total = (Number.isFinite(n) ? n : 0) + t - d;
+  const total = lined ? priceLines(lines, taxCodes).gross : (Number.isFinite(n) ? n : 0) + t - d;
 
   const limit = toNumber(customer?.creditLimit);
   const balance = toNumber(customer?.balance);
@@ -267,7 +271,7 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!Number.isFinite(n) || n <= 0) return;
+    if (lined ? total <= 0 : !Number.isFinite(n) || n <= 0) return;
     void run(async () => {
       const inv = await api<{ invoiceNumber: string }>("/api/v1/ar/invoices", {
         method: "POST",
@@ -275,9 +279,7 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
           customerId: customer!.id,
           invoiceDate,
           dueDate: effectiveDue,
-          net: n,
-          tax: t || undefined,
-          discount: d || undefined,
+          ...(lined ? { lines: linesPayload(lines) } : { net: n, tax: t || undefined, discount: d || undefined }),
           description: description || undefined,
           creditOverride: override || undefined,
         }),
@@ -291,6 +293,7 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
       title="New invoice"
       subtitle="Posts to the customer's account and the general ledger immediately."
       onClose={onClose}
+      wide={lined}
       footer={<Footer onCancel={onClose} busy={busy} label="Post invoice" formId="invoice-form" />}
     >
       <form id="invoice-form" onSubmit={submit}>
@@ -324,27 +327,34 @@ export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?:
           </Field>
         </div>
 
-        <div className="form-section-title" style={{ marginTop: 22 }}>Amounts ({currency})</div>
-        <div className="form-grid">
-          <Field label="Amount before VAT" required className="span-2">
-            <MoneyInput value={net} onChange={setNet} required />
-          </Field>
-          <Field label="VAT">
-            <MoneyInput value={tax} onChange={setTax} placeholder="0" />
-          </Field>
-          <Field label="Discount">
-            <MoneyInput value={discount} onChange={setDiscount} placeholder="0" />
-          </Field>
-        </div>
+        <EntryModeSwitch lined={lined} onChange={setLined} />
+        <div className="form-section-title" style={{ marginTop: 16 }}>Amounts ({currency})</div>
+        {lined ? (
+          <LineItemsEditor lines={lines} onChange={setLines} side="sales" codes={taxCodes} currency={currency} />
+        ) : (
+          <>
+            <div className="form-grid">
+              <Field label="Amount before VAT" required className="span-2">
+                <MoneyInput value={net} onChange={setNet} required />
+              </Field>
+              <Field label="VAT">
+                <MoneyInput value={tax} onChange={setTax} placeholder="0" />
+              </Field>
+              <Field label="Discount">
+                <MoneyInput value={discount} onChange={setDiscount} placeholder="0" />
+              </Field>
+            </div>
 
-        <SummaryRows
-          rows={[
-            ["Amount before VAT", amount(Number.isFinite(n) ? n : 0)],
-            ["VAT", amount(t)],
-            ...(d ? ([["Discount", `−${amount(d)}`]] as Array<[ReactNode, ReactNode]>) : []),
-            [`Invoice total`, money(total, currency), true],
-          ]}
-        />
+            <SummaryRows
+              rows={[
+                ["Amount before VAT", amount(Number.isFinite(n) ? n : 0)],
+                ["VAT", amount(t)],
+                ...(d ? ([["Discount", `−${amount(d)}`]] as Array<[ReactNode, ReactNode]>) : []),
+                [`Invoice total`, money(total, currency), true],
+              ]}
+            />
+          </>
+        )}
 
         {customer && limit > 0 && (
           <p className={`small ${exceedsLimit ? "text-negative" : "muted"}`} style={{ marginTop: 10 }}>
@@ -608,6 +618,7 @@ export function CreditNoteForm({ customer, onClose, onSaved }: { customer: Custo
   );
 }
 
+
 /* ── Deposit ───────────────────────────────────────────── */
 
 export function DepositForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
@@ -666,6 +677,143 @@ export function DepositForm({ customer, onClose, onSaved }: { customer: Customer
             <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
         </div>
+      </form>
+    </Drawer>
+  );
+}
+
+export function AllocateDepositForm({ customer, deposit, onClose, onSaved }: { customer: Customer; deposit: ArDeposit; onClose: () => void; onSaved: () => void }) {
+  const { api } = useSession();
+  const { currency } = useCompany();
+  const { invoices } = useOpenInvoices(customer.id);
+  const [invoiceId, setInvoiceId] = useState("");
+  const [value, setValue] = useState("");
+  const { busy, error, run } = useSubmit(onSaved);
+  const invoice = invoices?.find((i) => i.id === invoiceId);
+  const n = parseAmount(value);
+  const tooMuch = Number.isFinite(n) && (n > deposit.remaining + 0.001 || (invoice ? n > invoice.outstanding + 0.001 : false));
+
+  function pick(id: string) {
+    setInvoiceId(id);
+    const inv = invoices?.find((x) => x.id === id);
+    if (inv) {
+      const v = Math.min(inv.outstanding, deposit.remaining);
+      setValue(amount(v, v % 1 ? 2 : 0));
+    }
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!invoiceId || !Number.isFinite(n) || n <= 0 || tooMuch) return;
+    void run(async () => {
+      await api(`/api/v1/ar/deposits/${deposit.id}/allocate`, { method: "POST", body: JSON.stringify({ invoiceId, amount: n }) });
+      return `${money(n, currency)} of ${deposit.depositNumber} applied`;
+    });
+  }
+
+  return (
+    <Drawer
+      title={`Apply deposit ${deposit.depositNumber}`}
+      subtitle={`${money(deposit.remaining, currency)} still available. Applied today.`}
+      onClose={onClose}
+      footer={<Footer onCancel={onClose} busy={busy} label="Apply deposit" formId="deposit-alloc-form" />}
+    >
+      <form id="deposit-alloc-form" onSubmit={submit}>
+        <FormError message={error} />
+        <div className="form-grid">
+          <Field label="Invoice" required className="span-2">
+            <Select
+              value={invoiceId}
+              onChange={pick}
+              required
+              placeholder="Select an invoice…"
+              emptyText="This customer has no open invoices"
+              options={(invoices ?? []).map((inv) => ({ value: inv.id, label: inv.invoiceNumber, hint: `${amount(inv.outstanding)} outstanding` }))}
+            />
+          </Field>
+          <Field label={`Amount (${currency})`} required error={tooMuch ? "More than the deposit or the invoice balance" : null}>
+            <MoneyInput value={value} onChange={setValue} invalid={tooMuch} required />
+          </Field>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
+/* ── Debit note ────────────────────────────────────────── */
+
+export function DebitNoteForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
+  const { api, can } = useSession();
+  const { currency } = useCompany();
+  const [noteDate, setNoteDate] = useState(isoDay());
+  const [reason, setReason] = useState("");
+  const [description, setDescription] = useState("");
+  const [net, setNet] = useState("");
+  const [tax, setTax] = useState("");
+  const [override, setOverride] = useState(false);
+  const { busy, error, run } = useSubmit(onSaved);
+
+  const n = parseAmount(net);
+  const t = parseAmount(tax) || 0;
+  const total = (Number.isFinite(n) ? n : 0) + t;
+  const limit = toNumber(customer.creditLimit);
+  const exceedsLimit = limit > 0 && toNumber(customer.balance) + total > limit;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!Number.isFinite(n) || n <= 0) return;
+    void run(async () => {
+      const note = await api<{ debitNoteNumber: string }>("/api/v1/ar/debit-notes", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId: customer.id,
+          noteDate,
+          dueDate: addDays(noteDate, customer.creditPeriodDays),
+          reason,
+          net: n,
+          tax: t || undefined,
+          description: description.trim() || undefined,
+          creditOverride: override || undefined,
+        }),
+      });
+      return `Debit note ${note.debitNoteNumber} posted`;
+    });
+  }
+
+  return (
+    <Drawer
+      title="Issue debit note"
+      subtitle={`Adds a charge to what ${customer.name} owes, such as an undercharge or a late fee.`}
+      onClose={onClose}
+      footer={<Footer onCancel={onClose} busy={busy} label="Post debit note" formId="debit-form" />}
+    >
+      <form id="debit-form" onSubmit={submit}>
+        <FormError message={error} />
+        <div className="form-grid">
+          <Field label="Reason" required className="span-2">
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Price correction on INV-2026-000012" required />
+          </Field>
+          <Field label="Date" required hint={`Due ${customer.creditPeriodDays ? `after ${customer.creditPeriodDays} days` : "immediately"}`}>
+            <input className="input" type="date" value={noteDate} onChange={(e) => setNoteDate(e.target.value)} required />
+          </Field>
+          <Field label="Description">
+            <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </Field>
+          <Field label={`Amount before VAT (${currency})`} required>
+            <MoneyInput value={net} onChange={setNet} required />
+          </Field>
+          <Field label="VAT">
+            <MoneyInput value={tax} onChange={setTax} placeholder="0" />
+          </Field>
+        </div>
+        <SummaryRows rows={[["Added to balance", money(total, currency), true]]} />
+        {exceedsLimit && <p className="small text-negative" style={{ marginTop: 10 }}>This takes {customer.name} over their credit limit.</p>}
+        {exceedsLimit && can("ar:credit-override") && (
+          <label className="check" style={{ marginTop: 8 }}>
+            <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+            Approve charging above the credit limit
+          </label>
+        )}
       </form>
     </Drawer>
   );

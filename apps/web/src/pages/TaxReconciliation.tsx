@@ -2,7 +2,7 @@ import { Printer } from "lucide-react";
 import { useState } from "react";
 import { Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { amount, date, isoDay } from "../lib/format";
+import { amount, calendarDate, isoDay } from "../lib/format";
 import { useResource } from "../lib/session";
 import type { TaxReconciliationReport } from "../lib/types";
 import { PeriodFilter, monthStart } from "./WithholdingTax";
@@ -41,7 +41,7 @@ export function TaxReconciliationPage() {
               <div className="company">{name}</div>
               <div className="title">Tax reconciliation</div>
               <div className="period">
-                {date(r.from)} to {date(r.to)} · Amounts in {currency}
+                {calendarDate(r.from)} to {calendarDate(r.to)} · Amounts in {currency}
               </div>
             </div>
 

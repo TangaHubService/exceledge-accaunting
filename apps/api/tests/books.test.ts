@@ -54,7 +54,9 @@ describe("Phases 11-20 books", () => {
       lines: [{ accountId: sales, amount: 100 }],
     });
     expect(budget.status).toBe(201);
-    const approved = await request(app).post(`${base}/budgets/${budget.body.data.id}/approve`).set(admin);
+    expect((await request(app).post(`${base}/budgets/${budget.body.data.id}/submit`).set(admin)).status).toBe(200);
+    expect((await request(app).post(`${base}/budgets/${budget.body.data.id}/approve`).set(admin)).status).toBe(400);
+    const approved = await request(app).post(`${base}/budgets/${budget.body.data.id}/approve`).set(authHeaders(orgId, "ADMIN", 443));
     expect(approved.body.data.status).toBe("APPROVED");
     const variance = await request(app).get(`${base}/budgets/${budget.body.data.id}/variance`).set(admin);
     expect(variance.body.data.rows[0].actual).toBe(80);
@@ -107,7 +109,7 @@ describe("Phases 11-20 books", () => {
     const journalId = ran.body.data.journalIds[0];
     const approval = await request(app).post(`${base}/approvals`).set(authHeaders(orgId, "ACCOUNTANT", 702)).send({ entityType: "Journal", entityId: journalId, amount: 5000 });
     expect(approval.status).toBe(201);
-    const decided = await request(app).post(`${base}/approvals/${approval.body.data.id}/decide`).set(admin).send({ status: "APPROVED" });
+    const decided = await request(app).post(`${base}/approvals/${approval.body.data.id}/decide`).set(authHeaders(orgId, "ADMIN", 443)).send({ status: "APPROVED" });
     expect(decided.body.data.status).toBe("APPROVED");
 
     const group = await request(app).post(`${base}/groups`).set(admin).send({ name: "Edge Group", members: [{ name: "Parent", ownershipPercent: 100 }] });
@@ -122,7 +124,9 @@ describe("Phases 11-20 books", () => {
     const key = await request(app).post(`${base}/api-keys`).set(admin).send({ name: "Partner" });
     expect(key.body.data.token).toHaveLength(48);
     expect(key.body.data.scopes).toEqual(["report:view"]);
-    const signed = await request(app).post(`${base}/signatures`).set(admin).send({ entityType: "PeriodClose", entityId: "p1", statement: "I approve this close pack" });
+    const signed = await request(app).post(`${base}/signatures`).set(admin).send({ entityType: "Journal", entityId: journalId, statement: "I approve this journal" });
     expect(signed.status).toBe(201);
+    const rejected = await request(app).post(`${base}/signatures`).set(admin).send({ entityType: "PeriodClose", entityId: "p1", statement: "I approve this close pack" });
+    expect(rejected.status).toBe(400);
   });
 });

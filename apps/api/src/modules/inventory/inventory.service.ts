@@ -15,11 +15,14 @@ import {
 import type { InventoryMovement, Prisma } from "@prisma/client";
 import { env } from "../../config/env";
 import { defaultsFor, money } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { assertAccountsPostable, assertOpenPeriod, createAndPostJournal } from "../journals/journal.service";
 
-export const INVENTORY_EVENT_TYPES = new Set(["INVENTORY_MOVEMENT", "INVENTORY_OPENING"]);
+export const INVENTORY_EVENT_TYPES = new Set(["INVENTORY_MOVEMENT", "INVENTORY_OPENING", "INVENTORY_ADJUSTED", "INVENTORY_WRITTEN_OFF"]);
+
+/** Movements whose value is journalled from the subledger; sales before valuation costing had their cost in the sale journal. */
+const JOURNALLED: Prisma.InventoryMovementWhereInput = { costInSaleJournal: false };
 
 const DAY = 86_400_000;
 const SYSTEM = { erpUserId: 0, erpRole: "SYSTEM" };
@@ -118,7 +121,10 @@ type MovementInput = {
 
 /** Values one ERP stock movement and moves the item-location balance and FIFO layers with it. */
 async function recordMovement(tx: Prisma.TransactionClient, input: MovementInput) {
-  const balance = await balanceFor(tx, input.companyId, input.itemId, input.locationId);
+  const created = await balanceFor(tx, input.companyId, input.itemId, input.locationId);
+  // Movements of one item-location (ERP events, supplier returns) are valued one after the other.
+  await tx.$queryRaw`SELECT id FROM "inventory_balances" WHERE id = ${created.id} FOR UPDATE`;
+  const balance = await tx.inventoryBalance.findUniqueOrThrow({ where: { id: created.id } });
   const position = { quantity: qty(balance.quantity), value: money(balance.value) };
   const inbound = isInboundMovement(input.kind);
 
@@ -336,9 +342,32 @@ function readEventLines(event: { id: string; eventType: string; externalBranchId
   const meta = (payload.metadata ?? {}) as Record<string, unknown>;
   const productId = text(meta.productId);
   const branchId = text(event.externalBranchId) ?? text(meta.branchId);
-  const movementType = text(meta.movementType);
-  const direction = text(meta.direction) ?? "IN";
+  let movementType = text(meta.movementType);
+  let direction = text(meta.direction) ?? "IN";
+  // Adjustments and write-offs move stock like any other movement so the subledger and GL stay in step.
+  if (event.eventType === "INVENTORY_ADJUSTED" || event.eventType === "INVENTORY_WRITTEN_OFF") {
+    const label = event.eventType === "INVENTORY_ADJUSTED" ? "Inventory adjustment" : "Inventory write-off";
+    if (!productId || !branchId || !(Math.abs(Number(meta.quantity ?? 0)) > 0)) {
+      throw new Error(`${label} must name the product, the branch and the quantity so it goes through the inventory subledger`);
+    }
+    const gain = ["GAIN", "IN"].includes(String(meta.direction ?? "").toUpperCase());
+    if (event.eventType === "INVENTORY_ADJUSTED") {
+      movementType = gain ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT";
+      direction = gain ? "IN" : "OUT";
+    } else {
+      movementType = String(meta.reason ?? "").toUpperCase() === "EXPIRED" ? "EXPIRED" : "DAMAGE";
+      direction = "OUT";
+    }
+    meta.quantity = Math.abs(Number(meta.quantity));
+    const totals = (payload.amountTotals ?? {}) as Record<string, unknown>;
+    const amount = Math.abs(Number(totals.net ?? meta.amount ?? 0));
+    // A found item has no cost layer to draw from; the stated value is its cost. Losses are valued by the subledger.
+    if (gain && !positiveNumber(meta.unitCost) && amount > 0) meta.unitCost = amount / Number(meta.quantity);
+  }
   if (!productId || !branchId || !movementType) throw new Error("Inventory movement needs a product, a branch and a movement type");
+  if (movementType.toUpperCase() === "RETURN_SUPPLIER") {
+    throw new Error("Stock returned to a supplier is recorded in Accounting on the supplier credit note (with the returned items), not from the ERP movement");
+  }
   const kind = inventoryKindForErpMovement(movementType, direction);
   if (!kind) throw new Error(`No inventory posting rule for ERP movement ${movementType}`);
   const quantity = Number(meta.quantity ?? 0);
@@ -422,38 +451,83 @@ export async function processInventoryEvent(eventId: string) {
     }
   });
 
-  const unposted = await prisma.inventoryMovement.findMany({
-    where: { companyId, integrationEventId: event.id, journalId: null, kind: { not: "SALE" }, NOT: { value: 0 } },
-  });
-  const journalLines = netLines(unposted.flatMap((m) => movementLines(accounts, m)));
-  if (!journalLines.length) return null;
+  // The journal and the movements' link to it commit together, so a retry never journals the same value twice.
+  return inTransaction(async () => {
+    const unposted = await prisma.inventoryMovement.findMany({
+      where: { companyId, integrationEventId: event.id, journalId: null, ...JOURNALLED, NOT: { value: 0 } },
+    });
+    const journalLines = netLines(unposted.flatMap((m) => movementLines(accounts, m)));
+    if (!journalLines.length) return null;
 
-  const first = unposted[0];
-  const describe =
-    event.eventType === "INVENTORY_OPENING"
-      ? `Opening stock from ERP snapshot (${unposted.length} item-locations)`
-      : `Inventory ${first.kind.toLowerCase().replace(/_/g, " ")} ${first.reference ?? ""}`.trim();
-  const posted = await createAndPostJournal(
-    companyId,
-    {
-      journalDate: movementDate,
-      journalType: "AUTOMATIC",
-      description: describe,
-      referenceNumber: event.sourceDocumentNumber ?? event.sourceDocumentId,
-      currencyCode: event.currencyCode,
-      branchId: event.externalBranchId ?? undefined,
-      sourceModule: "INVENTORY",
-      sourceDocumentType: event.sourceDocumentType,
-      sourceDocumentId: event.sourceDocumentId,
-      sourceDocumentNumber: event.sourceDocumentNumber ?? undefined,
-      integrationEventId: event.id,
-      status: "APPROVED",
-      lines: journalLines,
-    },
-    SYSTEM,
-  );
-  await prisma.inventoryMovement.updateMany({ where: { id: { in: unposted.map((m) => m.id) } }, data: { journalId: posted.id } });
-  return posted;
+    const first = unposted[0];
+    const describe =
+      event.eventType === "INVENTORY_OPENING"
+        ? `Opening stock from ERP snapshot (${unposted.length} item-locations)`
+        : `Inventory ${first.kind.toLowerCase().replace(/_/g, " ")} ${first.reference ?? ""}`.trim();
+    const posted = await createAndPostJournal(
+      companyId,
+      {
+        journalDate: movementDate,
+        journalType: "AUTOMATIC",
+        description: describe,
+        referenceNumber: event.sourceDocumentNumber ?? event.sourceDocumentId,
+        currencyCode: event.currencyCode,
+        branchId: event.externalBranchId ?? undefined,
+        sourceModule: "INVENTORY",
+        sourceDocumentType: event.sourceDocumentType,
+        sourceDocumentId: event.sourceDocumentId,
+        sourceDocumentNumber: event.sourceDocumentNumber ?? undefined,
+        integrationEventId: event.id,
+        status: "APPROVED",
+        lines: journalLines,
+      },
+      SYSTEM,
+    );
+    const linked = await prisma.inventoryMovement.updateMany({ where: { id: { in: unposted.map((m) => m.id) }, journalId: null }, data: { journalId: posted.id } });
+    if (linked.count !== unposted.length) throw new Error("These stock movements were journalled by another run at the same time; retry");
+    return posted;
+  });
+}
+
+/**
+ * Takes stock sent back to a supplier out of the valuation subledger at its cost. Runs inside the caller's
+ * transaction; the caller posts the journal and links it to the movements.
+ */
+export async function recordSupplierReturn(
+  companyId: string,
+  input: { documentId: string; reference: string; date: Date; items: Array<{ itemId: string; locationId: string; quantity: number }> },
+) {
+  const { method } = await inventoryConfig(companyId);
+  const tx = prisma as unknown as Prisma.TransactionClient;
+  const movements: InventoryMovement[] = [];
+  for (const [index, line] of input.items.entries()) {
+    const quantity = Number(line.quantity);
+    if (!(quantity > 0)) throw new Error("Returned quantity must be positive");
+    const balance = await prisma.inventoryBalance.findUnique({
+      where: { itemId_locationId: { itemId: line.itemId, locationId: line.locationId } },
+      include: { item: true },
+    });
+    if (!balance || balance.companyId !== companyId) throw new Error("Returned item is not held at that location");
+    if (qty(balance.quantity) - quantity < -0.0001) {
+      throw new Error(`Only ${qty(balance.quantity)} of ${balance.item.name} is in stock at that location`);
+    }
+    const movement = await recordMovement(tx, {
+      companyId,
+      sourceKey: `supplier-return:${input.documentId}:${index}`,
+      itemId: line.itemId,
+      locationId: line.locationId,
+      kind: "SUPPLIER_RETURN",
+      movementDate: input.date,
+      quantity,
+      method,
+      reference: input.reference,
+      referenceType: "ApCreditNote",
+    });
+    if (qty(movement.quantityAfter) < -0.0001) throw new Error(`${balance.item.name} went out of stock while the return was recorded`);
+    if (movement.costSource === "UNCOSTED") throw new Error(`${balance.item.name} has no cost to return it at`);
+    movements.push(movement);
+  }
+  return { movements, cost: roundMoney(movements.reduce((s, m) => s + Math.abs(money(m.value)), 0)) };
 }
 
 /** Asks the ERP to publish its current stock and costs as an opening snapshot, using the signed-in user's token. */
@@ -518,7 +592,7 @@ export async function inventoryDashboard(companyId: string) {
     prisma.inventoryMovement.findMany({ where: { companyId }, include: { item: true, location: true }, orderBy: [{ movementDate: "desc" }, { createdAt: "desc" }], take: 8 }),
     glBalance(companyId, inventoryAccountIds),
     prisma.integrationEvent.count({ where: { companyId, eventType: { in: [...INVENTORY_EVENT_TYPES] }, status: { in: ["FAILED", "DEAD_LETTER"] } } }),
-    prisma.inventoryMovement.count({ where: { companyId, journalId: null, kind: { not: "SALE" }, NOT: { value: 0 } } }),
+    prisma.inventoryMovement.count({ where: { companyId, journalId: null, ...JOURNALLED, NOT: { value: 0 } } }),
     prisma.inventoryMovement.count({ where: { companyId, costSource: "UNCOSTED" } }),
   ]);
 
@@ -712,12 +786,13 @@ export async function listMovements(
 
 export async function reconciliation(companyId: string) {
   const { inventoryAccountIds, saleInventoryAccountId, accounts } = await inventoryConfig(companyId);
-  const [balances, glValue, saleGl, saleSubledger, unposted, uncosted, failed, accountRows] = await Promise.all([
+  const yearStart = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
+  const [balances, glValue, saleGl, saleSubledger, unposted, uncosted, failed, accountRows, saleEvents, valuationCogs] = await Promise.all([
     prisma.inventoryBalance.findMany({ where: { companyId }, include: { item: true, location: true } }),
     glBalance(companyId, inventoryAccountIds),
     glBalance(companyId, saleInventoryAccountId ? [saleInventoryAccountId] : [], { sourceModule: { not: "INVENTORY" }, sourceDocumentType: "Sale" }),
-    movementValueSum({ companyId, kind: "SALE" }),
-    prisma.inventoryMovement.aggregate({ where: { companyId, journalId: null, kind: { not: "SALE" }, NOT: { value: 0 } }, _sum: { value: true }, _count: true }),
+    movementValueSum({ companyId, kind: "SALE", costInSaleJournal: true }),
+    prisma.inventoryMovement.aggregate({ where: { companyId, journalId: null, ...JOURNALLED, NOT: { value: 0 } }, _sum: { value: true }, _count: true }),
     prisma.inventoryMovement.count({ where: { companyId, costSource: "UNCOSTED" } }),
     prisma.integrationEvent.findMany({
       where: { companyId, eventType: { in: [...INVENTORY_EVENT_TYPES] }, status: { in: ["FAILED", "DEAD_LETTER"] } },
@@ -726,7 +801,14 @@ export async function reconciliation(companyId: string) {
       select: { id: true, eventType: true, sourceDocumentNumber: true, sourceDocumentId: true, occurredAt: true, status: true, lastError: true },
     }),
     prisma.account.findMany({ where: { companyId, id: { in: inventoryAccountIds } }, select: { id: true, code: true, name: true } }),
+    prisma.$queryRaw<Array<{ total: number | null }>>`
+      SELECT COALESCE(SUM(CASE WHEN "payload"->'metadata'->>'cogs' ~ '^-?[0-9]+([.][0-9]+)?$'
+                               THEN ("payload"->'metadata'->>'cogs')::numeric ELSE 0 END), 0)::float8 AS "total"
+      FROM "integration_events"
+      WHERE "companyId" = ${companyId} AND "eventType" = 'SALE_COMPLETED' AND "status" = 'POSTED' AND "occurredAt" >= ${yearStart}`,
+    movementValueSum({ companyId, kind: "SALE", costInSaleJournal: false, movementDate: { gte: yearStart } }),
   ]);
+  const erpCogs = roundMoney(Number(saleEvents[0]?.total ?? 0));
 
   const subledgerValue = roundMoney(balances.reduce((s, b) => s + money(b.value), 0));
   const unpostedValue = money(unposted._sum.value);
@@ -759,6 +841,13 @@ export async function reconciliation(companyId: string) {
     explained: {
       unpostedMovements: { count: unposted._count, value: unpostedValue },
       saleCostDifference: roundMoney(saleGl - saleSubledger),
+    },
+    // Cost of sales is posted from valuation; the ERP's own figure is kept to compare against.
+    costOfSalesComparison: {
+      from: yearStart.toISOString().slice(0, 10),
+      erpReported: erpCogs,
+      valuation: roundMoney(-valuationCogs),
+      difference: roundMoney(-valuationCogs - erpCogs),
     },
     quantityDifferences,
     valueWithoutStock,

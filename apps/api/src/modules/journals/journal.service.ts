@@ -4,12 +4,16 @@ import {
   isDebitNormal,
   reverseJournalLines,
   sumJournalLines,
+  transactionTiming,
   type BookAccountType,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
-import type { JournalStatus, JournalType, Prisma } from "@prisma/client";
+import type { JournalStatus, JournalType, PeriodStatus, Prisma } from "@prisma/client";
+import { allocateNumber } from "../../lib/numbering";
 import { inTransaction, prisma } from "../../lib/prisma";
+import { approvalControls, latestApprovalFor, planFor, requestApproval, resubmitApproval } from "../approvals/approval.service";
 import { writeAudit } from "../audit/audit.service";
+import { enforceBudget } from "../books/budget.service";
 
 type Actor = {
   erpUserId?: number;
@@ -19,25 +23,8 @@ type Actor = {
 
 const SYSTEM_JOURNAL_TYPES = new Set<JournalType>(["AUTOMATIC", "OPENING_BALANCE", "REVERSAL"]);
 
-async function nextJournalNumber(companyId: string, journalDate: Date) {
-  const where = { companyId_documentType: { companyId, documentType: "JOURNAL_ENTRY" as const } };
-  await prisma.numberSequence.upsert({
-    where,
-    create: {
-      companyId,
-      documentType: "JOURNAL_ENTRY",
-      prefix: "JE",
-      includeYear: true,
-      sequenceLength: 6,
-      startingNumber: 1,
-      nextNumber: 1,
-    },
-    update: {},
-  });
-  const seq = await prisma.numberSequence.update({ where, data: { nextNumber: { increment: 1 } } });
-  const n = String(seq.nextNumber - 1).padStart(seq.sequenceLength, "0");
-  const prefix = seq.prefix ?? "JE";
-  return seq.includeYear ? `${prefix}-${journalDate.getUTCFullYear()}-${n}` : `${prefix}-${n}`;
+function nextJournalNumber(companyId: string, journalDate: Date, branchId?: string) {
+  return allocateNumber(companyId, "JOURNAL_ENTRY", "JE", { date: journalDate, branchId });
 }
 
 async function assertCompanyActivated(companyId: string) {
@@ -51,7 +38,7 @@ async function assertCompanyActivated(companyId: string) {
  * Periods are generated as FUTURE; one opens the first time something is dated in it
  * once its start date has arrived. Closed and locked periods stay shut.
  */
-export async function assertOpenPeriod(companyId: string, date: Date) {
+export async function assertOpenPeriod(companyId: string, date: Date, opts: { forClose?: boolean } = {}) {
   const period = await prisma.accountingPeriod.findFirst({
     where: { financialYear: { companyId }, startDate: { lte: date }, endDate: { gte: date } },
     include: { financialYear: true },
@@ -64,12 +51,18 @@ export async function assertOpenPeriod(companyId: string, date: Date) {
     throw new Error(`Transactions dated on or before ${lockDate.toISOString().slice(0, 10)} are locked`);
   }
   if (period.status === "FUTURE" && period.startDate <= new Date()) {
-    return prisma.accountingPeriod.update({ where: { id: period.id }, data: { status: "OPEN" } });
+    await prisma.accountingPeriod.updateMany({ where: { id: period.id, status: "FUTURE" }, data: { status: "OPEN" } });
   }
-  if (period.status !== "OPEN" && period.status !== "REOPENED") {
-    throw new Error(`Accounting period ${period.name} is ${period.status.toLowerCase().replace("_", " ")}`);
+  // FOR SHARE holds off a close of this period until the posting transaction ends, and sees a close that committed first.
+  const [row] = await prisma.$queryRaw<Array<{ status: PeriodStatus }>>`
+    SELECT status::text AS status FROM "accounting_periods" WHERE id = ${period.id} FOR SHARE`;
+  const status = row?.status ?? period.status;
+  // Year-end closing journals may post while the period is held for close approval.
+  const open = status === "OPEN" || status === "REOPENED" || (opts.forClose && status === "TEMPORARILY_LOCKED");
+  if (!open) {
+    throw new Error(`Accounting period ${period.name} is ${status.toLowerCase().replace("_", " ")}`);
   }
-  return period;
+  return { ...period, status };
 }
 
 /** Opens every FUTURE period that has started, e.g. after activation or a new financial year. */
@@ -138,50 +131,140 @@ async function rateFor(companyId: string, currency: string, date: Date) {
   return Number(rate.rate);
 }
 
-export async function createJournal(
+type JournalInput = {
+  journalDate: Date | string;
+  journalType?: JournalType;
+  description?: string;
+  referenceNumber?: string;
+  /** Lines are in this currency; when it is not the functional currency they are converted at `exchangeRate`. */
+  currencyCode?: string;
+  exchangeRate?: number;
+  branchId?: string;
+  costCentre?: string;
+  project?: string;
+  status?: JournalStatus;
+  sourceModule?: string;
+  sourceDocumentType?: string;
+  sourceDocumentId?: string;
+  sourceDocumentNumber?: string;
+  integrationEventId?: string;
+  lines: Array<JournalLineDraft & { amountForeign?: number }>;
+};
+
+/**
+ * Journals keyed on the journal screen or imported from CSV go through approvals, date policies
+ * and the different-poster rule. Recurring templates and module postings do not.
+ */
+export function underJournalControls(j: { journalType?: JournalType | null; sourceModule?: string | null }) {
+  return (j.journalType ?? "MANUAL") === "MANUAL" && (!j.sourceModule || j.sourceModule === "IMPORT");
+}
+
+/** Cost centres and projects must be active dimensions; branches on manual entries must be company branches. */
+export async function assertDimensions(
   companyId: string,
-  input: {
-    journalDate: Date | string;
-    journalType?: JournalType;
-    description?: string;
-    referenceNumber?: string;
-    /** Lines are in this currency; when it is not the functional currency they are converted at `exchangeRate`. */
-    currencyCode?: string;
-    exchangeRate?: number;
-    branchId?: string;
-    costCentre?: string;
-    project?: string;
-    status?: JournalStatus;
-    sourceModule?: string;
-    sourceDocumentType?: string;
-    sourceDocumentId?: string;
-    sourceDocumentNumber?: string;
-    integrationEventId?: string;
-    lines: Array<JournalLineDraft & { amountForeign?: number }>;
-  },
-  actor: Actor = {},
+  values: { costCentres: Array<string | null | undefined>; projects: Array<string | null | undefined>; branchIds?: Array<string | null | undefined> },
 ) {
+  const costCentres = [...new Set(values.costCentres.filter((v): v is string => Boolean(v)))];
+  const projects = [...new Set(values.projects.filter((v): v is string => Boolean(v)))];
+  if (costCentres.length || projects.length) {
+    const found = await prisma.dimension.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        OR: [{ kind: "COST_CENTRE", code: { in: costCentres } }, { kind: "PROJECT", code: { in: projects } }],
+      },
+    });
+    for (const code of costCentres) {
+      if (!found.some((d) => d.kind === "COST_CENTRE" && d.code === code)) throw new Error(`Cost centre ${code} is not an active cost centre`);
+    }
+    for (const code of projects) {
+      if (!found.some((d) => d.kind === "PROJECT" && d.code === code)) throw new Error(`Project ${code} is not an active project`);
+    }
+  }
+  const branchIds = [...new Set((values.branchIds ?? []).filter((v): v is string => Boolean(v)))];
+  if (branchIds.length) {
+    const branches = await prisma.companyBranch.findMany({
+      where: { companyId, OR: [{ id: { in: branchIds } }, { externalErpBranchId: { in: branchIds } }] },
+    });
+    for (const id of branchIds) {
+      const branch = branches.find((b) => b.id === id || b.externalErpBranchId === id);
+      if (!branch) throw new Error(`Branch ${id} is not a branch of this company`);
+      if (!branch.isActive) throw new Error(`Branch ${branch.name ?? branch.code ?? id} is inactive`);
+    }
+  }
+}
+
+/** Backdated/future-dated classification of a date and the setup policy that applies to it. */
+export async function datePolicyFor(companyId: string, date: Date, now = new Date()) {
+  const current = await prisma.accountingPeriod.findFirst({
+    where: { financialYear: { companyId }, startDate: { lte: now }, endDate: { gte: now } },
+  });
+  const timing = transactionTiming(date, now, current?.startDate);
+  const controls = await approvalControls(companyId);
+  const policy = timing === "BACKDATED" ? controls.backdated : timing === "FUTURE" ? controls.futureDated : "ALLOW";
+  return { timing, policy };
+}
+
+async function prepareJournal(companyId: string, input: JournalInput) {
   await assertCompanyActivated(companyId);
   assertJournalBalanced(input.lines);
   const journalDate = new Date(input.journalDate);
-  await assertOpenPeriod(companyId, journalDate);
+  await assertOpenPeriod(companyId, journalDate, { forClose: input.sourceModule === "CLOSE" });
+
+  if (underJournalControls(input)) {
+    const { timing, policy } = await datePolicyFor(companyId, journalDate);
+    if (policy === "BLOCK") throw new Error(`${timing === "BACKDATED" ? "Backdated" : "Future-dated"} journals are not allowed by the company's posting controls`);
+  }
 
   const functional = await functionalCurrency(companyId);
   const currency = (input.currencyCode ?? functional).toUpperCase();
   let rate = 1;
-  let lines = input.lines;
+  let lines = input.lines.map((l) => ({
+    ...l,
+    costCentre: l.costCentre || input.costCentre || undefined,
+    project: l.project || input.project || undefined,
+    branchId: l.branchId || input.branchId || undefined,
+  }));
   if (currency !== functional) {
-    rate = input.exchangeRate ?? (await rateFor(companyId, currency, journalDate));
-    lines = convertJournalLines(input.lines, rate);
+    // Rounded to the column's 8 decimals so a reversal at the stored rate cancels exactly.
+    rate = Math.round((input.exchangeRate ?? (await rateFor(companyId, currency, journalDate))) * 1e8) / 1e8;
+    lines = convertJournalLines(lines, rate);
   }
+  const manual = isManualEntry(input);
   await assertAccountsPostable(
     companyId,
     lines.map((l) => l.accountId),
-    { manual: isManualEntry(input), currency, functional, revaluation: input.sourceModule === "FX" },
+    { manual, currency, functional, revaluation: input.sourceModule === "FX" },
   );
+  await assertDimensions(companyId, {
+    costCentres: lines.map((l) => l.costCentre),
+    projects: lines.map((l) => l.project),
+    branchIds: manual ? lines.map((l) => l.branchId) : [],
+  });
+  return { journalDate, currency, rate, lines, totals: sumJournalLines(lines) };
+}
 
-  const totals = sumJournalLines(lines);
-  const journalNumber = await nextJournalNumber(companyId, journalDate);
+function lineRows(companyId: string, lines: Awaited<ReturnType<typeof prepareJournal>>["lines"]) {
+  return lines.map((l, idx) => ({
+    companyId,
+    lineNumber: idx + 1,
+    accountId: l.accountId,
+    description: l.description,
+    debit: l.debit,
+    credit: l.credit,
+    amountForeign: (l as { amountForeign?: number }).amountForeign,
+    taxCode: l.taxCode,
+    customerRef: l.customerRef,
+    supplierRef: l.supplierRef,
+    costCentre: l.costCentre,
+    project: l.project,
+    branchId: l.branchId,
+  }));
+}
+
+export async function createJournal(companyId: string, input: JournalInput, actor: Actor = {}) {
+  const { journalDate, currency, rate, lines, totals } = await prepareJournal(companyId, input);
+  const journalNumber = await nextJournalNumber(companyId, journalDate, input.branchId);
 
   const journal = await prisma.journal.create({
     data: {
@@ -205,20 +288,7 @@ export async function createJournal(
       sourceDocumentId: input.sourceDocumentId,
       sourceDocumentNumber: input.sourceDocumentNumber,
       integrationEventId: input.integrationEventId,
-      lines: {
-        create: lines.map((l, idx) => ({
-          companyId,
-          lineNumber: idx + 1,
-          accountId: l.accountId,
-          description: l.description,
-          debit: l.debit,
-          credit: l.credit,
-          amountForeign: l.amountForeign,
-          taxCode: l.taxCode,
-          customerRef: l.customerRef,
-          supplierRef: l.supplierRef,
-        })),
-      },
+      lines: { create: lineRows(companyId, lines) },
     },
     include: { lines: { include: { account: true }, orderBy: { lineNumber: "asc" } } },
   });
@@ -242,6 +312,8 @@ export async function postJournal(companyId: string, journalId: string, actor: A
 
   return inTransaction(async () => {
     const tx = prisma;
+    // Row lock: a second post of the same draft waits here, then sees it posted.
+    await tx.journal.updateMany({ where: { id: journalId, companyId }, data: { updatedAt: new Date() } });
     const journal = await tx.journal.findFirst({
       where: { id: journalId, companyId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
@@ -251,6 +323,21 @@ export async function postJournal(companyId: string, journalId: string, actor: A
     if (journal.status === "REVERSED" || journal.status === "CANCELLED") {
       throw new Error(`Cannot post journal in status ${journal.status}`);
     }
+    if (journal.status === "SUBMITTED" || journal.status === "UNDER_REVIEW") {
+      throw new Error(`Journal ${journal.journalNumber} is waiting for approval`);
+    }
+    if (underJournalControls(journal)) {
+      const requirement = await journalApprovalRequirement(companyId, journal);
+      if (requirement.required && journal.status !== "APPROVED") {
+        throw new Error(`Journal ${journal.journalNumber} needs approval before posting (${requirement.reasons.join("; ")}); submit it for approval`);
+      }
+      if (requirement.requireDifferentPoster && actor.erpUserId && journal.createdByErpUserId === actor.erpUserId) {
+        throw new Error("You created this journal; someone else must post it");
+      }
+      if (requirement.supportingDocumentRequired && !(await hasSupportingDocument(companyId, journal.id))) {
+        throw new Error("Attach a supporting document before posting this journal");
+      }
+    }
 
     const drafts: JournalLineDraft[] = journal.lines.map((l) => ({
       accountId: l.accountId,
@@ -259,7 +346,7 @@ export async function postJournal(companyId: string, journalId: string, actor: A
       description: l.description ?? undefined,
     }));
     assertJournalBalanced(drafts);
-    await assertOpenPeriod(companyId, journal.journalDate);
+    await assertOpenPeriod(companyId, journal.journalDate, { forClose: journal.sourceModule === "CLOSE" });
 
     const postingDate = new Date();
     for (const line of journal.lines) {
@@ -294,6 +381,9 @@ export async function postJournal(companyId: string, journalId: string, actor: A
           debit: line.debit,
           credit: line.credit,
           runningBalance: nextBalance,
+          costCentre: line.costCentre ?? journal.costCentre,
+          project: line.project ?? journal.project,
+          branchId: line.branchId ?? journal.branchId,
           createdByErpUserId: actor.erpUserId,
         },
       });
@@ -322,6 +412,8 @@ export async function postJournal(companyId: string, journalId: string, actor: A
       });
     }
 
+    const budgetWarnings = await enforceBudget(companyId, journal);
+
     const posted = await tx.journal.update({
       where: { id: journal.id },
       data: {
@@ -343,7 +435,7 @@ export async function postJournal(companyId: string, journalId: string, actor: A
       ...actor.meta,
     });
 
-    return posted;
+    return { ...posted, budgetWarnings };
   });
 }
 
@@ -359,9 +451,25 @@ export async function createAndPostJournal(
   });
 }
 
+export async function createAndSubmitJournal(companyId: string, input: JournalInput, actor: Actor = {}) {
+  return inTransaction(async () => {
+    const journal = await createJournal(companyId, input, actor);
+    return submitJournal(companyId, journal.id, actor);
+  });
+}
+
 /** Lines as they were entered: in the foreign currency when the journal had one, else functional. */
 export function linesInJournalCurrency(
-  lines: Array<{ accountId: string; debit: Prisma.Decimal | number; credit: Prisma.Decimal | number; amountForeign: Prisma.Decimal | number | null; description: string | null }>,
+  lines: Array<{
+    accountId: string;
+    debit: Prisma.Decimal | number;
+    credit: Prisma.Decimal | number;
+    amountForeign: Prisma.Decimal | number | null;
+    description: string | null;
+    costCentre?: string | null;
+    project?: string | null;
+    branchId?: string | null;
+  }>,
 ): JournalLineDraft[] {
   const foreign = lines.some((l) => l.amountForeign !== null);
   return lines.map((l) => {
@@ -371,6 +479,9 @@ export function linesInJournalCurrency(
       debit: foreign ? Math.max(f, 0) : Number(l.debit),
       credit: foreign ? Math.max(-f, 0) : Number(l.credit),
       description: l.description ?? undefined,
+      costCentre: l.costCentre ?? undefined,
+      project: l.project ?? undefined,
+      branchId: l.branchId ?? undefined,
     };
   });
 }
@@ -413,6 +524,11 @@ export async function reverseJournal(
   const reversalLines = reverseJournalLines(linesInJournalCurrency(original.lines));
 
   return inTransaction(async () => {
+    const claimed = await prisma.journal.updateMany({
+      where: { id: original.id, companyId, status: "POSTED", reversedJournalId: null },
+      data: { status: "REVERSED" },
+    });
+    if (!claimed.count) throw new Error("Journal already reversed");
     const postedReversal = await createAndPostJournal(
       companyId,
       {
@@ -482,12 +598,165 @@ export async function listJournals(
 }
 
 export async function getJournal(companyId: string, journalId: string) {
-  return prisma.journal.findFirst({
+  const journal = await prisma.journal.findFirst({
     where: { id: journalId, companyId },
     include: {
       lines: { include: { account: true }, orderBy: { lineNumber: "asc" } },
       sourceDocumentLinks: true,
       glEntries: true,
     },
+  });
+  return journal && { ...journal, approval: await latestApprovalFor(companyId, "Journal", journal.id) };
+}
+
+async function hasSupportingDocument(companyId: string, journalId: string) {
+  return (await prisma.accountingDocument.count({ where: { companyId, entityType: "Journal", entityId: journalId } })) > 0;
+}
+
+/** What a manual journal needs before it can be posted, and why. */
+export async function journalApprovalRequirement(
+  companyId: string,
+  journal: { journalDate: Date; totalDebit: Prisma.Decimal | number; journalType?: JournalType | null; sourceModule?: string | null },
+) {
+  const controls = await approvalControls(companyId);
+  if (!underJournalControls(journal)) {
+    return {
+      required: false,
+      levels: 0,
+      roles: [] as Array<string | null>,
+      reasons: [] as string[],
+      requireDifferentPoster: false,
+      supportingDocumentRequired: false,
+      plan: { levels: 0, roles: [] as string[] },
+    };
+  }
+  const amount = Number(journal.totalDebit);
+  const { timing, policy } = await datePolicyFor(companyId, journal.journalDate);
+  const forced = policy === "REQUIRE_APPROVAL";
+  const plan = await planFor(companyId, amount, forced);
+  const reasons: string[] = [];
+  if (forced) reasons.push(`${timing === "BACKDATED" ? "backdated" : "future-dated"} journals need approval`);
+  const byAmount = await planFor(companyId, amount, false);
+  if (byAmount.levels > 0) reasons.push(`${byAmount.levels} approval level(s) for ${amount.toLocaleString("en-US")}`);
+  return {
+    required: plan.levels > 0,
+    levels: plan.levels,
+    roles: Array.from({ length: plan.levels }, (_, i) => plan.roles[i] || null),
+    reasons,
+    requireDifferentPoster: controls.requireDifferentPoster,
+    supportingDocumentRequired: controls.supportingDocumentRequired,
+    plan,
+  };
+}
+
+async function draftOrThrow(companyId: string, journalId: string) {
+  const journal = await prisma.journal.findFirst({ where: { id: journalId, companyId } });
+  if (!journal) throw new Error("Journal not found");
+  if (!underJournalControls(journal)) throw new Error(`Journal ${journal.journalNumber} was created by ${journal.sourceModule ?? "the system"}; change it from its source`);
+  if (journal.status !== "DRAFT") throw new Error(`Only a draft journal can be changed; ${journal.journalNumber} is ${journal.status.toLowerCase().replace("_", " ")}`);
+  return journal;
+}
+
+/** Replaces a draft's header and lines; the number stays. A journal returned for correction is a draft again. */
+export async function updateJournal(companyId: string, journalId: string, input: JournalInput, actor: Actor = {}) {
+  return inTransaction(async () => {
+    const before = await draftOrThrow(companyId, journalId);
+    const prepared = await prepareJournal(companyId, { ...input, journalType: "MANUAL", sourceModule: before.sourceModule ?? undefined });
+    await prisma.journalLine.deleteMany({ where: { journalId } });
+    const journal = await prisma.journal.update({
+      where: { id: journalId },
+      data: {
+        journalDate: prepared.journalDate,
+        description: input.description,
+        referenceNumber: input.referenceNumber,
+        currencyCode: prepared.currency,
+        exchangeRate: prepared.rate,
+        branchId: input.branchId,
+        costCentre: input.costCentre,
+        project: input.project,
+        totalDebit: prepared.totals.debit,
+        totalCredit: prepared.totals.credit,
+        lines: { create: lineRows(companyId, prepared.lines) },
+      },
+      include: { lines: { include: { account: true }, orderBy: { lineNumber: "asc" } } },
+    });
+    await writeAudit({
+      companyId,
+      erpUserId: actor.erpUserId ?? 0,
+      erpRole: actor.erpRole,
+      action: "UPDATE",
+      entityType: "Journal",
+      entityId: journalId,
+      beforeJson: { journalDate: before.journalDate, totalDebit: before.totalDebit, description: before.description },
+      afterJson: { journalDate: journal.journalDate, totalDebit: journal.totalDebit, description: journal.description },
+      ...actor.meta,
+    });
+    return journal;
+  });
+}
+
+export async function cancelJournal(companyId: string, journalId: string, actor: Actor = {}) {
+  return inTransaction(async () => {
+    const before = await draftOrThrow(companyId, journalId);
+    const journal = await prisma.journal.update({ where: { id: journalId }, data: { status: "CANCELLED" } });
+    await writeAudit({
+      companyId,
+      erpUserId: actor.erpUserId ?? 0,
+      erpRole: actor.erpRole,
+      action: "CANCEL",
+      entityType: "Journal",
+      entityId: journalId,
+      beforeJson: { status: before.status },
+      afterJson: { status: journal.status },
+      ...actor.meta,
+    });
+    return journal;
+  });
+}
+
+/**
+ * Sends a draft for approval. When no approval applies the journal becomes APPROVED at once;
+ * a journal returned for correction reuses its approval request, starting again at level 1.
+ */
+export async function submitJournal(companyId: string, journalId: string, actor: Actor = {}) {
+  return inTransaction(async () => {
+    const journal = await draftOrThrow(companyId, journalId);
+    await assertOpenPeriod(companyId, journal.journalDate);
+    const requirement = await journalApprovalRequirement(companyId, journal);
+    if (requirement.supportingDocumentRequired && !(await hasSupportingDocument(companyId, journal.id))) {
+      throw new Error("Attach a supporting document before submitting this journal");
+    }
+    let approval = null;
+    if (requirement.required) {
+      const returned = await prisma.approvalRequest.findFirst({
+        where: { companyId, entityType: "Journal", entityId: journal.id, status: "RETURNED" },
+        orderBy: { createdAt: "desc" },
+      });
+      const amount = Number(journal.totalDebit);
+      approval = returned
+        ? await resubmitApproval(companyId, returned.id, actor, { amount, plan: requirement.plan })
+        : await requestApproval(
+            companyId,
+            { entityType: "Journal", entityId: journal.id, amount, reason: requirement.reasons.join("; "), plan: requirement.plan },
+            actor,
+          );
+    }
+    const updated = await prisma.journal.update({
+      where: { id: journal.id },
+      data: requirement.required ? { status: "SUBMITTED" } : { status: "APPROVED" },
+      include: { lines: { include: { account: true }, orderBy: { lineNumber: "asc" } } },
+    });
+    await writeAudit({
+      companyId,
+      erpUserId: actor.erpUserId ?? 0,
+      erpRole: actor.erpRole,
+      action: "SUBMIT",
+      entityType: "Journal",
+      entityId: journal.id,
+      beforeJson: { status: journal.status },
+      afterJson: { status: updated.status, approvalId: approval?.id ?? null },
+      ...actor.meta,
+    });
+    return { journal: updated, approval };
   });
 }

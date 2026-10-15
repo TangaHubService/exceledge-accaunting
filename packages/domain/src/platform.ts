@@ -274,6 +274,51 @@ export function convertToFunctional(foreignAmount: number, rate: number): number
   return money4(foreignAmount * rate);
 }
 
+/**
+ * Settlement of foreign AR/AP: cash moves at the payment rate, the control account is cleared at
+ * each document's rate, and the difference is realized FX. Lines are already in functional money;
+ * `amountForeign` is debit-positive in the document currency. Unallocated cash uses the payment rate.
+ */
+export function realizedFxSettlement(input: {
+  cashAccountId: string;
+  controlAccountId: string;
+  fxGainAccountId: string;
+  fxLossAccountId: string;
+  amount: number;
+  paymentRate: number;
+  allocations: Array<{ amount: number; documentRate: number }>;
+  side: "AR" | "AP";
+}): Array<{ accountId: string; description: string; debit: number; credit: number; amountForeign: number }> {
+  const amount = money4(input.amount);
+  if (!(amount > 0)) throw new Error("Settlement amount must be positive");
+  if (!(input.paymentRate > 0)) throw new Error("Exchange rate must be greater than zero");
+  const allocated = money4(input.allocations.reduce((s, a) => s + money4(a.amount), 0));
+  if (allocated - amount > 0.0001) throw new Error("Allocations exceed the settlement amount");
+  for (const a of input.allocations) {
+    if (!(a.amount >= 0)) throw new Error("Allocation amounts cannot be negative");
+    if (!(a.documentRate > 0)) throw new Error("Exchange rate must be greater than zero");
+  }
+  const cashFunctional = convertToFunctional(amount, input.paymentRate);
+  const controlAllocated = money4(input.allocations.reduce((s, a) => s + convertToFunctional(a.amount, a.documentRate), 0));
+  const unallocated = money4(amount - allocated);
+  const controlUnallocated = convertToFunctional(unallocated, input.paymentRate);
+  const controlFunctional = money4(controlAllocated + controlUnallocated);
+  const fx = money4(cashFunctional - controlFunctional);
+  const lines: Array<{ accountId: string; description: string; debit: number; credit: number; amountForeign: number }> = [];
+  if (input.side === "AR") {
+    lines.push({ accountId: input.cashAccountId, description: "Receipt", debit: cashFunctional, credit: 0, amountForeign: amount });
+    lines.push({ accountId: input.controlAccountId, description: "Receivables", debit: 0, credit: controlFunctional, amountForeign: -amount });
+    if (fx > 0.00005) lines.push({ accountId: input.fxGainAccountId, description: "Realized FX gain", debit: 0, credit: fx, amountForeign: 0 });
+    else if (fx < -0.00005) lines.push({ accountId: input.fxLossAccountId, description: "Realized FX loss", debit: money4(-fx), credit: 0, amountForeign: 0 });
+  } else {
+    lines.push({ accountId: input.controlAccountId, description: "Payables", debit: controlFunctional, credit: 0, amountForeign: amount });
+    lines.push({ accountId: input.cashAccountId, description: "Payment", debit: 0, credit: cashFunctional, amountForeign: -amount });
+    if (fx > 0.00005) lines.push({ accountId: input.fxLossAccountId, description: "Realized FX loss", debit: fx, credit: 0, amountForeign: 0 });
+    else if (fx < -0.00005) lines.push({ accountId: input.fxGainAccountId, description: "Realized FX gain", debit: 0, credit: money4(-fx), amountForeign: 0 });
+  }
+  return lines;
+}
+
 export function unrealizedFxAdjustment(input: {
   foreignBalance: number;
   bookFunctional: number;
@@ -492,17 +537,16 @@ export function parseCron(expression: string): CronSchedule {
     days: parseCronField(fields[2], 1, 31),
     months: parseCronField(fields[3], 1, 12),
     weekdays,
-    anyDay: fields[2] === "*",
-    anyWeekday: fields[4] === "*",
+    anyDay: fields[2].startsWith("*"),
+    anyWeekday: fields[4].startsWith("*"),
   };
 }
 
+/** As in standard cron: day and weekday must both match unless both are restricted (no leading `*`), then either may. */
 function cronDayMatches(s: CronSchedule, d: Date) {
   const day = s.days.has(d.getUTCDate());
   const weekday = s.weekdays.has(d.getUTCDay());
-  if (s.anyDay && s.anyWeekday) return true;
-  if (s.anyDay) return weekday;
-  if (s.anyWeekday) return day;
+  if (s.anyDay || s.anyWeekday) return day && weekday;
   return day || weekday;
 }
 

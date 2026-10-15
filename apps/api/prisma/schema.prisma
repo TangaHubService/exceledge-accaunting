@@ -171,6 +171,7 @@ model Company {
   faImpairments        FixedAssetImpairment[]
   recurringJournals    RecurringJournal[]
   periodCloses         PeriodClose[]
+  periodCloseOverrides PeriodCloseOverride[]
   exchangeRates        ExchangeRate[]
   fxRevaluations       FxRevaluation[]
   budgets              Budget[]
@@ -185,12 +186,22 @@ model Company {
   eliminations         Elimination[]
   forecastScenarios    ForecastScenario[]
   anomalyFlags         AnomalyFlag[]
+  integrityScans       IntegrityScan[]
   esgMeasures          EsgMeasure[]
   workflowTemplates    WorkflowTemplate[]
   workflowInstances    WorkflowInstance[]
   apiCredentials       ApiCredential[]
   signatures           SignatureRecord[]
   automationJobs       AutomationJob[]
+  goodsReceipts        GoodsReceipt[]
+  kpiTargets           KpiTarget[]
+  risks                RiskItem[]
+  controlTests         ControlTest[]
+  apiKeyUsage          ApiKeyUsage[]
+  webhookEndpoints     WebhookEndpoint[]
+  webhookDeliveries    WebhookDelivery[]
+  notificationSettings NotificationSettings?
+  notificationEmails   NotificationEmail[]
 
   @@map("companies")
 }
@@ -201,6 +212,8 @@ model CompanyBranch {
   externalErpBranchId String
   name               String?
   code               String?
+  /// Inactive branches stay on past postings but cannot be used on new ones
+  isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -469,6 +482,7 @@ model DefaultPostingAccounts {
   gainOnDisposalId           String?
   lossOnDisposalId           String?
   assetRevaluationReserveId  String?
+  revaluationLossId          String?
   // General
   retainedEarningsId         String?
   currentYearEarningsId      String?
@@ -572,13 +586,29 @@ model NumberSequence {
   startingNumber  Int      @default(1)
   nextNumber      Int      @default(1)
   resetFrequency  String   @default("YEARLY")
+  /// Counters never start below this, so numbers issued before per-period counters cannot repeat
+  legacyFloor     Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company  Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  counters NumberSequenceCounter[]
 
   @@unique([companyId, documentType])
   @@map("number_sequences")
+}
+
+model NumberSequenceCounter {
+  id         String @id @default(cuid())
+  sequenceId String
+  /// "ALL", "2026" or "2026-03" depending on the sequence's reset frequency
+  periodKey  String
+  nextNumber Int
+
+  sequence NumberSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@unique([sequenceId, periodKey])
+  @@map("number_sequence_counters")
 }
 
 model ApprovalPostingControls {
@@ -595,6 +625,14 @@ model ApprovalPostingControls {
   transactionDeletionPolicy     String   @default("DRAFT_ONLY")
   supportingDocumentRequired    Boolean  @default(false)
   periodLockEnforcement         Boolean  @default(true)
+  /// The person who keyed a manual journal cannot post it
+  requireDifferentPoster        Boolean  @default(true)
+  /// Document types (ApBill, TaxAdjustment, FixedAssetImpairment) whose posting waits for approval
+  approvalRequiredFor           String[] @default([])
+  /// OFF, WARN or BLOCK: what happens when a posting takes spending over the active budget
+  budgetControl                 String   @default("OFF")
+  /// Closing a period needs a second person with close:manage to approve the request
+  closeApprovalRequired         Boolean  @default(false)
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
 
@@ -609,6 +647,11 @@ model OpeningBalanceBatch {
   name        String
   status      OpeningBalanceBatchStatus @default(DRAFT)
   notes       String?
+  createdByErpUserId  Int?
+  approvedByErpUserId Int?
+  approvedAt          DateTime?
+  journalId           String?
+  postedAt            DateTime?
   createdAt   DateTime                  @default(now())
   updatedAt   DateTime                  @updatedAt
 
@@ -865,6 +908,9 @@ model GlEntry {
   debit                Decimal  @default(0) @db.Decimal(18, 4)
   credit               Decimal  @default(0) @db.Decimal(18, 4)
   runningBalance       Decimal  @default(0) @db.Decimal(18, 4)
+  costCentre           String?
+  project              String?
+  branchId             String?
   createdByErpUserId   Int?
   createdAt            DateTime @default(now())
 
@@ -1001,6 +1047,7 @@ model ArInvoice {
   dueDate              DateTime
   status               ArDocumentStatus @default(POSTED)
   currency             String           @default("RWF")
+  exchangeRate         Decimal          @default(1) @db.Decimal(18, 8)
   net                  Decimal          @default(0) @db.Decimal(18, 4)
   tax                  Decimal          @default(0) @db.Decimal(18, 4)
   discount             Decimal          @default(0) @db.Decimal(18, 4)
@@ -1017,16 +1064,37 @@ model ArInvoice {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer    Customer       @relation(fields: [customerId], references: [id])
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer    Customer        @relation(fields: [customerId], references: [id])
   allocations ArAllocation[]
   creditNotes ArCreditNote[]
+  lines       ArInvoiceLine[]
 
   @@unique([companyId, invoiceNumber])
   @@index([companyId, customerId, status])
   @@index([companyId, dueDate])
   @@index([companyId, sourceDocumentType, sourceDocumentId])
   @@map("ar_invoices")
+}
+
+model ArInvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  lineNumber  Int
+  description String
+  quantity    Decimal @db.Decimal(18, 4)
+  unitPrice   Decimal @db.Decimal(18, 4)
+  discount    Decimal @default(0) @db.Decimal(18, 4)
+  net         Decimal @db.Decimal(18, 4)
+  taxCode     String?
+  taxRate     Decimal @default(0) @db.Decimal(9, 4)
+  tax         Decimal @default(0) @db.Decimal(18, 4)
+  accountId   String?
+
+  invoice ArInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("ar_invoice_lines")
 }
 
 model ArReceipt {
@@ -1037,12 +1105,17 @@ model ArReceipt {
   receiptDate        DateTime
   method             ArPaymentMethod  @default(CASH)
   amount             Decimal          @db.Decimal(18, 4)
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   unallocated        Decimal          @default(0) @db.Decimal(18, 4)
   status             ArDocumentStatus @default(POSTED)
   reference          String?
   journalId          String?
   description        String?
   financialAccountId String?
+  sourceModule       String?
+  sourceDocumentType String?
+  sourceDocumentId   String?
   createdByErpUserId Int?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -1053,6 +1126,7 @@ model ArReceipt {
 
   @@unique([companyId, receiptNumber])
   @@index([companyId, customerId])
+  @@index([companyId, sourceDocumentType, sourceDocumentId])
   @@map("ar_receipts")
 }
 
@@ -1078,12 +1152,17 @@ model ArCreditNote {
   creditNoteNumber   String
   noteDate           DateTime
   reason             String
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   net                Decimal          @default(0) @db.Decimal(18, 4)
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
   status             ArDocumentStatus @default(POSTED)
   journalId          String?
   description        String?
+  sourceModule       String?
+  sourceDocumentType String?
+  sourceDocumentId   String?
   createdByErpUserId Int?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -1094,6 +1173,7 @@ model ArCreditNote {
 
   @@unique([companyId, creditNoteNumber])
   @@index([companyId, customerId])
+  @@index([companyId, sourceDocumentType, sourceDocumentId])
   @@map("ar_credit_notes")
 }
 
@@ -1105,6 +1185,8 @@ model ArDebitNote {
   noteDate           DateTime
   dueDate            DateTime
   reason             String
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   net                Decimal          @default(0) @db.Decimal(18, 4)
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
@@ -1132,6 +1214,8 @@ model ArDeposit {
   depositDate        DateTime
   method             ArPaymentMethod  @default(CASH)
   amount             Decimal          @db.Decimal(18, 4)
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   remaining          Decimal          @db.Decimal(18, 4)
   status             ArDocumentStatus @default(POSTED)
   reference          String?
@@ -1195,6 +1279,15 @@ enum SupplierStatus {
 enum ApDocumentStatus {
   POSTED
   REVERSED
+  PENDING_APPROVAL
+  REJECTED
+}
+
+/// Documents that post on creation unless the company's approval policy holds them for approval
+enum ApprovalGateStatus {
+  PENDING_APPROVAL
+  POSTED
+  REJECTED
 }
 
 enum ApPaymentMethod {
@@ -1254,6 +1347,7 @@ model Supplier {
   debitNotes  ApDebitNote[]
   advances    ApAdvance[]
   ledger      ApLedgerEntry[]
+  goodsReceipts GoodsReceipt[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpSupplierId])
@@ -1274,6 +1368,7 @@ model ApBill {
   grnReference          String?
   status                ApDocumentStatus @default(POSTED)
   currency              String           @default("RWF")
+  exchangeRate          Decimal          @default(1) @db.Decimal(18, 8)
   net                   Decimal          @default(0) @db.Decimal(18, 4)
   tax                   Decimal          @default(0) @db.Decimal(18, 4)
   discount              Decimal          @default(0) @db.Decimal(18, 4)
@@ -1287,6 +1382,12 @@ model ApBill {
   sourceDocumentType    String?
   sourceDocumentId      String?
   sourceDocumentNumber  String?
+  /// Part of the net amount that cleared goods received not invoiced instead of going to purchases.
+  grniCleared           Decimal          @default(0) @db.Decimal(18, 4)
+  voidedAt              DateTime?
+  voidReason            String?
+  voidJournalId         String?
+  voidedByErpUserId     Int?
   createdByErpUserId    Int?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -1296,6 +1397,7 @@ model ApBill {
   allocations        ApAllocation[]
   advanceAllocations ApAdvanceAllocation[]
   creditNotes        ApCreditNote[]
+  lines              ApBillLine[]
 
   @@unique([companyId, billNumber])
   @@unique([companyId, supplierId, supplierInvoiceNumber])
@@ -1303,6 +1405,47 @@ model ApBill {
   @@index([companyId, dueDate])
   @@index([companyId, sourceDocumentType, sourceDocumentId])
   @@map("ap_bills")
+}
+
+model ApBillLine {
+  id          String  @id @default(cuid())
+  billId      String
+  lineNumber  Int
+  description String
+  quantity    Decimal @db.Decimal(18, 4)
+  unitPrice   Decimal @db.Decimal(18, 4)
+  discount    Decimal @default(0) @db.Decimal(18, 4)
+  net         Decimal @db.Decimal(18, 4)
+  taxCode     String?
+  taxRate     Decimal @default(0) @db.Decimal(9, 4)
+  tax         Decimal @default(0) @db.Decimal(18, 4)
+  accountId   String?
+
+  bill ApBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@map("ap_bill_lines")
+}
+
+/// Goods received against a purchase order in the ERP. Its value is already on goods received not
+/// invoiced through the PURCHASE stock movements; supplier bills for the order clear it.
+model GoodsReceipt {
+  id                 String   @id @default(cuid())
+  companyId          String
+  supplierId         String?
+  integrationEventId String?  @unique
+  receiptDate        DateTime
+  poReference        String?
+  reference          String?
+  value              Decimal  @db.Decimal(18, 4)
+  matchedValue       Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt          DateTime @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, supplierId, poReference])
+  @@map("goods_receipts")
 }
 
 model ApPayment {
@@ -1313,6 +1456,8 @@ model ApPayment {
   paymentDate        DateTime
   method             ApPaymentMethod  @default(BANK)
   amount             Decimal          @db.Decimal(18, 4)
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   withholdingTax     Decimal          @default(0) @db.Decimal(18, 4)
   unallocated        Decimal          @default(0) @db.Decimal(18, 4)
   status             ApDocumentStatus @default(POSTED)
@@ -1389,6 +1534,8 @@ model ApDebitNote {
   noteDate           DateTime
   dueDate            DateTime
   reason             String
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   net                Decimal          @default(0) @db.Decimal(18, 4)
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
@@ -1416,6 +1563,8 @@ model ApAdvance {
   advanceDate        DateTime
   method             ApPaymentMethod  @default(BANK)
   amount             Decimal          @db.Decimal(18, 4)
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   remaining          Decimal          @db.Decimal(18, 4)
   refunded           Decimal          @default(0) @db.Decimal(18, 4)
   status             ApDocumentStatus @default(POSTED)
@@ -1486,6 +1635,7 @@ enum InventoryMovementKind {
   EXPIRED
   TRANSFER_IN
   TRANSFER_OUT
+  SUPPLIER_RETURN
 }
 
 model InventoryItem {
@@ -1574,6 +1724,8 @@ model InventoryMovement {
   note               String?
   integrationEventId String?
   journalId          String?
+  /// Sales recorded before cost of sales came from valuation; their cost is in the sale journal.
+  costInSaleJournal  Boolean               @default(false)
   createdAt          DateTime              @default(now())
 
   company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1692,6 +1844,11 @@ model BankTransaction {
   chequeNumber              String?
   partyType                 String?
   partyName                 String?
+  /// Set when the money was received from a customer or paid to a supplier through their control account.
+  customerId                String?
+  supplierId                String?
+  arReceiptId               String?
+  apPaymentId               String?
   description               String?
   /// Account lines chosen by the user: [{ accountId, amount, description }]
   lines                     Json?
@@ -1964,6 +2121,7 @@ model TaxAdjustment {
   increasesLiability Boolean  @default(true)
   reason             String
   reference          String?
+  status             ApprovalGateStatus @default(POSTED)
   journalId          String?
   createdByErpUserId Int?
   createdAt          DateTime @default(now())
@@ -2198,6 +2356,14 @@ model RecurringExpense {
 enum DepreciationMethod {
   STRAIGHT_LINE
   REDUCING_BALANCE
+  SUM_OF_YEARS_DIGITS
+  UNITS_OF_PRODUCTION
+}
+
+enum DepreciationFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
 }
 
 enum AssetStatus {
@@ -2268,7 +2434,15 @@ model FixedAsset {
   residualValue           Decimal                 @default(0) @db.Decimal(18, 4)
   usefulLifeMonths        Int                     @default(0)
   depreciationMethod      DepreciationMethod      @default(STRAIGHT_LINE)
+  depreciationFrequency   DepreciationFrequency   @default(MONTHLY)
   ratePercent             Decimal?                @db.Decimal(9, 4)
+  totalUnits              Decimal?                @db.Decimal(18, 4)
+  unitsDepreciated        Decimal                 @default(0) @db.Decimal(18, 4)
+  depreciatedMonths       Int                     @default(0)
+  depreciationBase        Decimal?                @db.Decimal(18, 4)
+  depreciationBaseMonth   Int                     @default(0)
+  revaluationSurplus      Decimal                 @default(0) @db.Decimal(18, 4)
+  revaluationLossInPl     Decimal                 @default(0) @db.Decimal(18, 4)
   assetAccountId          String?
   accumDepAccountId       String?
   depExpenseAccountId     String?
@@ -2304,6 +2478,7 @@ model FixedAsset {
   transfers      FixedAssetTransfer[]
   revaluations   FixedAssetRevaluation[]
   impairments    FixedAssetImpairment[]
+  usages         FixedAssetUsage[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -2408,6 +2583,8 @@ model FixedAssetRevaluation {
   fairValue            Decimal  @db.Decimal(18, 4)
   amount               Decimal  @db.Decimal(18, 4)
   increase             Boolean
+  reserveAmount        Decimal  @default(0) @db.Decimal(18, 4)
+  plAmount             Decimal  @default(0) @db.Decimal(18, 4)
   valuationReference   String?
   journalId            String?
   createdByErpUserId   Int?
@@ -2428,6 +2605,7 @@ model FixedAssetImpairment {
   recoverableAmount  Decimal  @db.Decimal(18, 4)
   lossAmount         Decimal  @db.Decimal(18, 4)
   reason             String?
+  status             ApprovalGateStatus @default(POSTED)
   journalId          String?
   createdByErpUserId Int?
   createdAt          DateTime @default(now())
@@ -2439,19 +2617,43 @@ model FixedAssetImpairment {
   @@map("fixed_asset_impairments")
 }
 
+/// Units used by a units-of-production asset in a month; locked once that month is depreciated.
+model FixedAssetUsage {
+  id                 String   @id @default(cuid())
+  companyId          String
+  assetId            String
+  period             String
+  units              Decimal  @db.Decimal(18, 4)
+  notes              String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  asset FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, period])
+  @@index([companyId, period])
+  @@map("fixed_asset_usages")
+}
+
 enum CloseKind {
   MONTH
   YEAR
 }
 
 enum CloseStatus {
+  PENDING_APPROVAL
   CLOSED
   REOPENED
+  REJECTED
 }
 
 enum BudgetStatus {
   DRAFT
+  SUBMITTED
   APPROVED
+  ACTIVE
+  REVISED
 }
 
 enum DimensionKind {
@@ -2463,6 +2665,14 @@ enum ApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+  RETURNED
+}
+
+enum ApprovalDecisionKind {
+  APPROVED
+  REJECTED
+  RETURNED
+  RESUBMITTED
 }
 
 enum NoticeSeverity {
@@ -2520,17 +2730,43 @@ model PeriodClose {
   periodId           String
   kind               CloseKind
   status             CloseStatus @default(CLOSED)
+  /// Checklist as it stood when the close was requested, replaced by the one at the moment of closing
   checklistJson      Json
   journalId          String?
+  requestedByErpUserId Int?
+  requestedAt        DateTime    @default(now())
+  approvalRequestId  String?
+  approvedByErpUserId Int?
+  approvedAt         DateTime?
+  decisionNote       String?
   closedByErpUserId  Int?
+  closedAt           DateTime?
   reopenReason       String?
-  closedAt           DateTime    @default(now())
+  reopenedByErpUserId Int?
+  reopenedAt         DateTime?
   updatedAt          DateTime    @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, periodId])
   @@map("period_closes")
+}
+
+/// A failing close checklist item that someone with close:manage accepted, with their reason.
+model PeriodCloseOverride {
+  id        String   @id @default(cuid())
+  companyId String
+  periodId  String
+  item      String
+  note      String
+  erpUserId Int
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, item])
+  @@index([companyId])
+  @@map("period_close_overrides")
 }
 
 model ExchangeRate {
@@ -2571,7 +2807,14 @@ model Budget {
   name               String
   financialYearId    String?
   status             BudgetStatus @default(DRAFT)
+  /// Versions of one budget share the family id of the first version (null on the first version itself)
+  familyId           String?
+  version            Int          @default(1)
+  revisedFromId      String?
   createdByErpUserId Int?
+  approvedAt         DateTime?
+  activatedAt        DateTime?
+  activatedByErpUserId Int?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -2579,6 +2822,7 @@ model Budget {
   lines   BudgetLine[]
 
   @@index([companyId, status])
+  @@index([companyId, familyId])
   @@map("budgets")
 }
 
@@ -2586,10 +2830,12 @@ model BudgetLine {
   id             String  @id @default(cuid())
   budgetId       String
   accountId      String
+  /// Period sequence in the budget's financial year; 0 means the whole year
   periodSequence Int     @default(0)
   amount         Decimal @db.Decimal(18, 4)
   costCentre     String?
   project        String?
+  branchId       String?
 
   budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
 
@@ -2620,13 +2866,91 @@ model ControlItem {
   category  String
   status    ControlStatus @default(OPEN)
   notes     String?
+  lastTestedAt DateTime?
   updatedAt DateTime      @updatedAt
   createdAt DateTime      @default(now())
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tests   ControlTest[]
+  risks   RiskControlLink[]
+
+  @@unique([companyId, code])
+  @@map("control_items")
+}
+
+/// A risk scored likelihood × impact (1–5 each), with the controls that address it.
+model RiskItem {
+  id                  String   @id @default(cuid())
+  companyId           String
+  code                String
+  title               String
+  category            String
+  description         String?
+  likelihood          Int
+  impact              Int
+  /// After controls; null until assessed
+  residualLikelihood  Int?
+  residualImpact      Int?
+  /// OPEN, MITIGATING, ACCEPTED or CLOSED
+  status              String   @default("OPEN")
+  ownerName           String?
+  ownerErpUserId      Int?
+  reviewDate          DateTime?
+  createdByErpUserId  Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  controls RiskControlLink[]
+
+  @@unique([companyId, code])
+  @@map("risk_items")
+}
+
+model RiskControlLink {
+  riskId    String
+  controlId String
+
+  risk    RiskItem    @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  control ControlItem @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@id([riskId, controlId])
+  @@map("risk_control_links")
+}
+
+/// One test of a control; evidence is uploaded as documents attached to the test.
+model ControlTest {
+  id                String   @id @default(cuid())
+  companyId         String
+  controlId         String
+  testedAt          DateTime
+  /// PASS or FAIL
+  result            String
+  sampleSize        Int?
+  notes             String?
+  testedByErpUserId Int
+  testedByErpRole   String?
+  createdAt         DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  control ControlItem @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, controlId, testedAt])
+  @@map("control_tests")
+}
+
+/// Target for a KPI in the KPI pack, compared with the actual for any period.
+model KpiTarget {
+  id        String   @id @default(cuid())
+  companyId String
+  code      String
+  target    Decimal  @db.Decimal(18, 4)
+  updatedAt DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, code])
-  @@map("control_items")
+  @@map("kpi_targets")
 }
 
 model ApprovalRequest {
@@ -2639,28 +2963,109 @@ model ApprovalRequest {
   reason               String?
   requestedByErpUserId Int?
   decidedByErpUserId   Int?
+  /// Approvals needed before the request is APPROVED; fixed when the request is raised or resubmitted
+  requiredLevels       Int            @default(1)
+  approvedLevels       Int            @default(0)
+  /// ERP role required at each level; a missing entry means any role that can approve the entity
+  levelRoles           String[]       @default([])
+  decisionNote         String?
+  resubmitCount        Int            @default(0)
   createdAt            DateTime       @default(now())
   decidedAt            DateTime?
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  decisions ApprovalDecision[]
 
   @@index([companyId, status])
+  @@index([companyId, entityType, entityId])
   @@map("approval_requests")
 }
 
+model ApprovalDecision {
+  id                String               @id @default(cuid())
+  approvalRequestId String
+  level             Int
+  decision          ApprovalDecisionKind
+  erpUserId         Int
+  erpRole           String?
+  note              String?
+  createdAt         DateTime             @default(now())
+
+  request ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  @@index([approvalRequestId, createdAt])
+  @@map("approval_decisions")
+}
+
 model Notification {
-  id        String         @id @default(cuid())
-  companyId String
-  title     String
-  body      String
-  severity  NoticeSeverity @default(INFO)
-  readAt    DateTime?
-  createdAt DateTime       @default(now())
+  id              String         @id @default(cuid())
+  companyId       String
+  title           String
+  body            String
+  severity        NoticeSeverity @default(INFO)
+  /// Legacy company-wide read flag; read state is per user in notification_reads
+  readAt          DateTime?
+  /// Only users with this ERP role see the notification; null means everyone in the company
+  targetRole      String?
+  targetErpUserId Int?
+  entityType      String?
+  entityId        String?
+  createdAt       DateTime       @default(now())
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reads   NotificationRead[]
+  email   NotificationEmail?
+
+  @@index([companyId, readAt])
+  @@index([companyId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationSettings {
+  id               String         @id @default(cuid())
+  companyId        String         @unique
+  /// Sends notifications at or above the minimum severity by email through the ERP's mailer
+  emailEnabled     Boolean        @default(false)
+  emailMinSeverity NoticeSeverity @default(WARNING)
+  updatedAt        DateTime       @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@index([companyId, readAt])
-  @@map("notifications")
+  @@map("notification_settings")
+}
+
+/// Email outbox: one row per notification to be emailed; the scheduler hands it to the ERP.
+model NotificationEmail {
+  id             String    @id @default(cuid())
+  companyId      String
+  notificationId String    @unique
+  /// PENDING, SENT, FAILED or SKIPPED (no recipients)
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  recipientCount Int?
+  lastError      String?
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@map("notification_emails")
+}
+
+model NotificationRead {
+  id             String   @id @default(cuid())
+  notificationId String
+  erpUserId      Int
+  readAt         DateTime @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, erpUserId])
+  @@index([erpUserId])
+  @@map("notification_reads")
 }
 
 model AccountingDocument {
@@ -2671,6 +3076,11 @@ model AccountingDocument {
   fileName           String
   note               String?
   contentText        String?
+  /// Set only for uploaded files; legacy rows are references without stored content.
+  storageKey         String?  @unique
+  mimeType           String?
+  sizeBytes          Int?
+  sha256             String?
   createdByErpUserId Int?
   createdAt          DateTime @default(now())
 
@@ -2761,6 +3171,7 @@ model ForecastScenario {
   name          String
   horizonMonths Int
   resultJson    Json
+  createdByErpUserId Int?
   createdAt     DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2773,15 +3184,57 @@ model AnomalyFlag {
   id        String   @id @default(cuid())
   companyId String
   journalId String?
+  /// AMOUNT_OUTLIER, ROUND_AMOUNT, OUTSIDE_HOURS, DUPLICATE_BILL or DUPLICATE_PAYMENT
+  rule       String  @default("AMOUNT_OUTLIER")
+  entityType String  @default("Journal")
+  entityId   String?
   score     Decimal  @db.Decimal(18, 4)
   reason    String
+  /// OPEN, INVESTIGATING, CONFIRMED or DISMISSED
   status    String   @default("OPEN")
+  resolution         String?
+  decidedByErpUserId Int?
+  decidedAt          DateTime?
   createdAt DateTime @default(now())
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  notes   AnomalyNote[]
+
+  @@unique([companyId, rule, entityType, entityId])
+  @@index([companyId, status])
+  @@map("anomaly_flags")
+}
+
+model AnomalyNote {
+  id        String   @id @default(cuid())
+  flagId    String
+  erpUserId Int
+  note      String
+  createdAt DateTime @default(now())
+
+  flag AnomalyFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+
+  @@index([flagId, createdAt])
+  @@map("anomaly_notes")
+}
+
+/// Result of a data integrity scan (ledger vs subledgers, numbering gaps, unbalanced journals, negative cash).
+model IntegrityScan {
+  id               String   @id @default(cuid())
+  companyId        String
+  /// SCHEDULED or MANUAL
+  trigger          String
+  runByErpUserId   Int?
+  findingCount     Int
+  /// Hash of the findings, so an unchanged result is not notified again
+  fingerprint      String
+  findings         Json
+  createdAt        DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@index([companyId, status])
-  @@map("anomaly_flags")
+  @@index([companyId, createdAt])
+  @@map("integrity_scans")
 }
 
 model EsgMeasure {
@@ -2858,15 +3311,80 @@ model ApiCredential {
   scopes             String[]  @default([])
   expiresAt          DateTime?
   lastUsedAt         DateTime?
+  rateLimitPerMinute Int       @default(120)
   createdByErpUserId Int?
   revokedAt          DateTime?
   createdAt          DateTime  @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usage   ApiKeyUsage[]
 
   @@index([companyId])
   @@index([prefix])
   @@map("api_credentials")
+}
+
+/// One row per request made with an API key; also the rate-limit window.
+model ApiKeyUsage {
+  id           String   @id @default(cuid())
+  credentialId String
+  companyId    String
+  method       String
+  path         String
+  /// HTTP status; null while the request is in flight
+  status       Int?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  credential ApiCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([credentialId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("api_key_usage")
+}
+
+model WebhookEndpoint {
+  id                 String    @id @default(cuid())
+  companyId          String
+  url                String
+  /// Signs each delivery (HMAC-SHA256); shown once when the endpoint is created
+  secret             String
+  events             String[]
+  isActive           Boolean   @default(true)
+  description        String?
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([companyId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String    @id @default(cuid())
+  companyId      String
+  endpointId     String
+  event          String
+  payload        Json
+  /// PENDING, DELIVERED or FAILED (gave up)
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  responseStatus Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+  @@map("webhook_deliveries")
 }
 
 /// Short-lived lease so only one API instance runs a scheduled job at a time.
@@ -2885,6 +3403,14 @@ model SignatureRecord {
   entityId          String
   statement         String
   signerErpUserId   Int
+  signerErpRole     String?
+  /// SHA-256 of the canonical JSON snapshot of the record when signed; null on signatures made before hashing
+  contentHash       String?
+  snapshot          Json?
+  /// SHA-256 over the signature itself (record, statement, signer, time, content hash)
+  signatureHash     String?
+  /// Set when the signature was given by deciding an approval
+  approvalRequestId String?
   signedAt          DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)

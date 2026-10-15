@@ -9,16 +9,20 @@ import { Link, match, useLocation } from "./lib/router";
 import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
 import { Accounts } from "./pages/Accounts";
 import { AgeingReportPage } from "./pages/Ageing";
+import { Approvals } from "./pages/Approvals";
+import { Assurance } from "./pages/Assurance";
 import { AuditLog } from "./pages/AuditLog";
 import { BankAccount } from "./pages/BankAccount";
 import { Banking } from "./pages/Banking";
 import { BankReconciliationDetail, BankReconciliations } from "./pages/BankReconciliations";
 import { BankTransactions } from "./pages/BankTransactions";
 import { Bills } from "./pages/Bills";
-import { Budgets, Controls, Currencies, PeriodClose, Platform, Statements } from "./pages/Books";
+import { Controls, Currencies, PeriodClose, Platform, Statements } from "./pages/Books";
+import { Budgets } from "./pages/Budgets";
 import { CashPosition } from "./pages/CashPosition";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
+import { Dimensions } from "./pages/Dimensions";
 import { Exceptions } from "./pages/Exceptions";
 import { ExpenseCategories } from "./pages/ExpenseCategories";
 import { Expenses } from "./pages/Expenses";
@@ -37,9 +41,12 @@ import { CostOfSalesReport, InventoryValuationReport, SlowMovingReport } from ".
 import { Invoices } from "./pages/Invoices";
 import { JournalNew } from "./pages/JournalNew";
 import { Journals } from "./pages/Journals";
+import { JournalImport, RecurringJournals } from "./pages/JournalTools";
 import { Ledger } from "./pages/Ledger";
+import { Notifications } from "./pages/Notifications";
 import { Overview } from "./pages/Overview";
 import { PurchasesBySupplierReport } from "./pages/PurchasesBySupplier";
+import { Branches } from "./pages/Branches";
 import { Setup } from "./pages/Setup";
 import { SupplierDetail } from "./pages/SupplierDetail";
 import { SupplierPayments } from "./pages/SupplierPayments";
@@ -95,15 +102,22 @@ const ROUTES: Route[] = [
   { pattern: "/fixed-assets/assets/:id", needs: "fa:view", render: (p) => <FaAssetDetail key={p.id} id={p.id} /> },
   { pattern: "/journals", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/journals/new", needs: "journal:create", render: () => <JournalNew /> },
+  { pattern: "/journals/:id/edit", needs: "journal:create", render: (p) => <JournalNew key={p.id} id={p.id} /> },
+  { pattern: "/approvals", needs: "journal:view", render: () => <Approvals /> },
+  { pattern: "/notifications", needs: "setup:view", render: () => <Notifications /> },
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
   { pattern: "/accounts", needs: "coa:view", render: () => <Accounts /> },
-  { pattern: "/reports/trial-balance", needs: "coa:view", render: () => <TrialBalance /> },
+  { pattern: "/recurring-journals", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
+  { pattern: "/reports/trial-balance", needs: "report:view", render: () => <TrialBalance /> },
+  { pattern: "/dimensions", needs: "report:view", render: () => <Dimensions /> },
   { pattern: "/reports/statements", needs: "report:view", render: () => <Statements /> },
   { pattern: "/close", needs: "close:view", render: () => <PeriodClose /> },
   { pattern: "/budgets", needs: "budget:view", render: () => <Budgets /> },
   { pattern: "/currencies", needs: "report:view", render: () => <Currencies /> },
   { pattern: "/controls", needs: "control:view", render: () => <Controls /> },
   { pattern: "/platform", needs: "platform:view", render: () => <Platform /> },
+  { pattern: "/assurance", needs: "platform:view", render: () => <Assurance /> },
   { pattern: "/reports/ageing", needs: "ar:view", render: () => <AgeingReportPage kind="ar" /> },
   { pattern: "/reports/payables-ageing", needs: "ap:view", render: () => <AgeingReportPage kind="ap" /> },
   { pattern: "/reports/withholding-tax", needs: "ap:view", render: () => <WithholdingTaxReport /> },
@@ -113,6 +127,7 @@ const ROUTES: Route[] = [
   { pattern: "/reports/slow-moving", needs: "inventory:view", render: () => <SlowMovingReport /> },
   { pattern: "/reports/cash-position", needs: "bank:view", render: () => <CashPosition /> },
   { pattern: "/setup", needs: "setup:view", render: () => <Setup /> },
+  { pattern: "/branches", needs: "setup:view", render: () => <Branches /> },
   { pattern: "/exceptions", needs: "exceptions:view", render: () => <Exceptions /> },
   { pattern: "/audit", needs: "audit:view", render: () => <AuditLog /> },
 ];

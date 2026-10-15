@@ -1,9 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { financialAccountOptions, useFinancialAccounts } from "../lib/banking";
-import { ASSET_STATUS, DEP_METHOD_LABELS, DISPOSAL_LABELS, currentPeriod } from "../lib/fa";
+import { ASSET_STATUS, DEP_FREQUENCY_LABELS, DEP_METHOD_LABELS, DISPOSAL_LABELS, currentPeriod } from "../lib/fa";
 import { isoDay } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
-import type { DepPreview, DisposalMethod, FaCategory, FixedAsset } from "../lib/types";
+import type { DepPreview, DepreciationFrequency, DepreciationMethod, DisposalMethod, FaCategory, FixedAsset } from "../lib/types";
 import { Footer, FormError, MoneyInput, parseAmount, useSubmit } from "./forms";
 import { Select } from "./Select";
 import { Drawer, Field, Skeleton } from "./ui";
@@ -25,14 +25,24 @@ export function RegisterAssetForm({ onClose, onSaved }: { onClose: () => void; o
     description: "",
     capitalize: true,
     financialAccountId: "",
+    depreciationMethod: "" as DepreciationMethod | "",
+    depreciationFrequency: "MONTHLY" as DepreciationFrequency,
+    usefulLifeMonths: "",
+    ratePercent: "",
+    totalUnits: "",
   });
   const { busy, error, run } = useSubmit();
   const set = <K extends keyof typeof form>(k: K) => (v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const category = (categories.data ?? []).find((c) => c.id === form.categoryId);
+  const method = form.depreciationMethod || category?.depreciationMethod || "STRAIGHT_LINE";
 
   function submit(e: FormEvent) {
     e.preventDefault();
     const cost = parseAmount(form.acquisitionCost);
     if (!(cost > 0) || !form.categoryId || !form.name.trim()) return;
+    const life = form.usefulLifeMonths ? Number(form.usefulLifeMonths) : undefined;
+    const rate = form.ratePercent ? Number(form.ratePercent) : undefined;
+    const units = form.totalUnits ? parseAmount(form.totalUnits) : undefined;
     void run(async () => {
       const bank = (banks.data ?? []).find((b) => b.id === form.financialAccountId);
       const saved = await api<FixedAsset>("/api/v1/fixed-assets/assets", {
@@ -48,6 +58,11 @@ export function RegisterAssetForm({ onClose, onSaved }: { onClose: () => void; o
           location: form.location.trim() || undefined,
           assignedEmployee: form.assignedEmployee.trim() || undefined,
           description: form.description.trim() || undefined,
+          depreciationMethod: form.depreciationMethod || undefined,
+          depreciationFrequency: form.depreciationFrequency,
+          usefulLifeMonths: life,
+          ratePercent: method === "REDUCING_BALANCE" ? rate : undefined,
+          totalUnits: method === "UNITS_OF_PRODUCTION" ? units : undefined,
           capitalize: form.capitalize,
           creditAccountId: bank?.glAccountId,
           capitalizationDate: form.purchaseDate,
@@ -83,6 +98,54 @@ export function RegisterAssetForm({ onClose, onSaved }: { onClose: () => void; o
         <Field label="Residual value">
           <MoneyInput value={form.residualValue} onChange={set("residualValue")} placeholder="Category default" />
         </Field>
+        <Field label="Depreciation method">
+          <Select
+            value={form.depreciationMethod}
+            onChange={(v) => set("depreciationMethod")(v as DepreciationMethod | "")}
+            options={[
+              { value: "", label: category ? `Category default (${DEP_METHOD_LABELS[category.depreciationMethod]})` : "Category default" },
+              ...Object.entries(DEP_METHOD_LABELS).map(([value, label]) => ({ value, label })),
+            ]}
+          />
+        </Field>
+        <Field label="Post depreciation">
+          <Select
+            value={form.depreciationFrequency}
+            onChange={(v) => set("depreciationFrequency")(v as DepreciationFrequency)}
+            options={Object.entries(DEP_FREQUENCY_LABELS).map(([value, label]) => ({ value, label }))}
+          />
+        </Field>
+        {method === "UNITS_OF_PRODUCTION" ? (
+          <Field label="Total units expected" hint="Hours, km or units the asset will produce over its life">
+            <input className="input" inputMode="decimal" required value={form.totalUnits} onChange={(e) => set("totalUnits")(e.target.value)} />
+          </Field>
+        ) : (
+          <Field label="Useful life (months)">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={1200}
+              value={form.usefulLifeMonths}
+              onChange={(e) => set("usefulLifeMonths")(e.target.value)}
+              placeholder={category ? String(category.usefulLifeMonths) : "Category default"}
+            />
+          </Field>
+        )}
+        {method === "REDUCING_BALANCE" && (
+          <Field label="Rate (% a year)">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={form.ratePercent}
+              onChange={(e) => set("ratePercent")(e.target.value)}
+              placeholder={category?.ratePercent != null ? String(category.ratePercent) : ""}
+            />
+          </Field>
+        )}
         <Field label="Serial number">
           <input className="input" value={form.serialNumber} onChange={(e) => set("serialNumber")(e.target.value)} />
         </Field>
@@ -343,6 +406,135 @@ export function DisposeForm({ asset, onClose, onSaved }: { asset: FixedAsset; on
   );
 }
 
+export function RevalueForm({ asset, onClose, onSaved }: { asset: FixedAsset; onClose: () => void; onSaved: () => void }) {
+  const { api } = useSession();
+  const [form, setForm] = useState({ effectiveDate: isoDay(), fairValue: "", valuationReference: "" });
+  const { busy, error, run } = useSubmit();
+  const fairValue = parseAmount(form.fairValue);
+  const change = Number.isFinite(fairValue) ? fairValue - asset.netBookValue : 0;
+  const toPl = change > 0 ? Math.min(change, asset.revaluationLossInPl) : change < 0 ? Math.max(0, -change - asset.revaluationSurplus) : 0;
+  const toReserve = Math.abs(change) - toPl;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!(fairValue >= 0) || change === 0) return;
+    void run(async () => {
+      await api(`/api/v1/fixed-assets/assets/${asset.id}/revalue`, {
+        method: "POST",
+        body: JSON.stringify({ effectiveDate: form.effectiveDate, fairValue, valuationReference: form.valuationReference.trim() || undefined }),
+      });
+      onSaved();
+      return "Revaluation posted";
+    });
+  }
+
+  return (
+    <Drawer title={`Revalue ${asset.number}`} onClose={onClose} footer={<Footer onCancel={onClose} busy={busy} label="Post revaluation" formId="fa-rev" />}>
+      <FormError message={error} />
+      <form id="fa-rev" onSubmit={submit} className="form-grid">
+        <Field label="Effective date">
+          <input className="input" type="date" required value={form.effectiveDate} onChange={(e) => setForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
+        </Field>
+        <Field label="Fair value">
+          <MoneyInput value={form.fairValue} onChange={(v) => setForm((f) => ({ ...f, fairValue: v }))} required />
+        </Field>
+        <Field label="Valuation reference" className="span-2">
+          <input className="input" value={form.valuationReference} onChange={(e) => setForm((f) => ({ ...f, valuationReference: e.target.value }))} placeholder="e.g. Valuer report VR-12" />
+        </Field>
+        <p className="muted span-2">
+          Carrying amount {asset.netBookValue.toLocaleString()} · revaluation surplus {asset.revaluationSurplus.toLocaleString()}
+          {asset.revaluationLossInPl > 0 ? ` · earlier losses in profit or loss ${asset.revaluationLossInPl.toLocaleString()}` : ""}
+        </p>
+        {change !== 0 && (
+          <p className="span-2">
+            {change > 0 ? "Increase" : "Decrease"} of {Math.abs(change).toLocaleString()}: {toReserve.toLocaleString()} {change > 0 ? "to" : "from"} the revaluation surplus
+            {toPl > 0 ? `, ${toPl.toLocaleString()} ${change > 0 ? "reverses earlier losses in" : "charged to"} profit or loss` : ""}. Depreciation then spreads the new value over the remaining life.
+          </p>
+        )}
+      </form>
+    </Drawer>
+  );
+}
+
+export function ImpairForm({ asset, onClose, onSaved }: { asset: FixedAsset; onClose: () => void; onSaved: () => void }) {
+  const { api } = useSession();
+  const [form, setForm] = useState({ impairmentDate: isoDay(), recoverableAmount: "", reason: "" });
+  const { busy, error, run } = useSubmit();
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const recoverableAmount = parseAmount(form.recoverableAmount);
+    if (!(recoverableAmount >= 0)) return;
+    void run(async () => {
+      const result = await api<FixedAsset & { approval?: { id: string } }>(`/api/v1/fixed-assets/assets/${asset.id}/impair`, {
+        method: "POST",
+        body: JSON.stringify({ impairmentDate: form.impairmentDate, recoverableAmount, reason: form.reason.trim() || undefined }),
+      });
+      onSaved();
+      return result.approval ? "Impairment sent for approval; it posts once approved" : "Impairment posted";
+    });
+  }
+
+  return (
+    <Drawer title={`Impair ${asset.number}`} onClose={onClose} footer={<Footer onCancel={onClose} busy={busy} label="Record impairment" formId="fa-imp" />}>
+      <FormError message={error} />
+      <form id="fa-imp" onSubmit={submit} className="form-grid">
+        <Field label="Date">
+          <input className="input" type="date" required value={form.impairmentDate} onChange={(e) => setForm((f) => ({ ...f, impairmentDate: e.target.value }))} />
+        </Field>
+        <Field label="Recoverable amount">
+          <MoneyInput value={form.recoverableAmount} onChange={(v) => setForm((f) => ({ ...f, recoverableAmount: v }))} required />
+        </Field>
+        <Field label="Reason" className="span-2">
+          <textarea className="input" rows={2} value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
+        </Field>
+        <p className="muted span-2">Carrying amount {asset.netBookValue.toLocaleString()} — the difference is charged as an impairment loss.</p>
+      </form>
+    </Drawer>
+  );
+}
+
+export function UsageForm({ asset, onClose, onSaved }: { asset: FixedAsset; onClose: () => void; onSaved: () => void }) {
+  const { api } = useSession();
+  const [form, setForm] = useState({ period: currentPeriod(), units: "", notes: "" });
+  const { busy, error, run } = useSubmit();
+  const existing = asset.usages.find((u) => u.period === form.period);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const units = parseAmount(form.units);
+    if (!(units >= 0)) return;
+    void run(async () => {
+      await api(`/api/v1/fixed-assets/assets/${asset.id}/usage`, {
+        method: "PUT",
+        body: JSON.stringify({ period: form.period, units, notes: form.notes.trim() || undefined }),
+      });
+      onSaved();
+      return `Usage saved for ${form.period}`;
+    });
+  }
+
+  return (
+    <Drawer title={`Units used · ${asset.number}`} onClose={onClose} footer={<Footer onCancel={onClose} busy={busy} label="Save" formId="fa-use" />}>
+      <FormError message={error} />
+      <form id="fa-use" onSubmit={submit} className="form-grid">
+        <Field label="Period (yyyy-mm)">
+          <input className="input" required pattern="\d{4}-\d{2}" value={form.period} onChange={(e) => setForm((f) => ({ ...f, period: e.target.value }))} />
+        </Field>
+        <Field label="Units used" hint={existing ? `Currently ${existing.units.toLocaleString()}` : undefined}>
+          <input className="input" inputMode="decimal" required value={form.units} onChange={(e) => setForm((f) => ({ ...f, units: e.target.value }))} />
+        </Field>
+        <Field label="Notes" className="span-2">
+          <input className="input" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="e.g. meter reading" />
+        </Field>
+        <p className="muted span-2">
+          {(asset.unitsDepreciated ?? 0).toLocaleString()} of {(asset.totalUnits ?? 0).toLocaleString()} units depreciated. Usage can change until its month is depreciated.
+        </p>
+      </form>
+    </Drawer>
+  );
+}
+
 export function DepreciationRunForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
   const [period, setPeriod] = useState(currentPeriod());
@@ -391,7 +583,10 @@ export function DepreciationRunForm({ onClose, onSaved }: { onClose: () => void;
                     <tr key={i.assetId}>
                       <td>
                         {i.number}
-                        <span className="sub">{i.name}</span>
+                        <span className="sub">
+                          {i.name}
+                          {i.units ? ` · ${i.units.toLocaleString()} units` : i.months > 1 ? ` · ${i.months} months` : ""}
+                        </span>
                       </td>
                       <td className="num">{i.amount.toLocaleString()}</td>
                     </tr>
@@ -399,6 +594,16 @@ export function DepreciationRunForm({ onClose, onSaved }: { onClose: () => void;
                 </tbody>
               </table>
             </>
+          )}
+          {preview.data && preview.data.skipped.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <p className="muted small">Not depreciated this period:</p>
+              {preview.data.skipped.map((s) => (
+                <p key={s.assetId} className="small">
+                  {s.number} {s.name} <span className="muted">· {s.reason}</span>
+                </p>
+              ))}
+            </div>
           )}
         </div>
       </form>

@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { env } from "../src/config/env";
-import { signErpToken } from "./helpers";
+import { LEGACY_CONTROLS, signErpToken } from "./helpers";
 import { buildIdempotencyKey } from "@exceledge/accounting-domain";
 
 const app = createApp();
@@ -60,7 +60,7 @@ async function activateCompany() {
   await request(app).put("/api/v1/setup/party-defaults").set(headers).send({});
   await request(app).put("/api/v1/setup/banking").set(headers).send({});
   await request(app).post("/api/v1/setup/numbering/ensure").set(headers);
-  await request(app).put("/api/v1/setup/approvals").set(headers).send({ approvalLevels: 1 });
+  await request(app).put("/api/v1/setup/approvals").set(headers).send(LEGACY_CONTROLS);
   for (const key of ["FINANCIAL_YEAR_PERIODS", "CURRENCY", "ACCOUNTING_POLICIES"]) {
     await request(app).post(`/api/v1/setup/sections/${key}/approve`).set(headers);
   }

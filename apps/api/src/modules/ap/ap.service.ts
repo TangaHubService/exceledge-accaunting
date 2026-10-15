@@ -10,15 +10,24 @@ import {
   buildApCreditNoteLines,
   buildApDebitNoteLines,
   buildApPaymentLines,
+  buildLinedBillJournal,
   buildSupplierAdvanceLines,
+  buildSupplierReturnLines,
+  periodStatement,
+  realizedFxSettlement,
+  type DocumentLineInput,
+  readPaymentSplits,
   roundMoney,
+  settlementAccountId,
   type ApPaymentMethod,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { Prisma } from "@prisma/client";
-import { defaultsFor, money, nextNumber, settlementDefaults } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import { defaultsFor, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
+import { documentApprovalPlan, requestApproval } from "../approvals/approval.service";
+import { inventoryConfig, recordSupplierReturn } from "../inventory/inventory.service";
 import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
 
 type Actor = {
@@ -58,9 +67,12 @@ async function appendLedger(
     credit: number;
   },
 ) {
-  const supplier = await tx.supplier.findUniqueOrThrow({ where: { id: input.supplierId } });
-  const next = roundMoney(money(supplier.balance) + input.credit - input.debit);
-  await tx.supplier.update({ where: { id: supplier.id }, data: { balance: next } });
+  // An increment locks the supplier row, so concurrent postings cannot overwrite each other's balance.
+  const supplier = await tx.supplier.update({
+    where: { id: input.supplierId },
+    data: { balance: { increment: roundMoney(input.credit - input.debit) } },
+  });
+  const next = money(supplier.balance);
   return tx.apLedgerEntry.create({
     data: {
       companyId: input.companyId,
@@ -306,16 +318,26 @@ export async function createBill(
     dueDate?: Date | string;
     poReference?: string;
     grnReference?: string;
-    net: number;
+    net?: number;
     tax?: number;
     discount?: number;
     expenseAccountId?: string;
     description?: string;
     currency?: string;
+    exchangeRate?: number;
+    /** Line items; when given, the totals come from the lines and their tax codes. */
+    lines?: DocumentLineInput[];
   },
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
+  const billDateEarly = new Date(input.billDate);
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: input.currency,
+    partyCurrency: supplier.currency,
+    date: billDateEarly,
+    rate: input.exchangeRate,
+  });
   const supplierInvoiceNumber = input.supplierInvoiceNumber?.trim() || undefined;
   if (supplierInvoiceNumber) {
     const duplicate = await prisma.apBill.findFirst({ where: { companyId, supplierId: supplier.id, supplierInvoiceNumber } });
@@ -323,15 +345,21 @@ export async function createBill(
   }
   const expenseAccountId = input.expenseAccountId || supplier.defaultExpenseAccountId || undefined;
   await assertAccountsUsable(companyId, [expenseAccountId]);
-  const net = roundMoney(input.net);
-  const tax = roundMoney(input.tax ?? 0);
-  const discount = roundMoney(input.discount ?? 0);
+  const billDate = billDateEarly;
+  const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, billDate, "purchase") : null;
+  if (priced && input.discount) throw new Error("Give discounts on the lines when a bill has lines");
+  if (priced && (input.net != null || input.tax != null)) throw new Error("A bill with lines takes its net and tax from the lines");
+  if (!priced && !(Number(input.net) > 0)) throw new Error("Bill amount must be positive");
+  const net = priced ? priced.net : roundMoney(input.net!);
+  const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
+  const discount = priced ? 0 : roundMoney(input.discount ?? 0);
   const gross = roundMoney(net + tax - discount);
   const defaults = await defaultsFor(companyId);
-  const lines = buildApBillLines(defaults, { net, tax, discount, apAccountId: supplier.apAccountId, expenseAccountId });
-  const billDate = new Date(input.billDate);
+  if (priced) buildLinedBillJournal(defaults, { lines: priced.lines, apAccountId: supplier.apAccountId, expenseAccountId });
+  else buildApBillLines(defaults, { net, tax, discount, apAccountId: supplier.apAccountId, expenseAccountId });
   const dueDate = input.dueDate ? new Date(input.dueDate) : new Date(billDate.getTime() + supplier.creditPeriodDays * DAY);
   if (dueDate < billDate) throw new Error("Due date can't be before the bill date");
+  const plan = await documentApprovalPlan(companyId, "ApBill", gross);
   const billNumber = await nextNumber(companyId, "AP_BILL", "BILL");
   const bill = await prisma.apBill.create({
     data: {
@@ -343,7 +371,9 @@ export async function createBill(
       dueDate,
       poReference: input.poReference || undefined,
       grnReference: input.grnReference || undefined,
-      currency: input.currency ?? supplier.currency,
+      status: plan ? "PENDING_APPROVAL" : "POSTED",
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       discount,
@@ -353,15 +383,88 @@ export async function createBill(
       sourceModule: "AP",
       sourceDocumentType: "ApBill",
       createdByErpUserId: actor.erpUserId,
+      ...(priced
+        ? {
+            lines: {
+              create: priced.lines.map((l) => ({
+                lineNumber: l.lineNumber,
+                description: l.description,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                discount: l.discount,
+                net: l.net,
+                taxCode: l.taxCode,
+                taxRate: l.taxRate,
+                tax: l.tax,
+                accountId: l.accountId,
+              })),
+            },
+          }
+        : {}),
     },
   });
+  if (plan) {
+    await audit(companyId, actor, "CREATE", "ApBill", bill.id, { billNumber, supplierInvoiceNumber, gross, status: "PENDING_APPROVAL" });
+    const approval = await requestApproval(companyId, { entityType: "ApBill", entityId: bill.id, amount: gross, plan }, actor);
+    return { ...(await prisma.apBill.findUniqueOrThrow({ where: { id: bill.id } })), approval };
+  }
+  await postBillJournal(companyId, bill.id, actor);
+  return prisma.apBill.findUniqueOrThrow({ where: { id: bill.id } });
+}
+
+/** Posts a bill that was held for approval, once its approval is final. */
+export async function postPendingBill(companyId: string, billId: string, actor: Actor = {}) {
+  const claimed = await prisma.apBill.updateMany({ where: { id: billId, companyId, status: "PENDING_APPROVAL" }, data: { status: "POSTED" } });
+  if (!claimed.count) throw new Error("This bill is not waiting for approval");
+  await postBillJournal(companyId, billId, actor);
+  return prisma.apBill.findUniqueOrThrow({ where: { id: billId } });
+}
+
+async function postBillJournal(companyId: string, billId: string, actor: Actor) {
+  const bill = await prisma.apBill.findUniqueOrThrow({ where: { id: billId }, include: { supplier: true, lines: { orderBy: { lineNumber: "asc" } } } });
+  const { billNumber, supplierInvoiceNumber, billDate, supplier } = bill;
+  const gross = money(bill.gross);
+  const defaults = await defaultsFor(companyId);
+  const expenseAccountId = bill.expenseAccountId || supplier.defaultExpenseAccountId || undefined;
+  let lines: JournalLineDraft[];
+  if (bill.lines.length) {
+    // Tax accounts follow the tax codes as they are when the bill posts; rates and amounts were fixed on entry.
+    const codes = [...new Set(bill.lines.map((l) => l.taxCode).filter(Boolean) as string[])];
+    const taxCodes = codes.length ? await prisma.taxCode.findMany({ where: { companyId, code: { in: codes } } }) : [];
+    lines = buildLinedBillJournal(defaults, {
+      lines: bill.lines.map((l) => ({
+        lineNumber: l.lineNumber,
+        description: l.description,
+        quantity: Number(l.quantity),
+        unitPrice: Number(l.unitPrice),
+        discount: money(l.discount),
+        net: money(l.net),
+        taxCode: l.taxCode,
+        taxRate: Number(l.taxRate),
+        tax: money(l.tax),
+        accountId: l.accountId,
+        taxAccountId: taxCodes.find((c) => c.code === l.taxCode)?.glAccountId ?? null,
+      })),
+      apAccountId: supplier.apAccountId,
+      expenseAccountId,
+    });
+  } else {
+    lines = buildApBillLines(defaults, {
+      net: money(bill.net),
+      tax: money(bill.tax),
+      discount: money(bill.discount),
+      apAccountId: supplier.apAccountId,
+      expenseAccountId,
+    });
+  }
   const posted = await postBalanced(
     companyId,
     {
       journalDate: billDate,
-      description: input.description || `Supplier bill ${billNumber}`,
+      description: bill.description || `Supplier bill ${billNumber}`,
       referenceNumber: supplierInvoiceNumber ?? billNumber,
       currencyCode: bill.currency,
+      exchangeRate: Number(bill.exchangeRate),
       sourceDocumentType: "ApBill",
       sourceDocumentId: bill.id,
       sourceDocumentNumber: billNumber,
@@ -379,13 +482,12 @@ export async function createBill(
       docType: "BILL",
       docId: bill.id,
       docNumber: billNumber,
-      description: input.description || (supplierInvoiceNumber ? `Supplier invoice ${supplierInvoiceNumber}` : "Supplier bill"),
+      description: bill.description || (supplierInvoiceNumber ? `Supplier invoice ${supplierInvoiceNumber}` : "Supplier bill"),
       debit: 0,
       credit: gross,
     });
   });
   await audit(companyId, actor, "POST", "ApBill", bill.id, { billNumber, supplierInvoiceNumber, gross });
-  return prisma.apBill.findUniqueOrThrow({ where: { id: bill.id } });
 }
 
 export async function listBills(companyId: string, filter: { status?: "OPEN" | "ALL"; supplierId?: string } = {}) {
@@ -428,6 +530,8 @@ export async function createPayment(
     paymentDate: Date | string;
     method?: ApPaymentMethod;
     amount: number;
+    currency?: string;
+    exchangeRate?: number;
     withholdingTax?: number;
     reference?: string;
     description?: string;
@@ -442,12 +546,23 @@ export async function createPayment(
   const wht = roundMoney(input.withholdingTax ?? 0);
   const settled = roundMoney(paid + wht);
   assertWithholding({ settled, withholdingTax: wht });
+  const paymentDate = new Date(input.paymentDate);
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: input.currency,
+    partyCurrency: supplier.currency,
+    date: paymentDate,
+    rate: input.exchangeRate,
+  });
+  if (wht > 0 && fx.currency !== fx.functional) throw new Error("Withholding tax on a foreign-currency payment is not supported yet");
   const requested = input.allocations ?? [];
   if (new Set(requested.map((r) => r.billId)).size !== requested.length) throw new Error("A bill appears more than once in the allocation");
   const bills = requested.length
     ? await prisma.apBill.findMany({ where: { companyId, supplierId: supplier.id, status: "POSTED", id: { in: requested.map((a) => a.billId) } } })
     : [];
   if (bills.length !== requested.length) throw new Error("One or more bills were not found for this supplier");
+  for (const bill of bills) {
+    if (bill.currency.toUpperCase() !== fx.currency) throw new Error(`Bill ${bill.billNumber} is in ${bill.currency}; the payment is in ${fx.currency}`);
+  }
   const check = assertReceiptAllocations({
     amount: settled,
     document: "bill",
@@ -456,8 +571,33 @@ export async function createPayment(
   });
   const method = input.method ?? "BANK";
   const defaults = await settlementDefaults(companyId, input.financialAccountId);
-  const lines = buildApPaymentLines(defaults, { amount: paid, withholdingTax: wht, method, apAccountId: supplier.apAccountId });
-  const paymentDate = new Date(input.paymentDate);
+  const ratesMatch = bills.every((b) => Math.abs(Number(b.exchangeRate) - fx.rate) < 1e-10);
+  let lines: JournalLineDraft[];
+  let journalCurrency = fx.currency;
+  let journalRate = fx.rate;
+  if (fx.currency === fx.functional || ratesMatch || wht > 0) {
+    lines = buildApPaymentLines(defaults, { amount: paid, withholdingTax: wht, method, apAccountId: supplier.apAccountId });
+  } else {
+    const cash = settlementAccountId(defaults, method);
+    const ap = supplier.apAccountId || defaults.accountsPayableId;
+    if (!cash || !ap) throw new Error("Bank or payables account is not configured");
+    const { gainId, lossId } = await fxAccounts(companyId);
+    lines = realizedFxSettlement({
+      cashAccountId: cash,
+      controlAccountId: ap,
+      fxGainAccountId: gainId,
+      fxLossAccountId: lossId,
+      amount: paid,
+      paymentRate: fx.rate,
+      allocations: requested.map((row) => {
+        const bill = bills.find((b) => b.id === row.billId)!;
+        return { amount: roundMoney(row.amount), documentRate: Number(bill.exchangeRate) };
+      }),
+      side: "AP",
+    });
+    journalCurrency = fx.functional;
+    journalRate = 1;
+  }
   const paymentNumber = await nextNumber(companyId, "AP_PAYMENT", "PAY");
   const payment = await prisma.apPayment.create({
     data: {
@@ -467,6 +607,8 @@ export async function createPayment(
       paymentDate,
       method,
       amount: paid,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       withholdingTax: wht,
       unallocated: check.unallocated,
       reference: input.reference,
@@ -483,7 +625,8 @@ export async function createPayment(
       journalDate: paymentDate,
       description: input.description || `Supplier payment ${paymentNumber}`,
       referenceNumber: input.reference || paymentNumber,
-      currencyCode: supplier.currency,
+      currencyCode: journalCurrency,
+      exchangeRate: journalRate,
       sourceDocumentType: "ApPayment",
       sourceDocumentId: payment.id,
       sourceDocumentNumber: paymentNumber,
@@ -497,7 +640,7 @@ export async function createPayment(
     for (const row of requested) {
       const amount = roundMoney(row.amount);
       await tx.apAllocation.create({ data: { paymentId: payment.id, billId: row.billId, amount } });
-      await tx.apBill.update({ where: { id: row.billId }, data: { amountPaid: { increment: amount } } });
+      await bumpPostedBill(tx, row.billId, { amountPaid: { increment: amount } });
     }
     await appendLedger(tx, {
       companyId,
@@ -521,6 +664,10 @@ export async function reversePayment(
   input: { reason?: string; reversalDate?: Date | string } = {},
   actor: Actor = {},
 ) {
+  return inTransaction(() => reversePaymentOnce(companyId, paymentId, input, actor));
+}
+
+async function reversePaymentOnce(companyId: string, paymentId: string, input: { reason?: string; reversalDate?: Date | string }, actor: Actor) {
   const { reason } = input;
   const reversalDate = input.reversalDate ? new Date(input.reversalDate) : new Date();
   const payment = await prisma.apPayment.findFirst({
@@ -531,6 +678,11 @@ export async function reversePayment(
   if (payment.status !== "POSTED") throw new Error("Payment is already reversed");
   if (payment.sourceModule !== "AP") throw new Error("Payments from Excel Edge must be reversed in Excel Edge");
   if (reversalDate < payment.paymentDate) throw new Error("A reversal can't be dated before the payment");
+  // A payment recorded in Banking is claimed through its bank transaction first, in the same order Banking uses.
+  const bankLinked = await prisma.bankTransaction.updateMany({ where: { companyId, apPaymentId: paymentId, status: "POSTED" }, data: { status: "REVERSED" } });
+  // The conditional update row-locks the payment, so a concurrent reversal waits and then finds it reversed.
+  const claimed = await prisma.apPayment.updateMany({ where: { id: paymentId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
+  if (!claimed.count) throw new Error("Payment is already reversed");
   const paid = money(payment.amount);
   const wht = money(payment.withholdingTax);
   const defaults = await settlementDefaults(companyId, payment.financialAccountId);
@@ -559,7 +711,6 @@ export async function reversePayment(
     for (const allocation of payment.allocations) {
       await tx.apBill.update({ where: { id: allocation.billId }, data: { amountPaid: { decrement: money(allocation.amount) } } });
     }
-    await tx.apPayment.update({ where: { id: payment.id }, data: { status: "REVERSED" } });
     await appendLedger(tx, {
       companyId,
       supplierId: payment.supplierId,
@@ -572,6 +723,12 @@ export async function reversePayment(
       credit: roundMoney(paid + wht),
     });
   });
+  if (bankLinked.count) {
+    await prisma.bankTransaction.updateMany({
+      where: { companyId, apPaymentId: paymentId },
+      data: { reversalJournalId: posted.id, reversedAt: reversalDate, reversedByErpUserId: actor.erpUserId, reversalReason: reason || `Payment ${payment.paymentNumber} reversed in Payables` },
+    });
+  }
   await audit(companyId, actor, "REVERSE", "ApPayment", payment.id, { status: "REVERSED", journalId: posted.id, reason }, { status: "POSTED" });
   return { paymentId: payment.id, journalId: posted.id, status: "REVERSED" as const };
 }
@@ -614,8 +771,18 @@ export async function createCreditNote(
     net: number;
     tax?: number;
     description?: string;
+    /** Stock sent back to the supplier; it leaves inventory at valuation cost. */
+    returnedItems?: Array<{ itemId: string; locationId: string; quantity: number }>;
   },
   actor: Actor = {},
+) {
+  return inTransaction(() => createCreditNoteInTransaction(companyId, input, actor));
+}
+
+async function createCreditNoteInTransaction(
+  companyId: string,
+  input: Parameters<typeof createCreditNote>[1],
+  actor: Actor,
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
   const net = roundMoney(input.net);
@@ -628,9 +795,9 @@ export async function createCreditNote(
     if (gross - billOutstanding(bill) > 0.0001) throw new Error("Credit note exceeds the bill's outstanding balance");
   }
   const defaults = await defaultsFor(companyId);
-  const lines = buildApCreditNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId });
   const noteDate = new Date(input.noteDate);
   const creditNoteNumber = await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN");
+  const returned = (input.returnedItems ?? []).filter((item) => item && item.itemId);
   const note = await prisma.apCreditNote.create({
     data: {
       companyId,
@@ -647,6 +814,12 @@ export async function createCreditNote(
       createdByErpUserId: actor.erpUserId,
     },
   });
+  const stock = returned.length
+    ? await recordSupplierReturn(companyId, { documentId: note.id, reference: creditNoteNumber, date: noteDate, items: returned })
+    : null;
+  const lines = stock
+    ? buildSupplierReturnLines((await inventoryConfig(companyId)).accounts, { net, tax, cost: stock.cost, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId })
+    : buildApCreditNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId });
   const posted = await postBalanced(
     companyId,
     {
@@ -661,9 +834,15 @@ export async function createCreditNote(
     },
     actor,
   );
+  if (stock) {
+    await prisma.inventoryMovement.updateMany({ where: { id: { in: stock.movements.map((m) => m.id) } }, data: { journalId: posted.id } });
+  }
   await prisma.$transaction(async (tx) => {
     await tx.apCreditNote.update({ where: { id: note.id }, data: { journalId: posted.id } });
-    if (bill) await tx.apBill.update({ where: { id: bill.id }, data: { amountCredited: { increment: gross } } });
+    if (bill) {
+      const updated = await bumpPostedBill(tx, bill.id, { amountCredited: { increment: gross } });
+      if (billOutstanding(updated) < -0.0001) throw new Error("Credit note exceeds the bill's outstanding balance");
+    }
     await appendLedger(tx, {
       companyId,
       supplierId: supplier.id,
@@ -748,7 +927,7 @@ export async function createDebitNote(
         billNumber,
         billDate: noteDate,
         dueDate,
-        currency: supplier.currency,
+        currency: (await resolveDocumentMoney(companyId, { date: new Date() })).currency,
         net,
         tax,
         gross,
@@ -865,8 +1044,10 @@ export async function allocateAdvance(
   );
   await prisma.$transaction(async (tx) => {
     await tx.apAdvanceAllocation.update({ where: { id: allocation.id }, data: { journalId: posted.id } });
-    await tx.apAdvance.update({ where: { id: advance.id }, data: { remaining: { decrement: amount } } });
-    await tx.apBill.update({ where: { id: bill.id }, data: { amountPaid: { increment: amount } } });
+    const taken = await tx.apAdvance.updateMany({ where: { id: advance.id, status: "POSTED", remaining: { gte: amount } }, data: { remaining: { decrement: amount } } });
+    if (!taken.count) throw new Error("Allocation exceeds the advance still available");
+    const updated = await bumpPostedBill(tx, bill.id, { amountPaid: { increment: amount } });
+    if (billOutstanding(updated) < -0.0001) throw new Error("Allocation exceeds bill outstanding balance");
     await appendLedger(tx, {
       companyId,
       supplierId: advance.supplierId,
@@ -911,12 +1092,13 @@ export async function refundAdvance(
     },
     actor,
   );
-  const updated = await prisma.apAdvance.update({
-    where: { id: advance.id },
+  const taken = await prisma.apAdvance.updateMany({
+    where: { id: advance.id, status: "POSTED", remaining: { gte: amount } },
     data: { remaining: { decrement: amount }, refunded: { increment: amount } },
   });
+  if (!taken.count) throw new Error("Refund exceeds the advance still available");
   await audit(companyId, actor, "REFUND", "ApAdvance", advance.id, { amount, journalId: posted.id });
-  return updated;
+  return prisma.apAdvance.findUniqueOrThrow({ where: { id: advance.id } });
 }
 
 export async function listAdvances(companyId: string, filter: { supplierId?: string; openOnly?: boolean } = {}) {
@@ -968,6 +1150,149 @@ export async function supplierStatement(companyId: string, supplierId: string, t
     rows,
     totalOutstanding: roundMoney(rows.reduce((sum, row) => sum + row.outstanding, 0)),
   };
+}
+
+/** Supplier statement for a period: balance brought forward, each movement with a running balance, closing balance. */
+export async function supplierPeriodStatement(companyId: string, supplierId: string, from?: string, to?: string) {
+  const supplier = await getSupplier(companyId, supplierId);
+  const { start, end } = range(from, to);
+  const entries = await prisma.apLedgerEntry.findMany({
+    where: { companyId, supplierId, entryDate: { lte: end } },
+    orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
+  });
+  const statement = periodStatement(
+    entries.map((e) => ({ ...e, debit: money(e.debit), credit: money(e.credit) })),
+    start,
+    end,
+    -1,
+  );
+  return {
+    supplier: { id: supplier.id, code: supplier.code, name: supplier.name, tin: supplier.tin },
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+    openingBalance: statement.opening,
+    entries: statement.entries.map((e) => ({
+      id: e.id,
+      entryDate: e.entryDate,
+      docType: e.docType,
+      docNumber: e.docNumber,
+      description: e.description,
+      debit: e.debit,
+      credit: e.credit,
+      balance: e.balance,
+    })),
+    totalBilled: statement.totalCredit,
+    totalPaid: statement.totalDebit,
+    closingBalance: statement.closing,
+  };
+}
+
+export async function getBill(companyId: string, billId: string) {
+  const bill = await prisma.apBill.findFirst({
+    where: { id: billId, companyId },
+    include: {
+      supplier: true,
+      lines: { orderBy: { lineNumber: "asc" } },
+      allocations: { include: { payment: { select: { paymentNumber: true, paymentDate: true, status: true } } } },
+    },
+  });
+  if (!bill) throw new Error("Bill does not exist");
+  return { ...bill, outstanding: billOutstanding(bill) };
+}
+
+/** Bumps a bill's paid or credited amount, refusing bills that were voided or reversed meanwhile. */
+async function bumpPostedBill(tx: Prisma.TransactionClient, billId: string, data: Prisma.ApBillUpdateManyMutationInput) {
+  const updated = await tx.apBill.updateMany({ where: { id: billId, status: "POSTED" }, data });
+  if (!updated.count) throw new Error("The bill is no longer posted (it was voided or reversed); refresh and try again");
+  return tx.apBill.findUniqueOrThrow({ where: { id: billId } });
+}
+
+/**
+ * Voids a bill entered in Accounting by posting the exact reverse of its journal. Only an untouched bill can be
+ * voided: nothing paid, credited or matched against goods received.
+ */
+export async function voidBill(
+  companyId: string,
+  billId: string,
+  input: { reason: string; voidDate?: Date | string },
+  actor: Actor = {},
+) {
+  return inTransaction(() => voidBillOnce(companyId, billId, input, actor));
+}
+
+async function voidBillOnce(companyId: string, billId: string, input: { reason: string; voidDate?: Date | string }, actor: Actor) {
+  const reason = input.reason?.trim();
+  if (!reason) throw new Error("Give a reason for voiding the bill");
+  const voidDate = input.voidDate ? new Date(input.voidDate) : new Date();
+  const bill = await prisma.apBill.findFirst({ where: { id: billId, companyId } });
+  if (!bill) throw new Error("Bill does not exist");
+  if (bill.status !== "POSTED") throw new Error(`Only a posted bill can be voided; this one is ${bill.status.toLowerCase().replace("_", " ")}`);
+  if (bill.sourceModule !== "AP") throw new Error("Bills from Excel Edge must be cancelled in Excel Edge");
+  if (bill.sourceDocumentType === "ApDebitNote") throw new Error("This bill carries a debit note; settle it with a credit note instead of voiding it");
+  if (!bill.journalId) throw new Error("The bill has no journal to reverse");
+  if (voidDate < bill.billDate) throw new Error("A void can't be dated before the bill");
+  // The conditional update row-locks the bill; a concurrent payment or credit waits and then finds it voided.
+  const claimed = await prisma.apBill.updateMany({
+    where: { id: billId, companyId, status: "POSTED", amountPaid: 0, amountCredited: 0, grniCleared: 0 },
+    data: {
+      status: "REVERSED",
+      voidedAt: new Date(),
+      voidReason: reason,
+      voidedByErpUserId: actor.erpUserId,
+      // Frees the supplier's invoice number so the corrected bill can be entered under it.
+      ...(bill.supplierInvoiceNumber ? { supplierInvoiceNumber: `${bill.supplierInvoiceNumber} (void ${bill.billNumber})` } : {}),
+    },
+  });
+  if (!claimed.count) {
+    const fresh = await prisma.apBill.findUniqueOrThrow({ where: { id: billId } });
+    if (fresh.status !== "POSTED") throw new Error("Bill is already voided");
+    throw new Error("The bill has payments, credits or matched goods; reverse those first");
+  }
+  const original = await prisma.journalLine.findMany({ where: { journalId: bill.journalId }, orderBy: { lineNumber: "asc" } });
+  if (!original.length) throw new Error("The bill's journal has no lines");
+  const lines: JournalLineDraft[] = original.map((line) => ({
+    accountId: line.accountId,
+    description: `Void: ${line.description ?? "bill"}`,
+    debit: money(line.credit),
+    credit: money(line.debit),
+    taxCode: line.taxCode ?? undefined,
+    customerRef: line.customerRef ?? undefined,
+    supplierRef: line.supplierRef ?? undefined,
+    costCentre: line.costCentre ?? undefined,
+    project: line.project ?? undefined,
+    branchId: line.branchId ?? undefined,
+  }));
+  const posted = await postBalanced(
+    companyId,
+    {
+      journalDate: voidDate,
+      description: `Void bill ${bill.billNumber} — ${reason}`,
+      referenceNumber: bill.supplierInvoiceNumber || bill.billNumber,
+      ...(await reversalCurrency(companyId, bill.journalId)),
+      sourceDocumentType: "ApBillVoid",
+      sourceDocumentId: bill.id,
+      sourceDocumentNumber: bill.billNumber,
+      supplierRef: bill.supplierId,
+      lines,
+    },
+    actor,
+  );
+  await prisma.$transaction(async (tx) => {
+    await tx.apBill.update({ where: { id: bill.id }, data: { voidJournalId: posted.id } });
+    await appendLedger(tx, {
+      companyId,
+      supplierId: bill.supplierId,
+      entryDate: voidDate,
+      docType: "BILL_VOID",
+      docId: bill.id,
+      docNumber: bill.billNumber,
+      description: reason,
+      debit: money(bill.gross),
+      credit: 0,
+    });
+  });
+  await audit(companyId, actor, "VOID", "ApBill", bill.id, { status: "REVERSED", journalId: posted.id, reason }, { status: "POSTED" });
+  return { billId: bill.id, journalId: posted.id, status: "REVERSED" as const };
 }
 
 export async function ageingReport(companyId: string, asOf?: Date | string) {
@@ -1226,15 +1551,20 @@ export async function syncSupplierBillToSubledger(eventId: string) {
     ? new Date(meta.dueDate)
     : new Date(event.occurredAt.getTime() + supplier.creditPeriodDays * DAY);
   const billNumber = await nextNumber(event.companyId, "AP_BILL", "BILL");
+  const { accounts } = await inventoryConfig(event.companyId);
+  const grniCleared = accounts.grniId
+    ? await prisma.journalLine.aggregate({ where: { journalId: event.journalId, accountId: accounts.grniId }, _sum: { debit: true } })
+    : null;
   const bill = await prisma.apBill.create({
     data: {
       companyId: event.companyId,
       supplierId: supplier.id,
       billNumber,
+      grniCleared: money(grniCleared?._sum.debit),
       supplierInvoiceNumber: typeof meta.supplierInvoiceNumber === "string" ? meta.supplierInvoiceNumber : undefined,
       billDate: event.occurredAt,
       dueDate: due,
-      poReference: typeof meta.poReference === "string" ? meta.poReference : undefined,
+      poReference: typeof meta.poReference === "string" && meta.poReference.trim() ? meta.poReference.trim() : undefined,
       grnReference: typeof meta.grnReference === "string" ? meta.grnReference : undefined,
       currency: event.currencyCode,
       net,
@@ -1279,7 +1609,7 @@ export async function syncSupplierBillToSubledger(eventId: string) {
 
 export async function syncSupplierPaymentToSubledger(eventId: string) {
   const event = await prisma.integrationEvent.findUnique({ where: { id: eventId } });
-  if (!event || event.eventType !== "SUPPLIER_PAYMENT_COMPLETED" || !event.journalId) return null;
+  if (!event || !["SUPPLIER_PAYMENT_COMPLETED", "SUPPLIER_PAYMENT_MADE"].includes(event.eventType) || !event.journalId) return null;
   const existing = await prisma.apPayment.findFirst({
     where: { companyId: event.companyId, sourceModule: event.sourceModule, sourceDocumentType: event.sourceDocumentType, sourceDocumentId: event.sourceDocumentId },
   });
@@ -1289,18 +1619,30 @@ export async function syncSupplierPaymentToSubledger(eventId: string) {
   const meta = payload.metadata ?? {};
   const amount = roundMoney(Number(payload.amountTotals?.gross ?? payload.amountTotals?.net ?? meta.amount ?? 0));
   if (amount <= 0) throw new Error("Supplier payment event has no amount");
-  const rawMethod = String(payload.paymentSplits?.[0]?.paymentMethod || meta.paymentType || meta.paymentMethod || "CASH").toUpperCase();
-  // Matches the Phase 3 posting rule, which credits bank only for BANK and cash otherwise.
-  const method: ApPaymentMethod = rawMethod === "BANK" ? "BANK" : "CASH";
+  const splits = readPaymentSplits(payload.paymentSplits, amount, meta.paymentType ?? meta.paymentMethod);
+  const main = splits.reduce((a, b) => (b.amount > a.amount ? b : a), splits[0]);
+  const method: ApPaymentMethod = main?.method === "BANK" ? "BANK" : main?.method === "MOBILE_MONEY" ? "MOBILE_MONEY" : "CASH";
 
+  // The bill named by the event, otherwise the open bills of the same purchase order, oldest first.
   const billRef = typeof meta.billSourceDocumentId === "string" || typeof meta.billSourceDocumentId === "number" ? String(meta.billSourceDocumentId) : undefined;
-  const bill = billRef
-    ? await prisma.apBill.findFirst({ where: { companyId: event.companyId, supplierId: supplier.id, sourceDocumentId: billRef, status: "POSTED" } })
-    : null;
-  const applied = bill ? Math.min(amount, billOutstanding(bill)) : 0;
+  const poReference = typeof meta.poReference === "string" && meta.poReference.trim() ? meta.poReference.trim() : undefined;
+  const candidates = billRef
+    ? await prisma.apBill.findMany({ where: { companyId: event.companyId, supplierId: supplier.id, sourceDocumentId: billRef, status: "POSTED" } })
+    : poReference
+      ? await prisma.apBill.findMany({ where: { companyId: event.companyId, supplierId: supplier.id, poReference, status: "POSTED" }, orderBy: [{ billDate: "asc" }, { createdAt: "asc" }] })
+      : [];
   const paymentNumber = await nextNumber(event.companyId, "AP_PAYMENT", "PAY");
 
   return prisma.$transaction(async (tx) => {
+    let left = amount;
+    const allocations: Array<{ billId: string; amount: number }> = [];
+    for (const bill of candidates) {
+      if (left <= 0) break;
+      const take = roundMoney(Math.min(left, billOutstanding(bill)));
+      if (take <= 0) continue;
+      allocations.push({ billId: bill.id, amount: take });
+      left = roundMoney(left - take);
+    }
     const payment = await tx.apPayment.create({
       data: {
         companyId: event.companyId,
@@ -1309,7 +1651,7 @@ export async function syncSupplierPaymentToSubledger(eventId: string) {
         paymentDate: event.occurredAt,
         method,
         amount,
-        unallocated: roundMoney(amount - applied),
+        unallocated: left,
         journalId: event.journalId,
         description: event.sourceDocumentNumber ? `Excel Edge payment ${event.sourceDocumentNumber}` : "Excel Edge supplier payment",
         sourceModule: event.sourceModule,
@@ -1317,9 +1659,10 @@ export async function syncSupplierPaymentToSubledger(eventId: string) {
         sourceDocumentId: event.sourceDocumentId,
       },
     });
-    if (bill && applied > 0) {
-      await tx.apAllocation.create({ data: { paymentId: payment.id, billId: bill.id, amount: applied } });
-      await tx.apBill.update({ where: { id: bill.id }, data: { amountPaid: { increment: applied } } });
+    for (const allocation of allocations) {
+      await tx.apAllocation.create({ data: { paymentId: payment.id, billId: allocation.billId, amount: allocation.amount } });
+      const updated = await bumpPostedBill(tx, allocation.billId, { amountPaid: { increment: allocation.amount } });
+      if (billOutstanding(updated) < -0.0001) throw new Error(`Bill ${updated.billNumber} was paid by another payment at the same time; retry`);
     }
     await appendLedger(tx, {
       companyId: event.companyId,

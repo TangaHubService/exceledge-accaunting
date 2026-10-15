@@ -118,7 +118,7 @@ export function TaxAdjustmentForm({ onClose, onSaved }: { onClose: () => void; o
     const amount = parseAmount(form.amount);
     if (!(amount > 0) || !form.contraAccountId || form.reason.trim().length < 3) return;
     void run(async () => {
-      await api("/api/v1/tax/adjustments", {
+      const saved = await api<{ status: string }>("/api/v1/tax/adjustments", {
         method: "POST",
         body: JSON.stringify({
           adjustmentDate: form.adjustmentDate,
@@ -131,7 +131,7 @@ export function TaxAdjustmentForm({ onClose, onSaved }: { onClose: () => void; o
         }),
       });
       onSaved();
-      return "Tax adjustment posted";
+      return saved.status === "PENDING_APPROVAL" ? "Tax adjustment sent for approval; it posts once approved" : "Tax adjustment posted";
     });
   }
 

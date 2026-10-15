@@ -1,5 +1,6 @@
 import { Printer } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
+import { ExportButtons } from "../components/ExportButtons";
 import { EmptyState, Field, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, isoDay } from "../lib/format";
@@ -69,10 +70,13 @@ export function AgeingReportPage({ kind = "ar" }: { kind?: keyof typeof KINDS })
         title={cfg.title}
         description={cfg.description}
         actions={
-          <button type="button" className="btn" onClick={() => window.print()}>
-            <Printer size={16} aria-hidden="true" />
-            Print
-          </button>
+          <>
+            <ExportButtons path={`${cfg.endpoint}?asOf=${asOf}`} filename={`${kind === "ar" ? "receivables" : "payables"}-ageing-${asOf}`} />
+            <button type="button" className="btn" onClick={() => window.print()}>
+              <Printer size={16} aria-hidden="true" />
+              Print
+            </button>
+          </>
         }
       />
 

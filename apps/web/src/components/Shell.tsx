@@ -4,11 +4,14 @@ import {
   ArrowRightLeft,
   Banknote,
   BarChart3,
+  Bell,
   BookOpen,
   Boxes,
   Building2,
+  Network,
   Calculator,
   CalendarClock,
+  ClipboardCheck,
   Coins,
   ExternalLink,
   FileText,
@@ -17,6 +20,7 @@ import {
   History,
   Hourglass,
   Landmark,
+  Layers,
   LayoutDashboard,
   Library,
   ListChecks,
@@ -30,11 +34,14 @@ import {
   PanelLeftOpen,
   Percent,
   ReceiptText,
+  Repeat,
   Scale,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
   Truck,
+  Upload,
   Users,
   Wallet,
   Warehouse,
@@ -42,6 +49,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import { type ApprovalRequest, NOTIFICATIONS_CHANGED } from "../lib/approvals";
 import { useCompany } from "../lib/company";
 import { erpLinks } from "../lib/config";
 import { humanize } from "../lib/format";
@@ -79,7 +87,22 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const openExceptions = useResource<PostingException[]>(can("exceptions:view") ? "/api/v1/exceptions?status=OPEN" : null);
 
+  const approvalQueue = useResource<ApprovalRequest[]>(can("journal:view") ? "/api/v1/books/approvals/queue" : null);
+  const unread = useResource<{ count: number }>("/api/v1/books/notifications/unread-count");
+  const reloadUnread = unread.reload;
+  const reloadQueue = approvalQueue.reload;
+
   useEffect(() => setNavOpen(false), [path]);
+
+  useEffect(() => {
+    reloadUnread();
+    reloadQueue();
+  }, [path, reloadUnread, reloadQueue]);
+
+  useEffect(() => {
+    window.addEventListener(NOTIFICATIONS_CHANGED, reloadUnread);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, reloadUnread);
+  }, [reloadUnread]);
 
   useEffect(() => {
     if (!navOpen) return;
@@ -157,6 +180,9 @@ export function Shell({ children }: { children: ReactNode }) {
       label: "Accounting",
       items: [
         { to: "/journals", label: "Journal entries", icon: BookOpen, needs: "journal:view" },
+        { to: "/approvals", label: "Approvals", icon: ClipboardCheck, needs: "journal:view", count: approvalQueue.data?.length },
+        { to: "/recurring-journals", label: "Recurring journals", icon: Repeat, needs: "journal:view" },
+        { to: "/journal-import", label: "Import journal", icon: Upload, needs: "journal:create" },
         { to: "/ledger", label: "General ledger", icon: Library, needs: "gl:view" },
         { to: "/accounts", label: "Chart of accounts", icon: ListTree, needs: "coa:view" },
       ],
@@ -164,13 +190,15 @@ export function Shell({ children }: { children: ReactNode }) {
     {
       label: "Reports",
       items: [
-        { to: "/reports/trial-balance", label: "Trial balance", icon: Scale, needs: "coa:view" },
+        { to: "/reports/trial-balance", label: "Trial balance", icon: Scale, needs: "report:view" },
+        { to: "/dimensions", label: "Cost centres & projects", icon: Layers, needs: "report:view" },
         { to: "/reports/statements", label: "Financial statements", icon: BarChart3, needs: "report:view" },
         { to: "/close", label: "Period close", icon: ListChecks, needs: "close:view" },
         { to: "/budgets", label: "Budgets", icon: Wallet, needs: "budget:view" },
         { to: "/currencies", label: "Currencies", icon: Coins, needs: "report:view" },
         { to: "/controls", label: "Controls", icon: ShieldCheck, needs: "control:view" },
         { to: "/platform", label: "Platform", icon: Sparkles, needs: "platform:view" },
+        { to: "/assurance", label: "Assurance & automation", icon: ShieldAlert, needs: "platform:view" },
         { to: "/reports/ageing", label: "Receivables ageing", icon: Hourglass, needs: "ar:view" },
         { to: "/reports/payables-ageing", label: "Payables ageing", icon: CalendarClock, needs: "ap:view" },
         { to: "/reports/purchases-by-supplier", label: "Purchases by supplier", icon: BarChart3, needs: "ap:view" },
@@ -185,6 +213,7 @@ export function Shell({ children }: { children: ReactNode }) {
       label: "Administration",
       items: [
         { to: "/setup", label: "Company setup", icon: Building2, needs: "setup:view" },
+        { to: "/branches", label: "Branches", icon: Network, needs: "setup:view" },
         { to: "/exceptions", label: "Posting exceptions", icon: TriangleAlert, needs: "exceptions:view", count: openExceptions.data?.length },
         { to: "/audit", label: "Audit log", icon: History, needs: "audit:view" },
       ],
@@ -294,6 +323,20 @@ export function Shell({ children }: { children: ReactNode }) {
               Offline
             </span>
           )}
+          <Link
+            to="/notifications"
+            className="icon-button notification-bell"
+            aria-label={unread.data?.count ? `Notifications, ${unread.data.count} unread` : "Notifications"}
+            title="Notifications"
+            style={{ position: "relative" }}
+          >
+            <Bell size={18} aria-hidden="true" />
+            {unread.data?.count ? (
+              <span className="nav-count" aria-hidden="true" style={{ position: "absolute", top: -4, right: -6, minWidth: 18, fontSize: 10.5 }}>
+                {unread.data.count > 99 ? "99+" : unread.data.count}
+              </span>
+            ) : null}
+          </Link>
           <a href={erpLinks.home} className="topbar-link hide-sm">
             Excel Edge
             <ExternalLink size={13} aria-hidden="true" />

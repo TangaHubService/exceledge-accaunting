@@ -1,10 +1,12 @@
 import { Printer } from "lucide-react";
 import { useState } from "react";
+import { PdfButton } from "../components/Documents";
+import { ExportButtons } from "../components/ExportButtons";
 import { EmptyState, Field, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { amount, date, isoDay } from "../lib/format";
+import { amount, calendarDate, date, isoDay } from "../lib/format";
 import { Link } from "../lib/router";
-import { useResource } from "../lib/session";
+import { useResource, useSession } from "../lib/session";
 import type { WithholdingReport } from "../lib/types";
 
 export function monthStart() {
@@ -30,6 +32,7 @@ export function WithholdingTaxReport() {
   const [to, setTo] = useState(isoDay());
   const report = useResource<WithholdingReport>(`/api/v1/ap/reports/withholding?from=${from}&to=${to}`);
   const tin = snapshot?.profile?.taxIdentificationNumber;
+  const canCertify = useSession().can("tax:view");
 
   return (
     <>
@@ -37,10 +40,13 @@ export function WithholdingTaxReport() {
         title="Withholding tax"
         description="Tax withheld from supplier payments in the period, to declare and pay to RRA."
         actions={
-          <button type="button" className="btn" onClick={() => window.print()}>
-            <Printer size={16} aria-hidden="true" />
-            Print
-          </button>
+          <>
+            <ExportButtons path={`/api/v1/ap/reports/withholding?from=${from}&to=${to}`} filename={`withholding-tax-${from}-${to}`} />
+            <button type="button" className="btn" onClick={() => window.print()}>
+              <Printer size={16} aria-hidden="true" />
+              Print
+            </button>
+          </>
         }
       />
       <PeriodFilter from={from} to={to} onFrom={setFrom} onTo={setTo} />
@@ -55,7 +61,7 @@ export function WithholdingTaxReport() {
               </div>
               <div className="title">Withholding tax on supplier payments</div>
               <div className="period">
-                {date(r.from)} to {date(r.to)} · Amounts in {currency}
+                {calendarDate(r.from)} to {calendarDate(r.to)} · Amounts in {currency}
               </div>
             </div>
             {r.rows.length === 0 ? (
@@ -72,6 +78,11 @@ export function WithholdingTaxReport() {
                       <th className="num">Amount settled</th>
                       <th className="num">Tax withheld</th>
                       <th className="num hide-sm">Paid to supplier</th>
+                      {canCertify && (
+                        <th className="no-print">
+                          <span className="sr-only">Withholding certificate</span>
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -92,6 +103,11 @@ export function WithholdingTaxReport() {
                         <td className="num">{amount(row.grossSettled)}</td>
                         <td className="num strong">{amount(row.withholdingTax)}</td>
                         <td className="num hide-sm">{amount(row.netPaid)}</td>
+                        {canCertify && (
+                          <td className="no-print">
+                            <PdfButton path={`/api/v1/tax/wht/certificates/${row.paymentId}.pdf`} filename={`wht-certificate-${row.paymentNumber}.pdf`} label="Certificate" />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -102,6 +118,7 @@ export function WithholdingTaxReport() {
                       <td className="num">{amount(r.totalSettled)}</td>
                       <td className="num">{amount(r.totalWithheld)}</td>
                       <td className="num hide-sm">{amount(r.totalSettled - r.totalWithheld)}</td>
+                      {canCertify && <td className="no-print" />}
                     </tr>
                   </tfoot>
                 </table>

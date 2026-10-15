@@ -74,7 +74,14 @@ describe("Phase 9 expense management", () => {
     expect(submitted.status).toBe("SUBMITTED");
 
     expect((await request(app).post(`${base}/${draft.id}/approve`).set(authHeaders(orgId, "BRANCH_MANAGER"))).status).toBe(403);
-    const posted = await post(`/${draft.id}/approve`, {}, accountant, 200);
+    const selfApproval = await request(app).post(`${base}/${draft.id}/approve`).set(accountant);
+    expect(selfApproval.status).toBe(400);
+    expect(selfApproval.body.error ?? JSON.stringify(selfApproval.body)).toMatch(/requester cannot approve/);
+    const posted = await post(`/${draft.id}/approve`, {}, admin, 200);
+    const decisions = await prisma.approvalRequest.findMany({ where: { companyId, entityType: "Expense", entityId: draft.id }, include: { decisions: true } });
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ status: "APPROVED", requestedByErpUserId: 701 });
+    expect(decisions[0].decisions.map((d) => d.erpUserId)).toEqual([441]);
     expect(posted).toMatchObject({ status: "POSTED", journalNumber: expect.stringMatching(/^JOU-/) });
 
     const dash = await get("/dashboard");

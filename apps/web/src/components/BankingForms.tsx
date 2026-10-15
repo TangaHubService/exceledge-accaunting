@@ -17,7 +17,9 @@ import { useCompany } from "../lib/company";
 import { amount, date, dateTime, isoDay, money } from "../lib/format";
 import { Link, navigate } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
-import type { BankTransaction, FinancialAccount, FinancialAccountKind, Reconciliation, StatementLine, StatementLineKind, StatementPreview } from "../lib/types";
+import type { BankTransaction, Customer, FinancialAccount, FinancialAccountKind, Reconciliation, StatementLine, StatementLineKind, StatementPreview, Supplier } from "../lib/types";
+import { useOpenBills } from "./ApForms";
+import { useOpenInvoices } from "./ArForms";
 import { useFeedback } from "./feedback";
 import { Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
 import { Select, type SelectOption } from "./Select";
@@ -271,7 +273,31 @@ export function MoneyForm({
   const [chequeNumber, setChequeNumber] = useState("");
   const [description, setDescription] = useState("");
   const [lines, setLines] = useState<Line[]>([{ accountId: "", amount: "", description: "" }]);
+  const [partyId, setPartyId] = useState("");
+  const [partyAmount, setPartyAmount] = useState("");
+  const [applied, setApplied] = useState<Record<string, string>>({});
   const { busy, error, setError, run } = useSubmit(onSaved);
+
+  const partyAllowed = kind === "RECEIPT" || kind === "PAYMENT";
+  const party = partyAllowed && partyId ? partyId : "";
+  const customers = useResource<Customer[]>(direction === "in" ? "/api/v1/ar/customers" : null);
+  const suppliers = useResource<Supplier[]>(direction === "out" ? "/api/v1/ap/suppliers" : null);
+  const partyOptions: SelectOption[] = useMemo(
+    () => [
+      { value: "", label: "None — post to accounts" },
+      ...((direction === "in" ? customers.data : suppliers.data) ?? []).filter((p) => p.status === "ACTIVE").map((p) => ({ value: p.id, label: `${p.name} · ${p.code}` })),
+    ],
+    [direction, customers.data, suppliers.data],
+  );
+  const { invoices } = useOpenInvoices(direction === "in" && party ? party : null);
+  const bills = useOpenBills(direction === "out" && party ? party : null);
+  const documents = useMemo(
+    () =>
+      direction === "in"
+        ? (invoices ?? []).map((i) => ({ id: i.id, number: i.invoiceNumber, dueDate: i.dueDate, outstanding: i.outstanding }))
+        : (bills.data ?? []).filter((b) => b.outstanding > 0).map((b) => ({ id: b.id, number: b.billNumber, dueDate: b.dueDate, outstanding: b.outstanding })),
+    [direction, invoices, bills.data],
+  );
 
   const account = list.find((a) => a.id === accountId);
   const onlyAccountId = list.length === 1 ? list[0].id : "";
@@ -288,12 +314,51 @@ export function MoneyForm({
     if (mapped) setLines((ls) => (ls.length === 1 && !ls[0].accountId ? [{ ...ls[0], accountId: mapped }] : ls));
   }
 
-  const total = lines.reduce((s, l) => s + (parseAmount(l.amount) || 0), 0);
+  const total = party ? parseAmount(partyAmount) || 0 : lines.reduce((s, l) => s + (parseAmount(l.amount) || 0), 0);
   const setLine = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const short = direction === "out" && account && !account.allowOverdraft && total > account.balance + 0.001;
+  const appliedTotal = documents.reduce((s, d) => s + (parseAmount(applied[d.id] ?? "") || 0), 0);
+
+  function submitParty() {
+    if (!(total > 0)) {
+      setError("Enter the amount above zero.");
+      return;
+    }
+    if (documents.some((d) => (parseAmount(applied[d.id] ?? "") || 0) > d.outstanding + 0.001)) {
+      setError(`${direction === "in" ? "An invoice" : "A bill"} can't take more than its outstanding balance.`);
+      return;
+    }
+    if (appliedTotal > total + 0.001) {
+      setError("You've applied more than the amount.");
+      return;
+    }
+    const allocations = documents.map((d) => ({ documentId: d.id, amount: parseAmount(applied[d.id] ?? "") || 0 })).filter((a) => a.amount > 0);
+    void run(async () => {
+      const txn = await api<BankTransaction>(`/api/v1/banking/${direction === "in" ? "receipts" : "payments"}`, {
+        method: "POST",
+        body: JSON.stringify({
+          financialAccountId: accountId,
+          transactionDate,
+          kind,
+          [direction === "in" ? "customerId" : "supplierId"]: party,
+          amount: total,
+          allocations: allocations.length ? allocations : undefined,
+          method,
+          reference: reference.trim() || undefined,
+          chequeNumber: direction === "out" && method === "CHEQUE" ? chequeNumber.trim() || undefined : undefined,
+          description: description.trim() || undefined,
+        }),
+      });
+      return `${txn.number} posted as ${txn.journalNumber} (${txn.arReceiptNumber ?? txn.apPaymentNumber})`;
+    });
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    if (party) {
+      submitParty();
+      return;
+    }
     const rows = lines
       .map((l) => ({ accountId: l.accountId, amount: parseAmount(l.amount), description: l.description.trim() || undefined }))
       .filter((l) => l.accountId || Number.isFinite(l.amount));
@@ -327,8 +392,8 @@ export function MoneyForm({
       title={direction === "in" ? "Receive money" : "Make a payment"}
       subtitle={
         direction === "in"
-          ? "For money that isn't a customer invoice payment — those go through Receivables."
-          : "For spending that isn't a supplier bill — pay bills from Payables."
+          ? "Choose a customer to settle their invoices, or post the money to accounts."
+          : "Choose a supplier to settle their bills, or post the payment to accounts."
       }
       onClose={onClose}
       wide
@@ -346,9 +411,28 @@ export function MoneyForm({
           <Field label="Date" required>
             <input className="input" type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} required />
           </Field>
-          <Field label={direction === "in" ? "Received from" : "Paid to"}>
-            <input className="input" value={partyName} onChange={(e) => setPartyName(e.target.value)} maxLength={200} />
-          </Field>
+          {partyAllowed && (
+            <Field label={direction === "in" ? "Customer" : "Supplier"} hint={party ? `Posts to the ${direction === "in" ? "customer" : "supplier"}'s account` : undefined}>
+              <Select
+                value={partyId}
+                onChange={(v) => {
+                  setPartyId(v);
+                  setApplied({});
+                }}
+                options={partyOptions}
+                searchable
+              />
+            </Field>
+          )}
+          {party ? (
+            <Field label={`Amount (${currency})`} required>
+              <MoneyInput value={partyAmount} onChange={setPartyAmount} required />
+            </Field>
+          ) : (
+            <Field label={direction === "in" ? "Received from" : "Paid to"}>
+              <input className="input" value={partyName} onChange={(e) => setPartyName(e.target.value)} maxLength={200} />
+            </Field>
+          )}
           <Field label="Method">
             <Select value={method} onChange={setMethod} searchable={false} options={BANK_METHODS} />
           </Field>
@@ -366,6 +450,51 @@ export function MoneyForm({
           </Field>
         </div>
 
+        {party ? (
+          <>
+            <div className="form-section-title" style={{ marginTop: 22 }}>{direction === "in" ? "Apply to invoices" : "Apply to bills"}</div>
+            {documents.length === 0 ? (
+              <p className="muted small">Nothing is outstanding. The amount stays on the {direction === "in" ? "customer" : "supplier"}'s account.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{direction === "in" ? "Invoice" : "Bill"}</th>
+                      <th className="hide-sm">Due</th>
+                      <th className="num">Outstanding</th>
+                      <th className="num" style={{ width: 150 }}>
+                        Apply
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.map((d) => {
+                      const v = applied[d.id] ?? "";
+                      return (
+                        <tr key={d.id}>
+                          <td className="nowrap">{d.number}</td>
+                          <td className="hide-sm">{date(d.dueDate)}</td>
+                          <td className="num">{amount(d.outstanding)}</td>
+                          <td style={{ padding: "5px 8px" }}>
+                            <MoneyInput value={v} invalid={(parseAmount(v) || 0) > d.outstanding + 0.001} aria-label={`Amount applied to ${d.number}`} onChange={(val) => setApplied((a) => ({ ...a, [d.id]: val }))} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <SummaryRows
+              rows={[
+                [direction === "in" ? "Applied to invoices" : "Applied to bills", amount(appliedTotal)],
+                [total - appliedTotal >= -0.001 ? "Kept on account" : "Over-applied", <span className={total - appliedTotal < -0.001 ? "text-negative" : undefined}>{amount(total - appliedTotal)}</span>, true],
+              ]}
+            />
+          </>
+        ) : (
+          <>
         <div className="form-section-title" style={{ marginTop: 22 }}>{direction === "in" ? "What the money is for" : "What the money was spent on"}</div>
         <div className="table-wrap">
           <table className="table lines-table">
@@ -408,6 +537,8 @@ export function MoneyForm({
           Add line
         </button>
         <SummaryRows rows={[[direction === "in" ? "Total received" : "Total paid", money(total, currency), true]]} />
+          </>
+        )}
       </form>
     </Drawer>
   );
@@ -653,6 +784,12 @@ export function TransactionDrawer({ id, onClose, onChanged }: { id: string; onCl
               <>
                 <dt>{t.kind === "RECEIPT" ? "Received from" : "Paid to"}</dt>
                 <dd>{t.partyName}</dd>
+              </>
+            )}
+            {(t.arReceiptNumber || t.apPaymentNumber) && (
+              <>
+                <dt>{t.arReceiptNumber ? "Customer receipt" : "Supplier payment"}</dt>
+                <dd>{t.arReceiptNumber ?? t.apPaymentNumber}</dd>
               </>
             )}
             {t.method && (

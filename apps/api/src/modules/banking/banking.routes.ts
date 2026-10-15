@@ -39,7 +39,11 @@ const METHODS = ["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE", "EFT", "CARD
 const moneyBody = z.object({
   financialAccountId: z.string().min(1),
   transactionDate: day,
-  lines: z.array(allocation).min(1).max(50),
+  lines: z.array(allocation).min(1).max(50).optional(),
+  amount: money.optional(),
+  customerId: z.string().min(1).optional(),
+  supplierId: z.string().min(1).optional(),
+  allocations: z.array(z.object({ documentId: z.string().min(1), amount: money })).max(100).optional(),
   kind: z.enum(["RECEIPT", "PAYMENT", "BANK_CHARGE", "INTEREST"]).optional(),
   method: z.enum(METHODS).optional(),
   reference: text(120),

@@ -2,7 +2,7 @@ import { Printer } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { amount, date, isoDay } from "../lib/format";
+import { amount, calendarDate, date, isoDay } from "../lib/format";
 import { Link } from "../lib/router";
 import { useResource } from "../lib/session";
 import type { PurchasesBySupplier } from "../lib/types";
@@ -35,7 +35,7 @@ export function PurchasesBySupplierReport() {
               <div className="company">{name}</div>
               <div className="title">Purchases by supplier</div>
               <div className="period">
-                {date(r.from)} to {date(r.to)} · Amounts in {currency}
+                {calendarDate(r.from)} to {calendarDate(r.to)} · Amounts in {currency}
               </div>
             </div>
             {r.rows.length === 0 ? (

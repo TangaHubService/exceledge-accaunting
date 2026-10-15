@@ -11,13 +11,20 @@ import {
   buildCustomerDepositLines,
   buildDepositApplicationLines,
   buildArReceiptLines as buildReceiptReversalSource,
+  buildLinedInvoiceJournal,
+  creditPortion,
+  periodStatement,
+  type DocumentLineInput,
+  readPaymentSplits,
+  realizedFxSettlement,
   roundMoney,
+  settledPortion,
   settlementAccountId,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { CustomerType, Prisma } from "@prisma/client";
-import { defaultsFor, money, nextNumber, settlementDefaults } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import { defaultsFor, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
 
@@ -42,12 +49,12 @@ async function appendLedger(
     credit: number;
   },
 ) {
-  const customer = await tx.customer.findUniqueOrThrow({ where: { id: input.customerId } });
-  const next = roundMoney(money(customer.balance) + input.debit - input.credit);
-  await tx.customer.update({
-    where: { id: customer.id },
-    data: { balance: next },
+  // An increment locks the customer row, so concurrent postings cannot overwrite each other's balance.
+  const customer = await tx.customer.update({
+    where: { id: input.customerId },
+    data: { balance: { increment: roundMoney(input.debit - input.credit) } },
   });
+  const next = money(customer.balance);
   return tx.arLedgerEntry.create({
     data: {
       companyId: input.companyId,
@@ -111,6 +118,15 @@ function invoiceOutstanding(invoice: {
 }) {
   if (invoice.status !== "POSTED") return 0;
   return roundMoney(money(invoice.gross) - money(invoice.amountPaid) - money(invoice.amountCredited));
+}
+
+/** Adds to an invoice's paid or credited amount in place, refusing one that is no longer posted or would go below zero. */
+async function bumpOpenInvoice(tx: Prisma.TransactionClient, invoiceId: string, data: Prisma.ArInvoiceUpdateManyMutationInput) {
+  const updated = await tx.arInvoice.updateMany({ where: { id: invoiceId, status: "POSTED" }, data });
+  if (!updated.count) throw new Error("Invoice is no longer open");
+  const invoice = await tx.arInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
+  if (invoiceOutstanding(invoice) < -0.0001) throw new Error(`Invoice ${invoice.invoiceNumber} was settled by another transaction at the same time; refresh and try again`);
+  return invoice;
 }
 
 export async function createCustomer(
@@ -337,12 +353,13 @@ export async function getCustomer(companyId: string, customerId: string) {
   return customer;
 }
 
-async function loadActiveCustomer(companyId: string, customerId: string) {
+/** A credit hold stops new receivables, not money coming in: `collecting` skips it for receipts. */
+async function loadActiveCustomer(companyId: string, customerId: string, options: { collecting?: boolean } = {}) {
   const customer = await prisma.customer.findFirst({ where: { id: customerId, companyId } });
   assertCustomerTransactable({
     exists: Boolean(customer),
     active: customer?.status === "ACTIVE",
-    creditStatus: customer?.creditStatus,
+    creditStatus: options.collecting ? undefined : customer?.creditStatus,
   });
   return customer!;
 }
@@ -353,18 +370,32 @@ export async function createInvoice(
     customerId: string;
     invoiceDate: Date | string;
     dueDate?: Date | string;
-    net: number;
+    net?: number;
     tax?: number;
     discount?: number;
     description?: string;
     currency?: string;
+    exchangeRate?: number;
+    /** Line items; when given, the totals come from the lines and their tax codes. */
+    lines?: DocumentLineInput[];
   },
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
-  const net = roundMoney(input.net);
-  const tax = roundMoney(input.tax ?? 0);
-  const discount = roundMoney(input.discount ?? 0);
+  const invoiceDate = new Date(input.invoiceDate);
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: input.currency,
+    partyCurrency: customer.currency,
+    date: invoiceDate,
+    rate: input.exchangeRate,
+  });
+  const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, invoiceDate, "sales") : null;
+  if (priced && input.discount) throw new Error("Give discounts on the lines when an invoice has lines");
+  if (priced && (input.net != null || input.tax != null)) throw new Error("An invoice with lines takes its net and tax from the lines");
+  if (!priced && !(Number(input.net) > 0)) throw new Error("Invoice amount must be positive");
+  const net = priced ? priced.net : roundMoney(input.net!);
+  const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
+  const discount = priced ? 0 : roundMoney(input.discount ?? 0);
   const gross = roundMoney(net + tax - discount);
   assertCreditAvailable({
     customerType: customer.customerType,
@@ -374,14 +405,15 @@ export async function createInvoice(
     allowOverride: actor.allowCreditOverride,
   });
   const defaults = await defaultsFor(companyId);
-  const lines = buildArInvoiceLines(defaults, {
-    net,
-    tax,
-    discount,
-    arAccountId: customer.arAccountId,
-    salesAccountId: customer.defaultSalesAccountId,
-  });
-  const invoiceDate = new Date(input.invoiceDate);
+  const lines = priced
+    ? buildLinedInvoiceJournal(defaults, { lines: priced.lines, arAccountId: customer.arAccountId, salesAccountId: customer.defaultSalesAccountId })
+    : buildArInvoiceLines(defaults, {
+        net,
+        tax,
+        discount,
+        arAccountId: customer.arAccountId,
+        salesAccountId: customer.defaultSalesAccountId,
+      });
   const due = input.dueDate
     ? new Date(input.dueDate)
     : new Date(invoiceDate.getTime() + customer.creditPeriodDays * 86_400_000);
@@ -393,7 +425,8 @@ export async function createInvoice(
       invoiceNumber,
       invoiceDate,
       dueDate: due,
-      currency: input.currency ?? customer.currency,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       discount,
@@ -402,6 +435,24 @@ export async function createInvoice(
       sourceModule: "AR",
       sourceDocumentType: "ArInvoice",
       createdByErpUserId: actor.erpUserId,
+      ...(priced
+        ? {
+            lines: {
+              create: priced.lines.map((l) => ({
+                lineNumber: l.lineNumber,
+                description: l.description,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                discount: l.discount,
+                net: l.net,
+                taxCode: l.taxCode,
+                taxRate: l.taxRate,
+                tax: l.tax,
+                accountId: l.accountId,
+              })),
+            },
+          }
+        : {}),
     },
   });
   const posted = await postBalanced(
@@ -410,7 +461,8 @@ export async function createInvoice(
       journalDate: invoiceDate,
       description: input.description || `Invoice ${invoiceNumber}`,
       referenceNumber: invoiceNumber,
-      currencyCode: draft.currency,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ArInvoice",
       sourceDocumentId: draft.id,
       sourceDocumentNumber: invoiceNumber,
@@ -456,6 +508,8 @@ export async function createReceipt(
     receiptDate: Date | string;
     method?: "CASH" | "BANK" | "MOBILE_MONEY" | "CARD" | "CHEQUE" | "ONLINE";
     amount: number;
+    currency?: string;
+    exchangeRate?: number;
     reference?: string;
     description?: string;
     allocations?: Array<{ invoiceId: string; amount: number }>;
@@ -464,8 +518,15 @@ export async function createReceipt(
   },
   actor: Actor = {},
 ) {
-  const customer = await loadActiveCustomer(companyId, input.customerId);
+  const customer = await loadActiveCustomer(companyId, input.customerId, { collecting: true });
   const amount = roundMoney(input.amount);
+  const receiptDate = new Date(input.receiptDate);
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: input.currency,
+    partyCurrency: customer.currency,
+    date: receiptDate,
+    rate: input.exchangeRate,
+  });
   const requested = input.allocations ?? [];
   const invoices = requested.length
     ? await prisma.arInvoice.findMany({
@@ -473,6 +534,9 @@ export async function createReceipt(
       })
     : [];
   if (invoices.length !== requested.length) throw new Error("One or more invoices were not found for this customer");
+  for (const inv of invoices) {
+    if (inv.currency.toUpperCase() !== fx.currency) throw new Error(`Invoice ${inv.invoiceNumber} is in ${inv.currency}; the receipt is in ${fx.currency}`);
+  }
   const allocationCheck = assertReceiptAllocations({
     amount,
     allowOverpayment: input.allowOverpayment !== false,
@@ -482,8 +546,34 @@ export async function createReceipt(
     }),
   });
   const defaults = await settlementDefaults(companyId, input.financialAccountId);
-  const lines = buildArReceiptLines(defaults, amount, input.method ?? "CASH", customer.arAccountId);
-  const receiptDate = new Date(input.receiptDate);
+  const method = input.method ?? "CASH";
+  const ratesMatch = invoices.every((inv) => Math.abs(Number(inv.exchangeRate) - fx.rate) < 1e-10);
+  let lines: JournalLineDraft[];
+  let journalCurrency = fx.currency;
+  let journalRate = fx.rate;
+  if (fx.currency === fx.functional || ratesMatch) {
+    lines = buildArReceiptLines(defaults, amount, method, customer.arAccountId);
+  } else {
+    const cash = settlementAccountId(defaults, method);
+    const ar = customer.arAccountId || defaults.accountsReceivableId;
+    if (!cash || !ar) throw new Error("Cash or receivables account is not configured");
+    const { gainId, lossId } = await fxAccounts(companyId);
+    lines = realizedFxSettlement({
+      cashAccountId: cash,
+      controlAccountId: ar,
+      fxGainAccountId: gainId,
+      fxLossAccountId: lossId,
+      amount,
+      paymentRate: fx.rate,
+      allocations: requested.map((row) => {
+        const inv = invoices.find((i) => i.id === row.invoiceId)!;
+        return { amount: roundMoney(row.amount), documentRate: Number(inv.exchangeRate) };
+      }),
+      side: "AR",
+    });
+    journalCurrency = fx.functional;
+    journalRate = 1;
+  }
   const receiptNumber = await nextNumber(companyId, "AR_RECEIPT", "RCT");
   const receipt = await prisma.arReceipt.create({
     data: {
@@ -491,8 +581,10 @@ export async function createReceipt(
       customerId: customer.id,
       receiptNumber,
       receiptDate,
-      method: input.method ?? "CASH",
+      method,
       amount,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       unallocated: allocationCheck.unallocated,
       reference: input.reference,
       description: input.description,
@@ -506,7 +598,8 @@ export async function createReceipt(
       journalDate: receiptDate,
       description: input.description || `Receipt ${receiptNumber}`,
       referenceNumber: receiptNumber,
-      currencyCode: customer.currency,
+      currencyCode: journalCurrency,
+      exchangeRate: journalRate,
       sourceDocumentType: "ArReceipt",
       sourceDocumentId: receipt.id,
       sourceDocumentNumber: receiptNumber,
@@ -521,11 +614,7 @@ export async function createReceipt(
       await tx.arAllocation.create({
         data: { receiptId: receipt.id, invoiceId: row.invoiceId, amount: roundMoney(row.amount) },
       });
-      const invoice = invoices.find((inv) => inv.id === row.invoiceId)!;
-      await tx.arInvoice.update({
-        where: { id: invoice.id },
-        data: { amountPaid: roundMoney(money(invoice.amountPaid) + row.amount) },
-      });
+      await bumpOpenInvoice(tx, row.invoiceId, { amountPaid: { increment: roundMoney(row.amount) } });
     }
     await appendLedger(tx, {
       companyId,
@@ -545,13 +634,22 @@ export async function createReceipt(
   });
 }
 
-export async function reverseReceipt(companyId: string, receiptId: string, actor: Actor = {}) {
+export async function reverseReceipt(companyId: string, receiptId: string, actor: Actor = {}, options: { reason?: string; reversalDate?: Date } = {}) {
+  return inTransaction(() => reverseReceiptOnce(companyId, receiptId, actor, options));
+}
+
+async function reverseReceiptOnce(companyId: string, receiptId: string, actor: Actor, options: { reason?: string; reversalDate?: Date }) {
+  const reversalDate = options.reversalDate ?? new Date();
   const receipt = await prisma.arReceipt.findFirst({
     where: { id: receiptId, companyId },
     include: { allocations: true, customer: true },
   });
   if (!receipt) throw new Error("Receipt does not exist");
-  if (receipt.status !== "POSTED") throw new Error("Receipt is already reversed");
+  // A receipt recorded in Banking is claimed through its bank transaction first, in the same order Banking uses.
+  const bankLinked = await prisma.bankTransaction.updateMany({ where: { companyId, arReceiptId: receiptId, status: "POSTED" }, data: { status: "REVERSED" } });
+  // The conditional update row-locks the receipt, so a concurrent reversal waits and then finds it reversed.
+  const claimed = await prisma.arReceipt.updateMany({ where: { id: receiptId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
+  if (!claimed.count) throw new Error("Receipt is already reversed");
   const defaults = await settlementDefaults(companyId, receipt.financialAccountId);
   const original = buildReceiptReversalSource(
     defaults,
@@ -568,8 +666,8 @@ export async function reverseReceipt(companyId: string, receiptId: string, actor
   const posted = await postBalanced(
     companyId,
     {
-      journalDate: new Date(),
-      description: `Reverse receipt ${receipt.receiptNumber}`,
+      journalDate: reversalDate,
+      description: `Reverse receipt ${receipt.receiptNumber}${options.reason ? ` — ${options.reason}` : ""}`,
       referenceNumber: receipt.receiptNumber,
       ...(await reversalCurrency(companyId, receipt.journalId)),
       sourceDocumentType: "ArReceiptReversal",
@@ -582,25 +680,26 @@ export async function reverseReceipt(companyId: string, receiptId: string, actor
   );
   await prisma.$transaction(async (tx) => {
     for (const allocation of receipt.allocations) {
-      const invoice = await tx.arInvoice.findUniqueOrThrow({ where: { id: allocation.invoiceId } });
-      await tx.arInvoice.update({
-        where: { id: invoice.id },
-        data: { amountPaid: roundMoney(money(invoice.amountPaid) - money(allocation.amount)) },
-      });
+      await tx.arInvoice.update({ where: { id: allocation.invoiceId }, data: { amountPaid: { decrement: money(allocation.amount) } } });
     }
-    await tx.arReceipt.update({ where: { id: receipt.id }, data: { status: "REVERSED" } });
     await appendLedger(tx, {
       companyId,
       customerId: receipt.customerId,
-      entryDate: new Date(),
+      entryDate: reversalDate,
       docType: "RECEIPT_REVERSAL",
       docId: receipt.id,
       docNumber: receipt.receiptNumber,
-      description: "Receipt reversal",
+      description: options.reason || "Receipt reversal",
       debit: money(receipt.amount),
       credit: 0,
     });
   });
+  if (bankLinked.count) {
+    await prisma.bankTransaction.updateMany({
+      where: { companyId, arReceiptId: receiptId },
+      data: { reversalJournalId: posted.id, reversedAt: reversalDate, reversedByErpUserId: actor.erpUserId, reversalReason: options.reason || `Receipt ${receipt.receiptNumber} reversed in Receivables` },
+    });
+  }
   return { receiptId: receipt.id, journalId: posted.id, status: "REVERSED" as const };
 }
 
@@ -666,12 +765,7 @@ export async function createCreditNote(
   );
   await prisma.$transaction(async (tx) => {
     await tx.arCreditNote.update({ where: { id: note.id }, data: { journalId: posted.id } });
-    if (invoice) {
-      await tx.arInvoice.update({
-        where: { id: invoice.id },
-        data: { amountCredited: roundMoney(money(invoice.amountCredited) + gross) },
-      });
-    }
+    if (invoice) await bumpOpenInvoice(tx, invoice.id, { amountCredited: { increment: gross } });
     await appendLedger(tx, {
       companyId,
       customerId: customer.id,
@@ -862,14 +956,16 @@ export async function allocateDeposit(
   );
   await prisma.$transaction(async (tx) => {
     await tx.arDepositAllocation.update({ where: { id: allocation.id }, data: { journalId: posted.id } });
-    await tx.arDeposit.update({
-      where: { id: deposit.id },
-      data: { remaining: roundMoney(money(deposit.remaining) - amount) },
+    const taken = await tx.arDeposit.updateMany({
+      where: { id: deposit.id, status: "POSTED", remaining: { gte: amount } },
+      data: { remaining: { decrement: amount } },
     });
-    await tx.arInvoice.update({
-      where: { id: invoice.id },
-      data: { amountPaid: roundMoney(money(invoice.amountPaid) + amount) },
-    });
+    if (!taken.count) throw new Error("Allocation exceeds remaining deposit");
+    const updated = await tx.arInvoice.updateMany({ where: { id: invoice.id, status: "POSTED" }, data: { amountPaid: { increment: amount } } });
+    if (!updated.count) throw new Error("Invoice is no longer open");
+    if (invoiceOutstanding(await tx.arInvoice.findUniqueOrThrow({ where: { id: invoice.id } })) < -0.0001) {
+      throw new Error("Allocation exceeds invoice outstanding balance");
+    }
     await appendLedger(tx, {
       companyId,
       customerId: deposit.customerId,
@@ -900,6 +996,12 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
   if (!cash || !defaults.customerDepositsId) {
     throw new Error("Cash and customer deposits accounts are not configured");
   }
+  // Claims exactly the balance read above, so a concurrent refund or allocation makes this one fail.
+  const claimed = await prisma.arDeposit.updateMany({
+    where: { id: deposit.id, status: "POSTED", remaining: deposit.remaining },
+    data: { remaining: 0 },
+  });
+  if (!claimed.count) throw new Error("The deposit changed while refunding; refresh and try again");
   const posted = await postBalanced(
     companyId,
     {
@@ -919,7 +1021,7 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
   );
   return prisma.arDeposit.update({
     where: { id: deposit.id },
-    data: { remaining: 0, description: `Refunded via journal ${posted.journalNumber}` },
+    data: { description: `Refunded via journal ${posted.journalNumber}` },
   });
 }
 
@@ -960,6 +1062,144 @@ export async function customerStatement(
     rows,
     totalOutstanding: roundMoney(rows.reduce((sum, row) => sum + row.outstanding, 0)),
   };
+}
+
+function dayRange(from?: string, to?: string) {
+  const parse = (value: string, end: boolean) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Use yyyy-mm-dd dates");
+    return new Date(`${value}T${end ? "23:59:59.999" : "00:00:00.000"}Z`);
+  };
+  const now = new Date();
+  const end = to ? parse(to, true) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+  const start = from ? parse(from, false) : new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+  if (start > end) throw new Error("The start date is after the end date");
+  return { start, end };
+}
+
+export async function listInvoices(
+  companyId: string,
+  filter: { status?: "OPEN" | "OVERDUE" | "PAID" | "ALL"; customerId?: string; from?: string; to?: string; q?: string; page?: number; pageSize?: number } = {},
+) {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const start = filter.from ? dayRange(filter.from, filter.from).start : undefined;
+  const end = filter.to ? dayRange(filter.to, filter.to).end : undefined;
+  if (start && end && start > end) throw new Error("The start date is after the end date");
+  const q = filter.q?.trim();
+  const invoices = await prisma.arInvoice.findMany({
+    where: {
+      companyId,
+      ...(filter.customerId ? { customerId: filter.customerId } : {}),
+      ...(start || end ? { invoiceDate: { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { invoiceNumber: { contains: q, mode: "insensitive" as const } },
+              { customer: { name: { contains: q, mode: "insensitive" as const } } },
+              { description: { contains: q, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
+    },
+    include: { customer: { select: { id: true, code: true, name: true } } },
+    orderBy: [{ invoiceDate: "desc" }, { invoiceNumber: "desc" }],
+    take: 5000,
+  });
+  const rows = invoices
+    .map((invoice) => ({
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceDate: invoice.invoiceDate,
+      dueDate: invoice.dueDate,
+      status: invoice.status,
+      customerId: invoice.customerId,
+      customerCode: invoice.customer.code,
+      customerName: invoice.customer.name,
+      net: money(invoice.net),
+      tax: money(invoice.tax),
+      gross: money(invoice.gross),
+      paid: money(invoice.amountPaid),
+      credited: money(invoice.amountCredited),
+      outstanding: invoiceOutstanding(invoice),
+      sourceModule: invoice.sourceModule,
+      description: invoice.description,
+    }))
+    .filter((row) =>
+      filter.status === "OPEN"
+        ? row.outstanding > 0
+        : filter.status === "OVERDUE"
+          ? row.outstanding > 0 && row.dueDate < today
+          : filter.status === "PAID"
+            ? row.status === "POSTED" && row.outstanding <= 0
+            : true,
+    );
+  const pageSize = Math.min(Math.max(filter.pageSize ?? 50, 1), 500);
+  const page = Math.max(filter.page ?? 1, 1);
+  return {
+    rows: rows.slice((page - 1) * pageSize, page * pageSize),
+    total: rows.length,
+    page,
+    pageSize,
+    totals: {
+      gross: roundMoney(rows.reduce((s, r) => s + r.gross, 0)),
+      outstanding: roundMoney(rows.reduce((s, r) => s + r.outstanding, 0)),
+    },
+  };
+}
+
+export async function getInvoice(companyId: string, invoiceId: string) {
+  const invoice = await prisma.arInvoice.findFirst({
+    where: { id: invoiceId, companyId },
+    include: {
+      customer: true,
+      lines: { orderBy: { lineNumber: "asc" } },
+      allocations: { include: { receipt: { select: { receiptNumber: true, receiptDate: true, status: true } } } },
+      creditNotes: { select: { id: true, creditNoteNumber: true, noteDate: true, gross: true, status: true } },
+    },
+  });
+  if (!invoice) throw new Error("Invoice does not exist");
+  return { ...invoice, outstanding: invoiceOutstanding(invoice) };
+}
+
+/** Customer statement for a period: balance brought forward, each movement with a running balance, closing balance. */
+export async function customerPeriodStatement(companyId: string, customerId: string, from?: string, to?: string) {
+  const customer = await getCustomer(companyId, customerId);
+  const { start, end } = dayRange(from, to);
+  const entries = await prisma.arLedgerEntry.findMany({
+    where: { companyId, customerId, entryDate: { lte: end } },
+    orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
+  });
+  const statement = periodStatement(
+    entries.map((e) => ({ ...e, debit: money(e.debit), credit: money(e.credit) })),
+    start,
+    end,
+    1,
+  );
+  return {
+    customer: { id: customer.id, code: customer.code, name: customer.name, tin: customer.tin, physicalAddress: customer.physicalAddress },
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+    openingBalance: statement.opening,
+    entries: statement.entries.map((e) => ({
+      id: e.id,
+      entryDate: e.entryDate,
+      docType: e.docType,
+      docNumber: e.docNumber,
+      description: e.description,
+      debit: e.debit,
+      credit: e.credit,
+      balance: e.balance,
+    })),
+    totalCharged: statement.totalDebit,
+    totalPaid: statement.totalCredit,
+    closingBalance: statement.closing,
+  };
+}
+
+export async function listDeposits(companyId: string, customerId: string) {
+  await getCustomer(companyId, customerId);
+  const deposits = await prisma.arDeposit.findMany({ where: { companyId, customerId }, orderBy: { depositDate: "desc" } });
+  return deposits.map((d) => ({ ...d, amount: money(d.amount), remaining: money(d.remaining) }));
 }
 
 export async function ageingReport(companyId: string, asOf?: Date | string) {
@@ -1067,16 +1307,14 @@ export async function syncSaleToSubledger(eventId: string) {
   });
   if (existing) return existing;
 
-  const payload = event.payload as {
-    parties?: { externalCustomerId?: string | number };
-    metadata?: { paymentType?: string; customerName?: string };
-    amountTotals?: { gross?: string; net?: string; tax?: string };
-  };
+  const payload = event.payload as SaleEventPayload;
   const externalId = payload.parties?.externalCustomerId
     ? String(payload.parties.externalCustomerId)
     : undefined;
-  const method = String(payload.metadata?.paymentType || "CASH").toUpperCase();
-  const isCredit = method === "CREDIT" || method === "DEBT" || method === "INSURANCE";
+  const { net, tax, gross, splits } = saleEventAmounts(payload);
+  const owed = creditPortion(splits);
+  const settled = settledPortion(splits);
+  const isCredit = owed > 0;
   let customer = externalId
     ? await prisma.customer.findFirst({
         where: { companyId: event.companyId, externalErpCustomerId: externalId },
@@ -1096,9 +1334,6 @@ export async function syncSaleToSubledger(eventId: string) {
       },
     });
   }
-  const net = roundMoney(Number(payload.amountTotals?.net ?? 0));
-  const tax = roundMoney(Number(payload.amountTotals?.tax ?? 0));
-  const gross = roundMoney(Number(payload.amountTotals?.gross ?? net + tax));
   const invoice = await prisma.arInvoice.create({
     data: {
       companyId: event.companyId,
@@ -1112,7 +1347,7 @@ export async function syncSaleToSubledger(eventId: string) {
       net,
       tax,
       gross,
-      amountPaid: isCredit ? 0 : gross,
+      amountPaid: settled,
       description: "POS sale",
       journalId: event.journalId,
       sourceModule: event.sourceModule,
@@ -1133,7 +1368,7 @@ export async function syncSaleToSubledger(eventId: string) {
       debit: gross,
       credit: 0,
     });
-    if (!isCredit) {
+    if (settled > 0) {
       await appendLedger(tx, {
         companyId: event.companyId,
         customerId: customer!.id,
@@ -1141,11 +1376,179 @@ export async function syncSaleToSubledger(eventId: string) {
         docType: "RECEIPT",
         docId: invoice.id,
         docNumber: invoice.invoiceNumber,
-        description: "POS cash settlement",
+        description: "POS settlement",
         debit: 0,
-        credit: gross,
+        credit: settled,
       });
     }
   });
   return invoice;
+}
+
+type SaleEventPayload = {
+  parties?: { externalCustomerId?: string | number };
+  metadata?: Record<string, unknown> & { paymentType?: string; paymentMethod?: string; customerName?: string };
+  amountTotals?: { gross?: string | number; net?: string | number; tax?: string | number; discount?: string | number };
+  paymentSplits?: unknown;
+};
+
+/** Same figures the posting rule journals: gross is what changed hands, net is the rest after VAT. */
+function saleEventAmounts(payload: SaleEventPayload) {
+  const tax = roundMoney(Number(payload.amountTotals?.tax ?? 0));
+  const discount = roundMoney(Number(payload.amountTotals?.discount ?? 0));
+  const statedGross = roundMoney(Number(payload.amountTotals?.gross ?? 0));
+  const gross = statedGross > 0 ? statedGross : roundMoney(Number(payload.amountTotals?.net ?? 0) + tax - discount);
+  const net = roundMoney(gross - tax);
+  const splits = readPaymentSplits(payload.paymentSplits, gross, payload.metadata?.paymentType ?? payload.metadata?.paymentMethod);
+  return { net, tax, gross, splits };
+}
+
+async function invoiceForSale(companyId: string, saleId: unknown, what: string) {
+  const id = saleId === undefined || saleId === null ? "" : String(saleId);
+  if (!id) throw new Error(`${what} does not name the original sale (metadata.saleId)`);
+  const invoice = await prisma.arInvoice.findFirst({
+    where: { companyId, sourceDocumentType: "Sale", sourceDocumentId: id },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!invoice) throw new Error(`Sale ${id} is not in receivables yet; ${what.toLowerCase()} will be retried after the sale posts`);
+  return invoice;
+}
+
+function arMethod(method: string | undefined): "CASH" | "BANK" | "MOBILE_MONEY" {
+  return method === "BANK" ? "BANK" : method === "MOBILE_MONEY" ? "MOBILE_MONEY" : "CASH";
+}
+
+/** A debt payment taken in the ERP: a receipt allocated to the sale's invoice; any excess stays on account. */
+export async function syncCustomerPaymentToSubledger(eventId: string) {
+  const event = await prisma.integrationEvent.findUnique({ where: { id: eventId } });
+  if (!event || event.eventType !== "CUSTOMER_PAYMENT_RECEIVED" || !event.journalId) return null;
+  const existing = await prisma.arReceipt.findFirst({
+    where: { companyId: event.companyId, sourceModule: event.sourceModule, sourceDocumentType: event.sourceDocumentType, sourceDocumentId: event.sourceDocumentId },
+  });
+  if (existing) return existing;
+  const payload = event.payload as SaleEventPayload;
+  const amount = roundMoney(Number(payload.amountTotals?.gross ?? payload.amountTotals?.net ?? 0));
+  if (amount <= 0) throw new Error("Customer payment event has no amount");
+  const splits = readPaymentSplits(payload.paymentSplits, amount, payload.metadata?.paymentMethod ?? payload.metadata?.paymentType);
+  const main = splits.reduce((a, b) => (b.amount > a.amount ? b : a), splits[0]);
+  const invoice = await invoiceForSale(event.companyId, payload.metadata?.saleId, "Customer payment");
+  const applied = roundMoney(Math.min(amount, invoiceOutstanding(invoice)));
+  const receiptNumber = await nextNumber(event.companyId, "AR_RECEIPT", "RCT");
+
+  return prisma.$transaction(async (tx) => {
+    const receipt = await tx.arReceipt.create({
+      data: {
+        companyId: event.companyId,
+        customerId: invoice.customerId,
+        receiptNumber,
+        receiptDate: event.occurredAt,
+        method: arMethod(main?.method),
+        amount,
+        unallocated: roundMoney(amount - applied),
+        reference: event.sourceDocumentNumber ?? undefined,
+        journalId: event.journalId,
+        description: `Excel Edge payment for ${invoice.invoiceNumber}`,
+        sourceModule: event.sourceModule,
+        sourceDocumentType: event.sourceDocumentType,
+        sourceDocumentId: event.sourceDocumentId,
+      },
+    });
+    if (applied > 0) {
+      await tx.arAllocation.create({ data: { receiptId: receipt.id, invoiceId: invoice.id, amount: applied } });
+      const updated = await tx.arInvoice.update({ where: { id: invoice.id }, data: { amountPaid: { increment: applied } } });
+      if (invoiceOutstanding(updated) < -0.0001) throw new Error(`Invoice ${updated.invoiceNumber} was settled by another document at the same time; retry`);
+    }
+    await appendLedger(tx, {
+      companyId: event.companyId,
+      customerId: invoice.customerId,
+      entryDate: event.occurredAt,
+      docType: "RECEIPT",
+      docId: receipt.id,
+      docNumber: receipt.receiptNumber,
+      description: receipt.description,
+      debit: 0,
+      credit: amount,
+    });
+    return receipt;
+  });
+}
+
+/**
+ * A refund or return of an ERP sale: a credit note against the sale's invoice. The part paid back in cash,
+ * bank or mobile money also reverses that much of what was paid on the invoice.
+ */
+export async function syncSaleRefundToSubledger(eventId: string) {
+  const event = await prisma.integrationEvent.findUnique({ where: { id: eventId } });
+  if (!event || !["SALE_REFUNDED", "SALES_RETURN_COMPLETED"].includes(event.eventType) || !event.journalId) return null;
+  const existing = await prisma.arCreditNote.findFirst({
+    where: { companyId: event.companyId, sourceModule: event.sourceModule, sourceDocumentType: event.sourceDocumentType, sourceDocumentId: event.sourceDocumentId },
+  });
+  if (existing) return existing;
+  const payload = event.payload as SaleEventPayload;
+  const { net, tax, gross, splits } = saleEventAmounts(payload);
+  const paidBack = settledPortion(splits);
+  const onAccount = roundMoney(gross - paidBack);
+  const invoice = await invoiceForSale(event.companyId, payload.metadata?.originalSaleId ?? payload.metadata?.saleId, "Refund");
+  // The customer ledger takes the full credit and any cash paid back, matching the GL. On the invoice, the part
+  // left on account reduces what is still owed; what it cannot absorb stays on the customer's account as credit.
+  const paidReversed = roundMoney(Math.min(paidBack, money(invoice.amountPaid)));
+  const reducesOutstanding = roundMoney(Math.min(onAccount, invoiceOutstanding(invoice)));
+  const applied = roundMoney(paidReversed + reducesOutstanding);
+  const creditNoteNumber = await nextNumber(event.companyId, "AR_CREDIT_NOTE", "CN");
+  const reason = typeof payload.metadata?.reason === "string" && payload.metadata.reason.trim() ? payload.metadata.reason.trim() : "Excel Edge refund";
+
+  return prisma.$transaction(async (tx) => {
+    const note = await tx.arCreditNote.create({
+      data: {
+        companyId: event.companyId,
+        customerId: invoice.customerId,
+        invoiceId: invoice.id,
+        creditNoteNumber,
+        noteDate: event.occurredAt,
+        reason,
+        net,
+        tax,
+        gross,
+        journalId: event.journalId,
+        description: `Refund ${event.sourceDocumentNumber ?? event.sourceDocumentId} on ${invoice.invoiceNumber}`,
+        sourceModule: event.sourceModule,
+        sourceDocumentType: event.sourceDocumentType,
+        sourceDocumentId: event.sourceDocumentId,
+      },
+    });
+    if (applied > 0) {
+      const updated = await tx.arInvoice.update({
+        where: { id: invoice.id },
+        data: { amountCredited: { increment: applied }, amountPaid: { decrement: paidReversed } },
+      });
+      if (money(updated.amountPaid) < -0.0001 || invoiceOutstanding(updated) < -0.0001) {
+        throw new Error(`Invoice ${invoice.invoiceNumber} was settled by another document at the same time; retry`);
+      }
+    }
+    await appendLedger(tx, {
+      companyId: event.companyId,
+      customerId: invoice.customerId,
+      entryDate: event.occurredAt,
+      docType: "CREDIT_NOTE",
+      docId: note.id,
+      docNumber: note.creditNoteNumber,
+      description: note.description,
+      debit: 0,
+      credit: gross,
+    });
+    if (paidBack > 0) {
+      await appendLedger(tx, {
+        companyId: event.companyId,
+        customerId: invoice.customerId,
+        entryDate: event.occurredAt,
+        docType: "REFUND",
+        docId: note.id,
+        docNumber: note.creditNoteNumber,
+        description: "Refund paid out",
+        debit: paidBack,
+        credit: 0,
+      });
+    }
+    return note;
+  });
 }

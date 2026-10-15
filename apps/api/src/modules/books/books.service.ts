@@ -1,32 +1,29 @@
 import { createHash, randomBytes } from "crypto";
 import {
   aggregateTrialBalance,
-  anomalyScore,
-  answerFromBooks,
-  budgetVariance,
-  buildFinancialStatements,
   comparativeTrialBalance,
   assertEliminationBalanced,
   consolidateTrialBalances,
+  dimensionProfitAndLoss,
   esgIntensity,
-  linearForecast,
   money4,
   naturalBalance,
   nextCronTime,
   nextRecurringDate,
   parseCron,
-  periodCanClose,
   revaluationDelta,
   trialBalanceTotals,
   type BookAccountType,
   type TrialBalanceMode,
-  yearEndClosingLines,
 } from "@exceledge/accounting-domain";
 import { withJobLock } from "../../lib/job-lock";
 import type { ApiKeyScope } from "../../middleware/auth";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { createAndPostJournal, createJournal } from "../journals/journal.service";
+import { notify } from "../notifications/notification.service";
+import { scanAnomalies } from "./insights.service";
+import { dimWhere, periodStatements, trialBalanceColumns, type Dims, type StatementOptions } from "./reports.service";
 
 type Actor = { erpUserId?: number; erpRole?: string };
 
@@ -34,10 +31,11 @@ function asType(type: string): BookAccountType {
   return type as BookAccountType;
 }
 
-async function movements(companyId: string, opts: { to?: Date; from?: Date } = {}) {
+export async function movements(companyId: string, opts: { to?: Date; from?: Date; dims?: Dims } = {}) {
   const entries = await prisma.glEntry.findMany({
     where: {
       companyId,
+      ...dimWhere(opts.dims),
       ...(opts.from || opts.to
         ? {
             transactionDate: {
@@ -57,8 +55,9 @@ async function movements(companyId: string, opts: { to?: Date; from?: Date } = {
     debit: Number(e.debit),
     credit: Number(e.credit),
     journalType: e.journal.journalType,
-    costCentre: e.journal.costCentre,
-    project: e.journal.project,
+    costCentre: e.costCentre ?? e.journal.costCentre,
+    project: e.project ?? e.journal.project,
+    branchId: e.branchId ?? e.journal.branchId,
     postingDate: e.transactionDate,
     journalId: e.journalId,
     amount: Number(e.debit) + Number(e.credit),
@@ -67,10 +66,11 @@ async function movements(companyId: string, opts: { to?: Date; from?: Date } = {
 
 export async function getTrialBalance(
   companyId: string,
-  opts: { mode?: TrialBalanceMode; asOf?: Date; compareAsOf?: Date } = {},
+  opts: { mode?: TrialBalanceMode | "COLUMNS"; asOf?: Date; compareAsOf?: Date; from?: Date; dims?: Dims } = {},
 ) {
+  if (opts.mode === "COLUMNS") return trialBalanceColumns(companyId, { from: opts.from, to: opts.asOf, dims: opts.dims });
   const mode = opts.mode ?? "STANDARD";
-  const current = aggregateTrialBalance(await movements(companyId, { to: opts.asOf }), mode);
+  const current = aggregateTrialBalance(await movements(companyId, { to: opts.asOf, dims: opts.dims }), mode);
   if (mode !== "COMPARATIVE") {
     const totals = current.reduce(
       (s, r) => ({ debit: money4(s.debit + r.debit), credit: money4(s.credit + r.credit) }),
@@ -78,21 +78,13 @@ export async function getTrialBalance(
     );
     return { mode, rows: current, ...totals, difference: money4(totals.debit - totals.credit) };
   }
-  const prior = aggregateTrialBalance(await movements(companyId, { to: opts.compareAsOf }), "STANDARD");
+  const prior = aggregateTrialBalance(await movements(companyId, { to: opts.compareAsOf, dims: opts.dims }), "STANDARD");
   const rows = comparativeTrialBalance(current, prior);
   return { mode, rows, ...trialBalanceTotals(rows) };
 }
 
-export async function getStatements(companyId: string, asOf?: Date) {
-  const rows = aggregateTrialBalance(await movements(companyId, { to: asOf }), "STANDARD");
-  const reference = asOf ?? new Date();
-  const year = await prisma.financialYear.findFirst({
-    where: { companyId, startDate: { lte: reference }, endDate: { gte: reference } },
-  });
-  const periodStart = year?.startDate ?? new Date(Date.UTC(reference.getUTCFullYear(), 0, 1));
-  const priorEnd = new Date(periodStart.getTime() - 1);
-  const prior = aggregateTrialBalance(await movements(companyId, { to: priorEnd }), "STANDARD");
-  return { ...buildFinancialStatements(rows, prior), periodStart, asOf: reference };
+export async function getStatements(companyId: string, asOf?: Date, opts: Omit<StatementOptions, "to"> = {}) {
+  return periodStatements(companyId, { ...opts, to: asOf });
 }
 
 async function periodOrThrow(companyId: string, periodId: string) {
@@ -112,116 +104,6 @@ export async function listPeriods(companyId: string) {
   });
 }
 
-export async function closeChecklist(companyId: string, periodId: string) {
-  const period = await periodOrThrow(companyId, periodId);
-  const [drafts, openExceptions, pendingApprovals, tb, earlierOpen, laterPeriods] = await Promise.all([
-    prisma.journal.count({
-      where: { companyId, status: "DRAFT", journalDate: { gte: period.startDate, lte: period.endDate } },
-    }),
-    prisma.postingException.count({ where: { companyId, status: "OPEN" } }),
-    prisma.approvalRequest.count({ where: { companyId, status: "PENDING" } }),
-    getTrialBalance(companyId, { asOf: period.endDate }),
-    prisma.accountingPeriod.count({
-      where: { financialYearId: period.financialYearId, sequence: { lt: period.sequence }, status: { not: "CLOSED" } },
-    }),
-    prisma.accountingPeriod.count({ where: { financialYearId: period.financialYearId, sequence: { gt: period.sequence } } }),
-  ]);
-  const gate = periodCanClose({
-    drafts,
-    openExceptions,
-    difference: tb.difference,
-    pendingApprovals,
-  });
-  if (earlierOpen > 0) gate.blockers.unshift(`${earlierOpen} earlier period(s) in ${period.financialYear.name} are not closed yet`);
-  return {
-    period,
-    canClose: gate.blockers.length === 0,
-    blockers: gate.blockers,
-    drafts,
-    openExceptions,
-    pendingApprovals,
-    earlierOpen,
-    lastOfYear: laterPeriods === 0,
-    difference: tb.difference,
-  };
-}
-
-export async function closePeriod(companyId: string, periodId: string, kind: "MONTH" | "YEAR", actor: Actor = {}) {
-  const check = await closeChecklist(companyId, periodId);
-  if (!check.canClose) throw new Error(check.blockers.join("; "));
-  if (check.period.status === "CLOSED") throw new Error("Period is already closed");
-  if (kind === "YEAR" && !check.lastOfYear) throw new Error("A year-end close can only be run on the last period of the year");
-  if (kind === "MONTH" && check.lastOfYear) throw new Error("Close the last period of the year with a year-end close");
-
-  return inTransaction(() => commitClose(companyId, periodId, kind, check, actor));
-}
-
-async function commitClose(
-  companyId: string,
-  periodId: string,
-  kind: "MONTH" | "YEAR",
-  check: Awaited<ReturnType<typeof closeChecklist>>,
-  actor: Actor,
-) {
-  let journalId: string | undefined;
-  if (kind === "YEAR") {
-    const retained = await prisma.account.findFirst({ where: { companyId, code: "3100" } });
-    if (!retained) throw new Error("Retained earnings account 3100 is missing");
-    const rows = aggregateTrialBalance(
-      await movements(companyId, { from: check.period.financialYear.startDate, to: check.period.endDate }),
-      "STANDARD",
-    );
-    const lines = yearEndClosingLines(rows, retained.id);
-    if (lines.length) {
-      const journal = await createAndPostJournal(
-        companyId,
-        {
-          journalDate: check.period.endDate,
-          journalType: "ADJUSTMENT",
-          description: `Year-end close ${check.period.financialYear.name}`,
-          sourceModule: "CLOSE",
-          sourceDocumentType: "YEAR_END_CLOSE",
-          sourceDocumentId: periodId,
-          lines,
-        },
-        actor,
-      );
-      journalId = journal.id;
-    }
-  }
-
-  await prisma.accountingPeriod.update({ where: { id: periodId }, data: { status: "CLOSED" } });
-  const record = await prisma.periodClose.create({
-    data: {
-      companyId,
-      periodId,
-      kind,
-      checklistJson: { blockers: [], difference: check.difference },
-      journalId,
-      closedByErpUserId: actor.erpUserId,
-    },
-  });
-  await prisma.notification.create({
-    data: { companyId, title: "Period closed", body: `${check.period.name} closed (${kind}).`, severity: "INFO" },
-  });
-  if (actor.erpUserId) {
-    await writeAudit({ companyId, erpUserId: actor.erpUserId, erpRole: actor.erpRole, action: "CLOSE_PERIOD", entityType: "AccountingPeriod", entityId: periodId });
-  }
-  return record;
-}
-
-export async function reopenPeriod(companyId: string, periodId: string, reason: string, actor: Actor = {}) {
-  if (!reason.trim()) throw new Error("A reason is required to reopen a period");
-  const period = await periodOrThrow(companyId, periodId);
-  if (period.status !== "CLOSED") throw new Error("Only a closed period can be reopened");
-  await prisma.accountingPeriod.update({ where: { id: periodId }, data: { status: "REOPENED", reopenReason: reason } });
-  await prisma.periodClose.updateMany({ where: { companyId, periodId, status: "CLOSED" }, data: { status: "REOPENED", reopenReason: reason } });
-  if (actor.erpUserId) {
-    await writeAudit({ companyId, erpUserId: actor.erpUserId, erpRole: actor.erpRole, action: "REOPEN_PERIOD", entityType: "AccountingPeriod", entityId: periodId, afterJson: { reason } });
-  }
-  return { id: periodId, status: "REOPENED", reason };
-}
-
 export async function lockPeriod(companyId: string, periodId: string, locked: boolean, actor: Actor = {}) {
   const period = await periodOrThrow(companyId, periodId);
   if (locked && !["FUTURE", "OPEN", "REOPENED"].includes(period.status)) {
@@ -229,7 +111,8 @@ export async function lockPeriod(companyId: string, periodId: string, locked: bo
   }
   if (!locked && period.status !== "TEMPORARILY_LOCKED") throw new Error("Only a locked period can be unlocked");
   const status = locked ? "TEMPORARILY_LOCKED" : "OPEN";
-  await prisma.accountingPeriod.update({ where: { id: periodId }, data: { status } });
+  const moved = await prisma.accountingPeriod.updateMany({ where: { id: periodId, status: period.status }, data: { status } });
+  if (!moved.count) throw new Error("The period changed a moment ago; refresh and try again");
   if (actor.erpUserId) {
     await writeAudit({
       companyId,
@@ -288,7 +171,7 @@ export async function createRecurring(
   const debit = money4(input.lines.reduce((s, l) => s + l.debit, 0));
   const credit = money4(input.lines.reduce((s, l) => s + l.credit, 0));
   if (Math.abs(debit - credit) > 0.0001) throw new Error("Recurring journal does not balance");
-  return prisma.recurringJournal.create({
+  const row = await prisma.recurringJournal.create({
     data: {
       companyId,
       name: input.name,
@@ -301,10 +184,12 @@ export async function createRecurring(
     },
     include: { lines: true },
   });
+  await auditBooks(companyId, actor, "CREATE", "RecurringJournal", row.id, { name: row.name, frequency: row.frequency, autoPost: row.autoPost, total: debit });
+  return row;
 }
 
 export async function runRecurring(companyId: string, asOf = new Date(), actor: Actor = {}) {
-  const result = await withJobLock(`recurring:${companyId}`, 10 * 60_000, () => runDueRecurring(companyId, asOf, actor));
+  const result = await withJobLock(`recurring:${companyId}`, 5 * 60_000, () => runDueRecurring(companyId, asOf, actor), { renew: true });
   if (!result) throw new Error("Recurring journals are already being run for this company");
   return result;
 }
@@ -335,19 +220,18 @@ async function runDueRecurring(companyId: string, asOf: Date, actor: Actor) {
           ? await createAndPostJournal(companyId, input, actor)
           : await createJournal(companyId, input, actor);
         const nextRunDate = new Date(nextRecurringDate(template.nextRunDate, template.frequency));
-        await prisma.recurringJournal.update({
-          where: { id: template.id },
+        const advanced = await prisma.recurringJournal.updateMany({
+          where: { id: template.id, nextRunDate: template.nextRunDate },
           data: { nextRunDate, isActive: !template.endDate || nextRunDate <= template.endDate },
         });
+        if (!advanced.count) throw new Error("This occurrence was already generated by another run");
         return journal.id;
       });
       created.push(journalId);
     } catch (e) {
       const error = (e as Error).message;
       failed.push({ templateId: template.id, name: template.name, error });
-      await prisma.notification.create({
-        data: { companyId, title: "Recurring journal failed", body: `${template.name}: ${error}`, severity: "WARNING" },
-      });
+      await notify({ companyId, title: "Recurring journal failed", body: `${template.name}: ${error}`, severity: "WARNING", entityType: "RecurringJournal", entityId: template.id });
     }
   }
   return { generated: created.length, journalIds: created, failed };
@@ -357,13 +241,17 @@ export async function listRates(companyId: string) {
   return prisma.exchangeRate.findMany({ where: { companyId }, orderBy: { rateDate: "desc" } });
 }
 
-export async function saveRate(companyId: string, input: { currency: string; rateDate: string; rate: number; source?: string }) {
+export async function saveRate(companyId: string, input: { currency: string; rateDate: string; rate: number; source?: string }, actor: Actor = {}) {
   const rateDate = new Date(input.rateDate);
-  return prisma.exchangeRate.upsert({
-    where: { companyId_currency_rateDate: { companyId, currency: input.currency.toUpperCase(), rateDate } },
+  const where = { companyId_currency_rateDate: { companyId, currency: input.currency.toUpperCase(), rateDate } };
+  const before = await prisma.exchangeRate.findUnique({ where });
+  const row = await prisma.exchangeRate.upsert({
+    where,
     create: { companyId, currency: input.currency.toUpperCase(), rateDate, rate: input.rate, source: input.source },
     update: { rate: input.rate, source: input.source },
   });
+  await auditBooks(companyId, actor, before ? "UPDATE" : "CREATE", "ExchangeRate", row.id, { currency: row.currency, rateDate, rate: input.rate }, before && { rate: Number(before.rate) });
+  return row;
 }
 
 async function fxResultAccounts(companyId: string) {
@@ -387,6 +275,12 @@ async function fxResultAccounts(companyId: string) {
  */
 export async function revalueCurrency(companyId: string, currency: string, actor: Actor = {}, asOf = new Date()) {
   const code = currency.toUpperCase();
+  const result = await withJobLock(`fx-revalue:${companyId}:${code}`, 5 * 60_000, () => revalue(companyId, code, actor, asOf), { renew: true });
+  if (!result) throw new Error(`A ${code} revaluation is already running for this company; try again when it finishes`);
+  return result;
+}
+
+async function revalue(companyId: string, code: string, actor: Actor, asOf: Date) {
   const { gain: gainAccount, loss: lossAccount, functional } = await fxResultAccounts(companyId);
   if (code === functional) return { currency: code, gainLoss: 0, journalId: null, skipped: "Functional currency is not revalued" };
   const rate = await prisma.exchangeRate.findFirst({
@@ -395,6 +289,20 @@ export async function revalueCurrency(companyId: string, currency: string, actor
   });
   if (!rate) throw new Error(`No ${code} exchange rate is on file on or before ${asOf.toISOString().slice(0, 10)}`);
   const accounts = await prisma.account.findMany({ where: { companyId, currency: code, isActive: true } });
+  const withoutForeign = await prisma.journalLine.findMany({
+    where: {
+      companyId,
+      accountId: { in: accounts.map((a) => a.id) },
+      amountForeign: null,
+      journal: { status: { in: ["POSTED", "REVERSED"] }, OR: [{ sourceModule: null }, { sourceModule: { not: "FX" } }] },
+    },
+    distinct: ["accountId"],
+    select: { account: { select: { code: true } } },
+  });
+  if (withoutForeign.length) {
+    const codes = withoutForeign.map((l) => l.account.code).join(", ");
+    throw new Error(`Account(s) ${codes} have postings without a ${code} amount; revaluing them would write off their balance`);
+  }
   const postedLines = await prisma.journalLine.groupBy({
     by: ["accountId"],
     where: {
@@ -418,7 +326,12 @@ export async function revalueCurrency(companyId: string, currency: string, actor
     if (delta > 0) lines.push({ accountId: account.id, description: `Revalue ${code}`, debit: delta, credit: 0 });
     else lines.push({ accountId: account.id, description: `Revalue ${code}`, debit: 0, credit: money4(-delta) });
   }
-  if (!lines.length) return { currency: code, gainLoss: 0, journalId: null };
+  if (!lines.length) {
+    await prisma.fxRevaluation.create({
+      data: { companyId, currency: code, rateDate: rate.rateDate, closingRate: rate.rate, gainLoss: 0, createdByErpUserId: actor.erpUserId },
+    });
+    return { currency: code, gainLoss: 0, journalId: null };
+  }
   if (gain > 0) lines.push({ accountId: gainAccount.id, description: `Unrealized FX gain ${code}`, debit: 0, credit: gain });
   else if (gain < 0) lines.push({ accountId: lossAccount.id, description: `Unrealized FX loss ${code}`, debit: money4(-gain), credit: 0 });
   return inTransaction(async () => {
@@ -433,175 +346,62 @@ export async function revalueCurrency(companyId: string, currency: string, actor
   });
 }
 
-export async function listBudgets(companyId: string) {
-  return prisma.budget.findMany({ where: { companyId }, include: { lines: true }, orderBy: { createdAt: "desc" } });
-}
-
-export async function createBudget(
-  companyId: string,
-  input: { name: string; financialYearId?: string; lines: Array<{ accountId: string; amount: number; periodSequence?: number; costCentre?: string; project?: string }> },
-  actor: Actor = {},
-) {
-  return prisma.budget.create({
-    data: {
-      companyId,
-      name: input.name,
-      financialYearId: input.financialYearId,
-      createdByErpUserId: actor.erpUserId,
-      lines: { create: input.lines.map((l) => ({ accountId: l.accountId, amount: l.amount, periodSequence: l.periodSequence ?? 0, costCentre: l.costCentre, project: l.project })) },
-    },
-    include: { lines: true },
-  });
-}
-
-export async function approveBudget(companyId: string, budgetId: string) {
-  const budget = await prisma.budget.findFirst({ where: { id: budgetId, companyId } });
-  if (!budget) throw new Error("Budget not found");
-  return prisma.budget.update({ where: { id: budgetId }, data: { status: "APPROVED" } });
-}
-
-export async function budgetVarianceReport(companyId: string, budgetId: string) {
-  const budget = await prisma.budget.findFirst({ where: { id: budgetId, companyId }, include: { lines: true } });
-  if (!budget) throw new Error("Budget not found");
-  const year = budget.financialYearId
-    ? await prisma.financialYear.findFirst({ where: { id: budget.financialYearId, companyId } })
-    : await prisma.financialYear.findFirst({ where: { companyId, isCurrent: true } });
-  const accounts = await prisma.account.findMany({ where: { companyId, id: { in: budget.lines.map((l) => l.accountId) } } });
-  const actuals = new Map<string, { debit: number; credit: number }>();
-  for (const m of await movements(companyId, { from: year?.startDate, to: year?.endDate })) {
-    const row = actuals.get(m.accountId) ?? { debit: 0, credit: 0 };
-    row.debit += m.debit;
-    row.credit += m.credit;
-    actuals.set(m.accountId, row);
-  }
-  const byAccount = new Map<string, number>();
-  for (const line of budget.lines) byAccount.set(line.accountId, money4((byAccount.get(line.accountId) ?? 0) + Number(line.amount)));
-  const rows = budgetVariance(
-    [...byAccount.entries()].map(([accountId, amount]) => {
-      const account = accounts.find((a) => a.id === accountId);
-      const actual = actuals.get(accountId) ?? { debit: 0, credit: 0 };
-      return {
-        key: account ? `${account.code} ${account.name}` : accountId,
-        budget: amount,
-        actual: account ? naturalBalance(asType(account.type), actual.debit, actual.credit) : 0,
-        income: account ? INCOME.has(account.type) : false,
-      };
-    }),
-  );
-  return { budget: { id: budget.id, name: budget.name, status: budget.status, year: year?.name ?? null }, rows };
-}
-
-const INCOME = new Set(["INCOME", "OTHER_INCOME"]);
-
 export async function listDimensions(companyId: string) {
   return prisma.dimension.findMany({ where: { companyId }, orderBy: [{ kind: "asc" }, { code: "asc" }] });
 }
 
-export async function createDimension(companyId: string, input: { kind: "COST_CENTRE" | "PROJECT"; code: string; name: string }) {
-  return prisma.dimension.create({ data: { companyId, kind: input.kind, code: input.code, name: input.name } });
+export async function createDimension(companyId: string, input: { kind: "COST_CENTRE" | "PROJECT"; code: string; name: string }, actor: Actor = {}) {
+  const code = input.code.trim();
+  if (await prisma.dimension.count({ where: { companyId, kind: input.kind, code } })) throw new Error(`${input.kind === "PROJECT" ? "Project" : "Cost centre"} ${code} already exists`);
+  const row = await prisma.dimension.create({ data: { companyId, kind: input.kind, code, name: input.name } });
+  await auditBooks(companyId, actor, "CREATE", "Dimension", row.id, { kind: row.kind, code: row.code, name: row.name });
+  return row;
 }
 
-export async function dimensionReport(companyId: string) {
-  const lines = await movements(companyId);
-  const groups = new Map<string, { key: string; debit: number; credit: number }>();
-  for (const line of lines) {
-    const key = line.costCentre || line.project || "Unassigned";
-    const row = groups.get(key) ?? { key, debit: 0, credit: 0 };
-    row.debit = money4(row.debit + line.debit);
-    row.credit = money4(row.credit + line.credit);
-    groups.set(key, row);
+export async function updateDimension(companyId: string, id: string, input: { name?: string; isActive?: boolean }, actor: Actor = {}) {
+  const before = await prisma.dimension.findFirst({ where: { id, companyId } });
+  if (!before) throw new Error("Dimension not found");
+  const row = await prisma.dimension.update({ where: { id }, data: { name: input.name ?? before.name, isActive: input.isActive ?? before.isActive } });
+  await auditBooks(companyId, actor, "UPDATE", "Dimension", id, { name: row.name, isActive: row.isActive }, { name: before.name, isActive: before.isActive });
+  return row;
+}
+
+/** Profit and loss per cost centre, project or branch, from posted ledger lines. */
+export async function dimensionReport(companyId: string, kind: "COST_CENTRE" | "PROJECT" | "BRANCH" = "COST_CENTRE", range: { from?: Date; to?: Date } = {}) {
+  const lines = await movements(companyId, range);
+  const pick = (l: (typeof lines)[number]) => (kind === "PROJECT" ? l.project : kind === "BRANCH" ? l.branchId : l.costCentre);
+  const rows = dimensionProfitAndLoss(lines.map((l) => ({ key: pick(l) || "Unassigned", type: l.type, debit: l.debit, credit: l.credit })));
+  const names = new Map<string, string>();
+  if (kind === "BRANCH") {
+    for (const b of await prisma.companyBranch.findMany({ where: { companyId } })) {
+      const name = b.name ?? b.code ?? b.externalErpBranchId;
+      names.set(b.id, name);
+      names.set(b.externalErpBranchId, name);
+    }
+  } else {
+    for (const d of await prisma.dimension.findMany({ where: { companyId, kind } })) names.set(d.code, d.name);
   }
-  return [...groups.values()];
+  return rows.map((r) => ({ ...r, name: names.get(r.key) ?? (r.key === "Unassigned" ? "Unassigned" : r.key) }));
 }
 
-export async function listControls(companyId: string) {
-  return prisma.controlItem.findMany({ where: { companyId }, orderBy: { code: "asc" } });
-}
-
-export async function saveControl(companyId: string, input: { code: string; title: string; category: string; status?: "OPEN" | "EFFECTIVE" | "DEFICIENT"; notes?: string }) {
-  return prisma.controlItem.upsert({
+export async function saveControl(
+  companyId: string,
+  input: { code: string; title: string; category: string; status?: "OPEN" | "EFFECTIVE" | "DEFICIENT"; notes?: string },
+  actor: Actor = {},
+) {
+  const before = await prisma.controlItem.findUnique({ where: { companyId_code: { companyId, code: input.code } } });
+  const row = await prisma.controlItem.upsert({
     where: { companyId_code: { companyId, code: input.code } },
     create: { companyId, code: input.code, title: input.title, category: input.category, status: input.status ?? "OPEN", notes: input.notes },
     update: { title: input.title, category: input.category, status: input.status ?? "OPEN", notes: input.notes },
   });
-}
-
-export async function listApprovals(companyId: string) {
-  return prisma.approvalRequest.findMany({ where: { companyId }, orderBy: { createdAt: "desc" } });
-}
-
-export const APPROVAL_ENTITY_TYPES = ["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment"] as const;
-export type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
-
-async function approvalTargetExists(companyId: string, entityType: ApprovalEntityType, id: string) {
-  const where = { id, companyId };
-  switch (entityType) {
-    case "Journal":
-      return (await prisma.journal.count({ where })) > 0;
-    case "Expense":
-      return (await prisma.expense.count({ where })) > 0;
-    case "ApBill":
-      return (await prisma.apBill.count({ where })) > 0;
-    case "Budget":
-      return (await prisma.budget.count({ where })) > 0;
-    case "TaxAdjustment":
-      return (await prisma.taxAdjustment.count({ where })) > 0;
-    case "FixedAssetImpairment":
-      return (await prisma.fixedAssetImpairment.count({ where })) > 0;
-  }
+  await auditBooks(companyId, actor, before ? "UPDATE" : "CREATE", "ControlItem", row.id, { code: row.code, status: row.status, title: row.title }, before && { status: before.status, title: before.title });
+  return row;
 }
 
 async function auditBooks(companyId: string, actor: Actor, action: string, entityType: string, entityId: string, afterJson?: unknown, beforeJson?: unknown) {
   if (!actor.erpUserId) return;
-  await writeAudit({ companyId, erpUserId: actor.erpUserId, erpRole: actor.erpRole, action, entityType, entityId, beforeJson, afterJson });
-}
-
-export async function requestApproval(
-  companyId: string,
-  input: { entityType: ApprovalEntityType; entityId: string; amount: number; reason?: string },
-  actor: Actor = {},
-) {
-  if (!(await approvalTargetExists(companyId, input.entityType, input.entityId))) {
-    throw new Error(`${input.entityType} ${input.entityId} was not found`);
-  }
-  const open = await prisma.approvalRequest.count({
-    where: { companyId, entityType: input.entityType, entityId: input.entityId, status: "PENDING" },
-  });
-  if (open) throw new Error(`${input.entityType} ${input.entityId} already has a pending approval`);
-  const row = await prisma.approvalRequest.create({
-    data: { companyId, entityType: input.entityType, entityId: input.entityId, amount: input.amount, reason: input.reason, requestedByErpUserId: actor.erpUserId },
-  });
-  await prisma.notification.create({
-    data: { companyId, title: "Approval waiting", body: `${input.entityType} ${input.entityId} needs approval.`, severity: "WARNING" },
-  });
-  await auditBooks(companyId, actor, "REQUEST_APPROVAL", "ApprovalRequest", row.id, { entityType: row.entityType, entityId: row.entityId, amount: input.amount });
-  return row;
-}
-
-export async function decideApproval(companyId: string, id: string, status: "APPROVED" | "REJECTED", actor: Actor = {}) {
-  const row = await prisma.approvalRequest.findFirst({ where: { id, companyId } });
-  if (!row) throw new Error("Approval not found");
-  if (row.status !== "PENDING") throw new Error(`This approval was already ${row.status.toLowerCase()}`);
-  if (row.requestedByErpUserId && actor.erpUserId && row.requestedByErpUserId === actor.erpUserId) {
-    throw new Error("The requester cannot approve their own item");
-  }
-  const decided = await prisma.approvalRequest.updateMany({
-    where: { id, status: "PENDING" },
-    data: { status, decidedByErpUserId: actor.erpUserId, decidedAt: new Date() },
-  });
-  if (!decided.count) throw new Error("This approval was decided by someone else a moment ago");
-  await auditBooks(companyId, actor, status === "APPROVED" ? "APPROVE" : "REJECT", "ApprovalRequest", id, { status }, { status: row.status });
-  return prisma.approvalRequest.findUniqueOrThrow({ where: { id } });
-}
-
-export async function listNotifications(companyId: string) {
-  return prisma.notification.findMany({ where: { companyId }, orderBy: { createdAt: "desc" }, take: 100 });
-}
-
-export async function markNotificationRead(companyId: string, id: string) {
-  const row = await prisma.notification.findFirst({ where: { id, companyId } });
-  if (!row) throw new Error("Notification not found");
-  return prisma.notification.update({ where: { id }, data: { readAt: new Date() } });
+  await writeAudit({ companyId, erpUserId: actor.erpUserId, erpRole: actor.erpRole, action, entityType, entityId, beforeJson: beforeJson ?? undefined, afterJson });
 }
 
 export async function listDocuments(companyId: string, entityType?: string, entityId?: string) {
@@ -616,9 +416,11 @@ export async function addDocument(
   input: { entityType: string; entityId: string; fileName: string; note?: string; contentText?: string },
   actor: Actor = {},
 ) {
-  return prisma.accountingDocument.create({
+  const row = await prisma.accountingDocument.create({
     data: { companyId, ...input, createdByErpUserId: actor.erpUserId },
   });
+  await auditBooks(companyId, actor, "ATTACH_DOCUMENT", input.entityType, input.entityId, { documentId: row.id, fileName: row.fileName });
+  return row;
 }
 
 export async function importJournalCsv(companyId: string, csv: string, journalDate: string, actor: Actor = {}) {
@@ -644,6 +446,7 @@ export async function importJournalCsv(companyId: string, csv: string, journalDa
     const batch = await prisma.importBatch.create({
       data: { companyId, kind: "JOURNAL", status: "FAILED", rowCount: lines.length, errorCount: errors.length, summaryJson: { errors }, createdByErpUserId: actor.erpUserId },
     });
+    await auditBooks(companyId, actor, "IMPORT_FAILED", "ImportBatch", batch.id, { kind: "JOURNAL", errors: errors.length });
     return { batch, journal: null };
   }
   return inTransaction(async () => {
@@ -651,6 +454,7 @@ export async function importJournalCsv(companyId: string, csv: string, journalDa
     const batch = await prisma.importBatch.create({
       data: { companyId, kind: "JOURNAL", status: "IMPORTED", rowCount: lines.length, errorCount: 0, summaryJson: { journalId: journal.id }, createdByErpUserId: actor.erpUserId },
     });
+    await auditBooks(companyId, actor, "IMPORT", "ImportBatch", batch.id, { kind: "JOURNAL", journalId: journal.id, rows: lines.length });
     return { batch, journal };
   });
 }
@@ -683,20 +487,24 @@ export async function createGroup(
   companyId: string,
   input: { name: string; members: Array<{ name: string; companyId?: string; ownershipPercent?: number }> },
   allowedCompanyIds: string[],
+  actor: Actor = {},
 ) {
   const members = input.members.map((m) => ({ name: m.name, companyId: m.companyId ?? companyId, ownershipPercent: m.ownershipPercent ?? 100 }));
   assertMembersAllowed(members, allowedCompanyIds);
   if (new Set(members.map((m) => m.companyId)).size !== members.length) throw new Error("A company can only be in a group once");
-  return prisma.companyGroup.create({
+  const row = await prisma.companyGroup.create({
     data: { ownerCompanyId: companyId, name: input.name, members: { create: members } },
     include: { members: true },
   });
+  await auditBooks(companyId, actor, "CREATE", "CompanyGroup", row.id, { name: row.name, members });
+  return row;
 }
 
 export async function addElimination(
   companyId: string,
   groupId: string,
   input: { description: string; lines: Array<{ accountCode: string; debit: number; credit: number }> },
+  actor: Actor = {},
 ) {
   const group = await prisma.companyGroup.findFirst({ where: { id: groupId, ownerCompanyId: companyId }, include: { members: true } });
   if (!group) throw new Error("Group not found");
@@ -707,7 +515,7 @@ export async function addElimination(
       throw new Error(`No company in ${group.name} has account ${code}`);
     }
   }
-  return prisma.elimination.create({
+  const row = await prisma.elimination.create({
     data: {
       companyId,
       groupId,
@@ -718,6 +526,8 @@ export async function addElimination(
     },
     include: { lines: true },
   });
+  await auditBooks(companyId, actor, "CREATE", "Elimination", row.id, { groupId, description: row.description, lines: input.lines });
+  return row;
 }
 
 export async function consolidateGroup(companyId: string, groupId: string, allowedCompanyIds: string[], asOf?: Date) {
@@ -747,76 +557,22 @@ export async function consolidateGroup(companyId: string, groupId: string, allow
   };
 }
 
-export async function createForecast(companyId: string, name: string, horizonMonths: number) {
-  const entries = await movements(companyId);
-  const byMonth = new Map<string, number>();
-  for (const line of entries) {
-    if (!["INCOME", "OTHER_INCOME", "EXPENSE", "OTHER_EXPENSE", "COST_OF_SALES"].includes(line.type)) continue;
-    const key = line.postingDate.toISOString().slice(0, 7);
-    const signed = naturalBalance(line.type, line.debit, line.credit);
-    const profitEffect = line.type === "INCOME" || line.type === "OTHER_INCOME" ? signed : -signed;
-    byMonth.set(key, money4((byMonth.get(key) ?? 0) + profitEffect));
-  }
-  const today = new Date();
-  const lastComplete = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
-  const months = [...byMonth.keys()].filter((key) => key <= lastComplete).sort();
-  const history: number[] = [];
-  const historyMonths: string[] = [];
-  if (months.length) {
-    let [y, m] = months[0].split("-").map(Number);
-    for (let key = months[0]; key <= lastComplete; key = `${y}-${String(m).padStart(2, "0")}`) {
-      historyMonths.push(key);
-      history.push(byMonth.get(key) ?? 0);
-      m += 1;
-      if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-    }
-  }
-  const result = linearForecast(history, horizonMonths);
-  const row = await prisma.forecastScenario.create({
-    data: { companyId, name, horizonMonths, resultJson: { months: historyMonths, history, forecast: result } },
-  });
-  return row;
-}
-
-export async function scanAnomalies(companyId: string) {
-  const journals = await prisma.journal.findMany({ where: { companyId, status: "POSTED" }, orderBy: { journalDate: "desc" }, take: 40 });
-  const amounts = journals.map((j) => Number(j.totalDebit)).reverse();
-  const flags = [];
-  for (const journal of journals.slice(0, 10)) {
-    const history = amounts.filter((n) => n !== Number(journal.totalDebit));
-    const score = anomalyScore(Number(journal.totalDebit), history.slice(-20));
-    if (!score.flag) continue;
-    const row = await prisma.anomalyFlag.create({ data: { companyId, journalId: journal.id, score: score.score, reason: score.reason } });
-    flags.push(row);
-  }
-  return flags;
-}
-
-export async function listAnomalies(companyId: string) {
-  return prisma.anomalyFlag.findMany({ where: { companyId }, orderBy: { createdAt: "desc" } });
-}
-
-export async function dismissAnomaly(companyId: string, id: string) {
-  const row = await prisma.anomalyFlag.findFirst({ where: { id, companyId } });
-  if (!row) throw new Error("Anomaly not found");
-  return prisma.anomalyFlag.update({ where: { id }, data: { status: "DISMISSED" } });
-}
-
 export async function listEsg(companyId: string) {
   const rows = await prisma.esgMeasure.findMany({ where: { companyId }, orderBy: { period: "desc" } });
   const statements = await getStatements(companyId);
   return rows.map((r) => ({ ...r, value: Number(r.value), intensity: esgIntensity(Number(r.value), statements.income.totalRevenue) }));
 }
 
-export async function saveEsg(companyId: string, input: { period: string; code: string; name: string; value: number; unit: string }) {
-  return prisma.esgMeasure.upsert({
-    where: { companyId_period_code: { companyId, period: input.period, code: input.code } },
+export async function saveEsg(companyId: string, input: { period: string; code: string; name: string; value: number; unit: string }, actor: Actor = {}) {
+  const where = { companyId_period_code: { companyId, period: input.period, code: input.code } };
+  const before = await prisma.esgMeasure.findUnique({ where });
+  const row = await prisma.esgMeasure.upsert({
+    where,
     create: { companyId, ...input },
     update: { name: input.name, value: input.value, unit: input.unit },
   });
+  await auditBooks(companyId, actor, before ? "UPDATE" : "CREATE", "EsgMeasure", row.id, input, before && { value: Number(before.value), unit: before.unit });
+  return row;
 }
 
 export async function listWorkflows(companyId: string) {
@@ -826,9 +582,11 @@ export async function listWorkflows(companyId: string) {
   });
 }
 
-export async function createWorkflow(companyId: string, input: { name: string; steps: string[] }) {
+export async function createWorkflow(companyId: string, input: { name: string; steps: string[] }, actor: Actor = {}) {
   if (input.steps.length < 1) throw new Error("A workflow needs at least one step");
-  return prisma.workflowTemplate.create({ data: { companyId, name: input.name, stepsJson: input.steps } });
+  const row = await prisma.workflowTemplate.create({ data: { companyId, name: input.name, stepsJson: input.steps } });
+  await auditBooks(companyId, actor, "CREATE", "WorkflowTemplate", row.id, input);
+  return row;
 }
 
 export async function startWorkflow(companyId: string, templateId: string, entityType: string, entityId: string, actor: Actor = {}) {
@@ -872,27 +630,67 @@ export async function advanceWorkflow(companyId: string, instanceId: string, act
 
 export async function issueApiKey(
   companyId: string,
-  input: { name: string; scopes?: ApiKeyScope[]; expiresAt?: Date },
+  input: { name: string; scopes?: ApiKeyScope[]; expiresAt?: Date; rateLimitPerMinute?: number },
   actor: Actor = {},
 ) {
   const scopes = [...new Set(input.scopes?.length ? input.scopes : (["report:view"] as ApiKeyScope[]))];
   if (input.expiresAt && input.expiresAt <= new Date()) throw new Error("The expiry date must be in the future");
+  const rateLimitPerMinute = checkRateLimit(input.rateLimitPerMinute ?? 120);
   const token = randomBytes(24).toString("hex");
   const prefix = token.slice(0, 8);
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const row = await prisma.apiCredential.create({
-    data: { companyId, name: input.name, prefix, tokenHash, scopes, expiresAt: input.expiresAt, createdByErpUserId: actor.erpUserId },
+    data: { companyId, name: input.name, prefix, tokenHash, scopes, expiresAt: input.expiresAt, rateLimitPerMinute, createdByErpUserId: actor.erpUserId },
   });
-  await auditBooks(companyId, actor, "ISSUE_API_KEY", "ApiCredential", row.id, { name: row.name, prefix, scopes, expiresAt: row.expiresAt });
-  return { id: row.id, name: row.name, prefix, token, scopes, expiresAt: row.expiresAt, createdAt: row.createdAt };
+  await auditBooks(companyId, actor, "ISSUE_API_KEY", "ApiCredential", row.id, { name: row.name, prefix, scopes, expiresAt: row.expiresAt, rateLimitPerMinute });
+  return { id: row.id, name: row.name, prefix, token, scopes, expiresAt: row.expiresAt, rateLimitPerMinute, createdAt: row.createdAt };
 }
 
-export async function listApiKeys(companyId: string) {
-  return prisma.apiCredential.findMany({
-    where: { companyId },
-    select: { id: true, name: true, prefix: true, scopes: true, expiresAt: true, lastUsedAt: true, revokedAt: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-  });
+function checkRateLimit(value: number) {
+  if (!Number.isInteger(value) || value < 1 || value > 6000) throw new Error("The rate limit must be a whole number from 1 to 6000 requests per minute");
+  return value;
+}
+
+export async function listApiKeys(companyId: string, now = new Date()) {
+  const [keys, counts] = await Promise.all([
+    prisma.apiCredential.findMany({
+      where: { companyId },
+      select: { id: true, name: true, prefix: true, scopes: true, expiresAt: true, rateLimitPerMinute: true, lastUsedAt: true, revokedAt: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.apiKeyUsage.groupBy({ by: ["credentialId"], where: { companyId, createdAt: { gte: new Date(now.getTime() - 86_400_000) } }, _count: { _all: true } }),
+  ]);
+  const last24h = new Map(counts.map((c) => [c.credentialId, c._count._all]));
+  return keys.map((k) => ({ ...k, requestsLast24h: last24h.get(k.id) ?? 0 }));
+}
+
+export async function setApiKeyRateLimit(companyId: string, id: string, rateLimitPerMinute: number, actor: Actor = {}) {
+  const row = await prisma.apiCredential.findFirst({ where: { id, companyId } });
+  if (!row) throw new Error("API key not found");
+  const updated = await prisma.apiCredential.update({ where: { id }, data: { rateLimitPerMinute: checkRateLimit(rateLimitPerMinute) } });
+  await auditBooks(companyId, actor, "UPDATE", "ApiCredential", id, { rateLimitPerMinute }, { rateLimitPerMinute: row.rateLimitPerMinute });
+  return { id, rateLimitPerMinute: updated.rateLimitPerMinute };
+}
+
+/** Recent calls made with a key, newest first, with totals by status for the last 24 hours. */
+export async function apiKeyUsage(companyId: string, id: string, limit = 100, now = new Date()) {
+  const key = await prisma.apiCredential.findFirst({ where: { id, companyId }, select: { id: true, name: true, prefix: true, rateLimitPerMinute: true } });
+  if (!key) throw new Error("API key not found");
+  const [calls, byStatus] = await Promise.all([
+    prisma.apiKeyUsage.findMany({ where: { credentialId: id }, orderBy: { createdAt: "desc" }, take: Math.min(Math.max(limit, 1), 500) }),
+    prisma.apiKeyUsage.groupBy({ by: ["status"], where: { credentialId: id, createdAt: { gte: new Date(now.getTime() - 86_400_000) } }, _count: { _all: true } }),
+  ]);
+  return {
+    key,
+    calls: calls.map(({ id: callId, method, path, status, ipAddress, createdAt }) => ({ id: callId, method, path, status, ipAddress, createdAt })),
+    last24h: byStatus.map((s) => ({ status: s.status, count: s._count._all })).sort((a, b) => (a.status ?? 0) - (b.status ?? 0)),
+  };
+}
+
+/** Removes API key usage older than `days` days. */
+export async function purgeApiKeyUsage(now = new Date(), days = 90) {
+  const { count } = await prisma.apiKeyUsage.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - days * 86_400_000) } } });
+  return count;
 }
 
 export async function revokeApiKey(companyId: string, id: string, actor: Actor = {}) {
@@ -904,21 +702,31 @@ export async function revokeApiKey(companyId: string, id: string, actor: Actor =
   return revoked;
 }
 
-export async function signDocument(companyId: string, input: { entityType: string; entityId: string; statement: string }, actor: Actor) {
-  if (!actor.erpUserId) throw new Error("A signed-in user is required");
-  return prisma.signatureRecord.create({
-    data: { companyId, entityType: input.entityType, entityId: input.entityId, statement: input.statement, signerErpUserId: actor.erpUserId },
-  });
+/** Default jobs every activated company should have; only created when missing. */
+export const DEFAULT_AUTOMATION = [{ name: "Daily anomaly scan", jobType: "ANOMALY_SCAN", schedule: "0 2 * * *" }] as const;
+
+export async function ensureDefaultAutomation(companyId: string) {
+  const existing = await prisma.automationJob.findMany({ where: { companyId }, select: { jobType: true } });
+  const have = new Set(existing.map((j) => j.jobType));
+  const created = [];
+  for (const job of DEFAULT_AUTOMATION) {
+    if (have.has(job.jobType)) continue;
+    created.push(await prisma.automationJob.create({ data: { companyId, ...job } }));
+  }
+  return created;
 }
 
 export async function listAutomation(companyId: string) {
+  await ensureDefaultAutomation(companyId);
   return prisma.automationJob.findMany({ where: { companyId }, orderBy: { name: "asc" } });
 }
 
-export async function createAutomation(companyId: string, input: { name: string; jobType: string; schedule: string }) {
+export async function createAutomation(companyId: string, input: { name: string; jobType: string; schedule: string }, actor: Actor = {}) {
   const schedule = input.schedule.trim().replace(/\s+/g, " ");
   if (!nextCronTime(parseCron(schedule), new Date())) throw new Error("This schedule never runs");
-  return prisma.automationJob.create({ data: { companyId, name: input.name, jobType: input.jobType, schedule } });
+  const row = await prisma.automationJob.create({ data: { companyId, name: input.name, jobType: input.jobType, schedule } });
+  await auditBooks(companyId, actor, "CREATE", "AutomationJob", row.id, { name: row.name, jobType: row.jobType, schedule });
+  return row;
 }
 
 /** True when the job's schedule has a run time between its last run (or creation) and `now`. */
@@ -937,36 +745,17 @@ export async function runAutomation(companyId: string, id: string, actor: Actor 
   let detail: unknown = null;
   try {
     if (job.jobType === "RECURRING_JOURNALS") detail = await runRecurring(companyId, new Date(), actor);
-    else if (job.jobType === "ANOMALY_SCAN") detail = await scanAnomalies(companyId);
+    else if (job.jobType === "ANOMALY_SCAN") detail = await scanAnomalies(companyId, actor);
     else if (job.jobType === "FX_REVALUE") {
       const rates = await prisma.exchangeRate.findMany({ where: { companyId }, distinct: ["currency"] });
       detail = [];
       for (const rate of rates) (detail as unknown[]).push(await revalueCurrency(companyId, rate.currency, actor));
     } else throw new Error(`Unknown job type ${job.jobType}`);
     await prisma.automationJob.update({ where: { id }, data: { lastRunAt: new Date(), lastStatus: "OK" } });
+    await auditBooks(companyId, actor, "RUN", "AutomationJob", id, { jobType: job.jobType, status: "OK" });
     return { status: "OK", detail };
   } catch (e) {
     await prisma.automationJob.update({ where: { id }, data: { lastRunAt: new Date(), lastStatus: "FAILED" } });
     throw e;
   }
-}
-
-export async function askAssistant(companyId: string, question: string) {
-  const statements = await getStatements(companyId);
-  const cash = statements.position.assets.filter((a) => a.code.startsWith("11")).reduce((s, a) => s + a.amount, 0);
-  const [customers, suppliers] = await Promise.all([
-    prisma.customer.aggregate({ where: { companyId }, _sum: { balance: true } }),
-    prisma.supplier.aggregate({ where: { companyId }, _sum: { balance: true } }),
-  ]);
-  const currency = (await prisma.currencySettings.findUnique({ where: { companyId } }))?.functionalCurrency ?? "RWF";
-  return {
-    answer: answerFromBooks(question, {
-      profit: statements.income.profit,
-      cash,
-      receivables: Number(customers._sum.balance ?? 0),
-      payables: Number(suppliers._sum.balance ?? 0),
-      currency,
-    }),
-    source: "Posted books",
-  };
 }

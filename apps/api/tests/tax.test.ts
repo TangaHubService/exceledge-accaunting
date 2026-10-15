@@ -99,7 +99,7 @@ describe("Phase 8 tax management", () => {
   });
 
   it("records adjustments, withholding filings and fiscal documents from sales events", async () => {
-    const suspense = await accountId("6600");
+    const suspense = await accountId("1900");
     const adj = await post("/adjustments", {
       adjustmentDate: "2026-01-20",
       taxType: "OUTPUT_VAT",

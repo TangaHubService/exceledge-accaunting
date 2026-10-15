@@ -14,7 +14,8 @@ import {
 } from "@exceledge/accounting-domain";
 import type { Prisma, TaxCode } from "@prisma/client";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import { inTransaction, prisma } from "../../lib/prisma";
+import { documentApprovalPlan, requestApproval } from "../approvals/approval.service";
 import { writeAudit } from "../audit/audit.service";
 import { createAndPostJournal } from "../journals/journal.service";
 import { glBalance, isoDay, startOfDay, endOfDay } from "../banking/banking.service";
@@ -470,7 +471,7 @@ export async function vatReport(companyId: string, from?: string, to?: string) {
       orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
     }),
     prisma.taxAdjustment.findMany({
-      where: { companyId, adjustmentDate: { gte: start, lte: end }, taxType: { in: ["OUTPUT_VAT", "INPUT_VAT"] } },
+      where: { companyId, status: "POSTED", adjustmentDate: { gte: start, lte: end }, taxType: { in: ["OUTPUT_VAT", "INPUT_VAT"] } },
       orderBy: { adjustmentDate: "asc" },
     }),
     prisma.taxPayment.findMany({
@@ -532,14 +533,82 @@ export async function vatReport(companyId: string, from?: string, to?: string) {
 
   // Adjustments are already in the GL gross; keep them out of vatReturnTotals so they are not double-counted.
   const totals = { ...vatReturnTotals({ output: outputGross, input: inputGross, adjustments: 0, paid: paidTotal }), adjustments: adjustmentNet };
+
+  // Zero-rated and exempt supplies never hit the VAT GL accounts; pull them from invoice/bill lines.
+  const taxCodes = await prisma.taxCode.findMany({
+    where: { companyId, taxType: { in: ["ZERO_RATED", "EXEMPT"] } },
+    select: { code: true, name: true, taxType: true },
+  });
+  const byCode = new Map(taxCodes.map((c) => [c.code, c]));
+  const codeList = [...byCode.keys()];
+  const [saleLines, purchaseLines] = codeList.length
+    ? await Promise.all([
+        prisma.arInvoiceLine.findMany({
+          where: {
+            taxCode: { in: codeList },
+            invoice: { companyId, status: "POSTED", invoiceDate: { gte: start, lte: end } },
+          },
+          include: { invoice: { select: { id: true, invoiceNumber: true, invoiceDate: true } } },
+          orderBy: [{ invoice: { invoiceDate: "asc" } }, { lineNumber: "asc" }],
+        }),
+        prisma.apBillLine.findMany({
+          where: {
+            taxCode: { in: codeList },
+            bill: { companyId, status: "POSTED", billDate: { gte: start, lte: end } },
+          },
+          include: { bill: { select: { id: true, billNumber: true, billDate: true } } },
+          orderBy: [{ bill: { billDate: "asc" } }, { lineNumber: "asc" }],
+        }),
+      ])
+    : [[], []];
+
+  const memoLine = (
+    id: string,
+    date: Date,
+    documentNumber: string,
+    description: string,
+    taxCode: string | null,
+    net: { toString(): string } | number,
+    side: "SALE" | "PURCHASE",
+  ) => {
+    const code = taxCode ? byCode.get(taxCode) : undefined;
+    return {
+      id,
+      date,
+      documentNumber,
+      description,
+      side,
+      taxCode: taxCode ?? "",
+      taxType: (code?.taxType ?? "EXEMPT") as "ZERO_RATED" | "EXEMPT",
+      taxName: code?.name ?? taxCode ?? "",
+      net: money(net),
+    };
+  };
+  const zeroRated = [
+    ...saleLines.filter((l) => byCode.get(l.taxCode ?? "")?.taxType === "ZERO_RATED").map((l) => memoLine(l.id, l.invoice.invoiceDate, l.invoice.invoiceNumber, l.description, l.taxCode, l.net, "SALE")),
+    ...purchaseLines.filter((l) => byCode.get(l.taxCode ?? "")?.taxType === "ZERO_RATED").map((l) => memoLine(l.id, l.bill.billDate, l.bill.billNumber, l.description, l.taxCode, l.net, "PURCHASE")),
+  ];
+  const exempt = [
+    ...saleLines.filter((l) => byCode.get(l.taxCode ?? "")?.taxType === "EXEMPT").map((l) => memoLine(l.id, l.invoice.invoiceDate, l.invoice.invoiceNumber, l.description, l.taxCode, l.net, "SALE")),
+    ...purchaseLines.filter((l) => byCode.get(l.taxCode ?? "")?.taxType === "EXEMPT").map((l) => memoLine(l.id, l.bill.billDate, l.bill.billNumber, l.description, l.taxCode, l.net, "PURCHASE")),
+  ];
+
   return {
     from: start,
     to: end,
     outputAccount: await accountName(companyId, defaults.outputTaxPayableId),
     inputAccount: await accountName(companyId, defaults.inputTaxReceivableId),
-    totals,
+    totals: {
+      ...totals,
+      zeroRatedSales: roundMoney(zeroRated.filter((l) => l.side === "SALE").reduce((s, l) => s + l.net, 0)),
+      zeroRatedPurchases: roundMoney(zeroRated.filter((l) => l.side === "PURCHASE").reduce((s, l) => s + l.net, 0)),
+      exemptSales: roundMoney(exempt.filter((l) => l.side === "SALE").reduce((s, l) => s + l.net, 0)),
+      exemptPurchases: roundMoney(exempt.filter((l) => l.side === "PURCHASE").reduce((s, l) => s + l.net, 0)),
+    },
     outputLines,
     inputLines,
+    zeroRated,
+    exempt,
     payments: paid.map((p) => ({
       id: p.id,
       number: p.number,
@@ -861,21 +930,23 @@ export async function reverseTaxPayment(companyId: string, id: string, input: { 
   return getTaxPayment(companyId, id);
 }
 
-export async function recordTaxAdjustment(
-  companyId: string,
-  input: {
-    adjustmentDate: string;
-    taxType: TaxType;
-    taxCodeId?: string;
-    taxAccountId?: string;
-    contraAccountId: string;
-    amount: number;
-    increasesLiability?: boolean;
-    reason: string;
-    reference?: string;
-  },
-  actor: Actor = {},
-) {
+type TaxAdjustmentInput = {
+  adjustmentDate: string;
+  taxType: TaxType;
+  taxCodeId?: string;
+  taxAccountId?: string;
+  contraAccountId: string;
+  amount: number;
+  increasesLiability?: boolean;
+  reason: string;
+  reference?: string;
+};
+
+export async function recordTaxAdjustment(companyId: string, input: TaxAdjustmentInput, actor: Actor = {}) {
+  return inTransaction(() => recordAdjustmentOnce(companyId, input, actor));
+}
+
+async function recordAdjustmentOnce(companyId: string, input: TaxAdjustmentInput, actor: Actor) {
   await ensureTaxSettings(companyId, actor);
   const amount = roundMoney(input.amount);
   if (!(amount > 0)) throw new Error("Amount must be greater than zero");
@@ -886,6 +957,7 @@ export async function recordTaxAdjustment(
   if (!contra) throw new Error("Contra account does not exist");
   if (!contra.isActive) throw new Error(`${contra.code} ${contra.name} is inactive`);
 
+  const plan = await documentApprovalPlan(companyId, "TaxAdjustment", amount);
   const number = await nextNumber(companyId, "TAX_ADJUSTMENT", "TXA");
   const adjustmentDate = startOfDay(input.adjustmentDate);
   const row = await prisma.taxAdjustment.create({
@@ -901,42 +973,64 @@ export async function recordTaxAdjustment(
       increasesLiability: input.increasesLiability !== false,
       reason: input.reason.trim(),
       reference: input.reference,
+      status: plan ? "PENDING_APPROVAL" : "POSTED",
       createdByErpUserId: actor.erpUserId,
     },
   });
+  if (plan) {
+    await audit(companyId, actor, "CREATE", "TaxAdjustment", row.id, { ...row, amount });
+    const approval = await requestApproval(companyId, { entityType: "TaxAdjustment", entityId: row.id, amount, plan }, actor);
+    return { ...presentAdjustment(row), journalId: null, journalNumber: null, approval };
+  }
+  const journal = await postAdjustmentJournal(companyId, row.id, actor);
+  return { ...presentAdjustment(row), journalId: journal.id, journalNumber: journal.journalNumber };
+}
+
+/** Posts a tax adjustment that was held for approval, once its approval is final. */
+export async function postPendingTaxAdjustment(companyId: string, id: string, actor: Actor = {}) {
+  const claimed = await prisma.taxAdjustment.updateMany({ where: { id, companyId, status: "PENDING_APPROVAL" }, data: { status: "POSTED" } });
+  if (!claimed.count) throw new Error("This tax adjustment is not waiting for approval");
+  return postAdjustmentJournal(companyId, id, actor);
+}
+
+function presentAdjustment(row: { id: string; number: string; adjustmentDate: Date; taxType: TaxType; amount: Prisma.Decimal | number; increasesLiability: boolean; reason: string; status: string }) {
+  return {
+    id: row.id,
+    number: row.number,
+    adjustmentDate: row.adjustmentDate,
+    taxType: row.taxType,
+    amount: money(row.amount),
+    increasesLiability: row.increasesLiability,
+    reason: row.reason,
+    status: row.status,
+  };
+}
+
+async function postAdjustmentJournal(companyId: string, id: string, actor: Actor) {
+  const row = await prisma.taxAdjustment.findUniqueOrThrow({ where: { id } });
   const lines = buildTaxAdjustmentLines({
-    taxAccountId,
-    contraAccountId: input.contraAccountId,
-    amount,
-    increase: input.increasesLiability !== false,
-    description: input.reason.trim(),
+    taxAccountId: row.taxAccountId,
+    contraAccountId: row.contraAccountId,
+    amount: money(row.amount),
+    increase: row.increasesLiability,
+    description: row.reason,
   });
   const journal = await postTax(
     companyId,
     {
-      journalDate: adjustmentDate,
-      description: `Tax adjustment ${number}: ${input.reason.trim()}`,
-      referenceNumber: input.reference || number,
+      journalDate: row.adjustmentDate,
+      description: `Tax adjustment ${row.number}: ${row.reason}`,
+      referenceNumber: row.reference || row.number,
       sourceDocumentType: "TaxAdjustment",
       sourceDocumentId: row.id,
-      sourceDocumentNumber: number,
+      sourceDocumentNumber: row.number,
       lines,
     },
     actor,
   );
-  await prisma.taxAdjustment.update({ where: { id: row.id }, data: { journalId: journal.id } });
-  await audit(companyId, actor, "POST", "TaxAdjustment", row.id, { ...row, amount, journalId: journal.id });
-  return {
-    id: row.id,
-    number,
-    adjustmentDate,
-    taxType: input.taxType,
-    amount,
-    increasesLiability: input.increasesLiability !== false,
-    reason: input.reason.trim(),
-    journalId: journal.id,
-    journalNumber: journal.journalNumber,
-  };
+  await prisma.taxAdjustment.update({ where: { id: row.id }, data: { journalId: journal.id, status: "POSTED" } });
+  await audit(companyId, actor, "POST", "TaxAdjustment", row.id, { ...row, status: "POSTED", journalId: journal.id });
+  return journal;
 }
 
 /* ── Filings ────────────────────────────────────────────── */

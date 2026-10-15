@@ -9,6 +9,10 @@ import {
   resolveCompany,
 } from "../../middleware/auth";
 import { inTransaction } from "../../lib/prisma";
+import { documentLines, notFoundStatus, periodQuery, sendPdf } from "../../lib/http-documents";
+import { exportFormat, sendReport } from "../../lib/report-export";
+import * as print from "../print/print.service";
+import { ageingDocument } from "../books/report-documents";
 import * as ar from "./ar.service";
 
 export const arRouter = Router();
@@ -44,7 +48,14 @@ arRouter.get("/dashboard", async (req: AuthedRequest, res) => {
 
 arRouter.get("/ageing", async (req: AuthedRequest, res) => {
   const asOf = typeof req.query.asOf === "string" ? req.query.asOf : undefined;
-  res.json({ success: true, data: await ar.ageingReport(req.companyId!, asOf) });
+  try {
+    const format = exportFormat(req.query.format);
+    const data = await ar.ageingReport(req.companyId!, asOf);
+    if (format) return await sendReport(res, await ageingDocument(req.companyId!, "ar", data), format);
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
 });
 
 arRouter.get("/customers", async (req: AuthedRequest, res) => {
@@ -127,6 +138,67 @@ arRouter.get("/customers/:id/statement", async (req: AuthedRequest, res) => {
   }
 });
 
+arRouter.get("/customers/:id/period-statement", async (req: AuthedRequest, res) => {
+  try {
+    const { from, to } = periodQuery.parse(req.query);
+    res.json({ success: true, data: await ar.customerPeriodStatement(req.companyId!, req.params.id, from, to) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/customers/:id/statement.pdf", async (req: AuthedRequest, res) => {
+  try {
+    const { from, to } = periodQuery.parse(req.query);
+    sendPdf(res, await print.customerStatementPdf(req.companyId!, req.params.id, from, to));
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/customers/:id/deposits", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.listDeposits(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices", async (req: AuthedRequest, res) => {
+  try {
+    const query = z
+      .object({
+        status: z.enum(["OPEN", "OVERDUE", "PAID", "ALL"]).optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        q: z.string().max(100).optional(),
+        page: z.coerce.number().int().min(1).optional(),
+        pageSize: z.coerce.number().int().min(1).max(500).optional(),
+      })
+      .parse(req.query);
+    res.json({ success: true, data: await ar.listInvoices(req.companyId!, query) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices/:id", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.getInvoice(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices/:id/pdf", async (req: AuthedRequest, res) => {
+  try {
+    sendPdf(res, await print.invoicePdf(req.companyId!, req.params.id));
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
 arRouter.post("/invoices", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z
@@ -134,7 +206,8 @@ arRouter.post("/invoices", requireCapability("ar:manage"), async (req: AuthedReq
         customerId: z.string().min(1),
         invoiceDate: z.string(),
         dueDate: z.string().optional(),
-        net: z.number().positive(),
+        net: z.number().positive().optional(),
+        lines: documentLines.optional(),
         tax: z.number().min(0).optional(),
         discount: z.number().min(0).optional(),
         description: z.string().optional(),

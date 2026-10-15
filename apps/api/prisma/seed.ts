@@ -246,7 +246,7 @@ async function seedBanking() {
   const cash = await mkAccount({ kind: "CASH", name: "Demo Till", glAccountId: await findAccount("1100"), dateOpened: "2026-01-01", custodian: "Demo Cashier" });
   await mkAccount({ kind: "PETTY_CASH", name: "Demo Petty Float", dateOpened: "2026-01-01" });
 
-  const suspense = await findAccount("6600");
+  const suspense = await findAccount("1900");
   const salaries = await findAccount("6100");
   const post = async (route: string, body: unknown) => expect(await api("POST", `/api/v1/banking${route}`, body), [201], `bank ${route}`);
   await post("/receipts", { financialAccountId: bank.id, transactionDate: "2026-09-26", reference: "DEMO-RC-1", partyType: "CUSTOMER", partyName: "Demo customer", lines: [{ accountId: suspense, amount: 250_000 }] });
@@ -363,7 +363,7 @@ async function seedJournal() {
   }
   log("gl", "posting demo adjustment journal…");
   const salaries = await findAccount("6100");
-  const suspense = await findAccount("6600");
+  const suspense = await findAccount("1900");
   const draft = expect(
     await api("POST", "/api/v1/journals", {
       journalDate: "2026-09-30", description: "Demo accrual adjustment",

@@ -4,6 +4,10 @@ import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as tax from "./tax.service";
 import { inTransaction } from "../../lib/prisma";
+import { notFoundStatus, sendPdf } from "../../lib/http-documents";
+import * as print from "../print/print.service";
+import { exportFormat, sendReport } from "../../lib/report-export";
+import { vatDocument } from "../books/report-documents";
 
 export const taxRouter = Router();
 
@@ -105,7 +109,23 @@ taxRouter.patch(
   }),
 );
 
-taxRouter.get("/reports/vat", handle((req) => tax.vatReport(req.companyId!, str(req.query.from), str(req.query.to))));
+taxRouter.get("/reports/vat", async (req: AuthedRequest, res) => {
+  try {
+    const format = exportFormat(req.query.format);
+    const data = await tax.vatReport(req.companyId!, str(req.query.from), str(req.query.to));
+    if (format) return await sendReport(res, await vatDocument(req.companyId!, data), format);
+    res.json({ success: true, data });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+taxRouter.get("/wht/certificates/:paymentId.pdf", async (req: AuthedRequest, res) => {
+  try {
+    sendPdf(res, await print.whtCertificatePdf(req.companyId!, req.params.paymentId));
+  } catch (e) {
+    fail(res, e, notFoundStatus(e));
+  }
+});
 taxRouter.get(
   "/ledger",
   handle((req) =>

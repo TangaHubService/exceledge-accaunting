@@ -12,6 +12,7 @@ import {
   nextCronTime,
   parseCron,
   periodCanClose,
+  realizedFxSettlement,
   revaluationDelta,
   trialBalanceTotals,
   unrealizedFxAdjustment,
@@ -104,6 +105,37 @@ describe("phases 11-20 books", () => {
     expect(revaluationDelta({ foreignBalance: -1000, bookFunctional: -1_300_000, closingRate: 1350 })).toBe(-50_000);
   });
 
+  it("realizes FX when a receipt or payment rate differs from the document rate", () => {
+    const ar = realizedFxSettlement({
+      cashAccountId: "bank",
+      controlAccountId: "ar",
+      fxGainAccountId: "gain",
+      fxLossAccountId: "loss",
+      amount: 100,
+      paymentRate: 1400,
+      allocations: [{ amount: 100, documentRate: 1300 }],
+      side: "AR",
+    });
+    expect(ar.find((l) => l.accountId === "bank")?.debit).toBe(140_000);
+    expect(ar.find((l) => l.accountId === "ar")?.credit).toBe(130_000);
+    expect(ar.find((l) => l.accountId === "gain")?.credit).toBe(10_000);
+    expect(ar.reduce((s, l) => s + l.debit - l.credit, 0)).toBe(0);
+
+    const ap = realizedFxSettlement({
+      cashAccountId: "bank",
+      controlAccountId: "ap",
+      fxGainAccountId: "gain",
+      fxLossAccountId: "loss",
+      amount: 100,
+      paymentRate: 1400,
+      allocations: [{ amount: 100, documentRate: 1300 }],
+      side: "AP",
+    });
+    expect(ap.find((l) => l.accountId === "ap")?.debit).toBe(130_000);
+    expect(ap.find((l) => l.accountId === "bank")?.credit).toBe(140_000);
+    expect(ap.find((l) => l.accountId === "loss")?.debit).toBe(10_000);
+  });
+
   it("finds the next run of a cron schedule", () => {
     expect(nextCronTime("0 2 * * *", new Date("2026-03-10T01:30:00Z"))?.toISOString()).toBe("2026-03-10T02:00:00.000Z");
     expect(nextCronTime("0 2 * * *", new Date("2026-03-10T02:00:00Z"))?.toISOString()).toBe("2026-03-11T02:00:00.000Z");
@@ -112,6 +144,13 @@ describe("phases 11-20 books", () => {
     expect(nextCronTime("30 8 * * 1", new Date("2026-10-14T00:00:00Z"))?.toISOString()).toBe("2026-10-19T08:30:00.000Z");
     expect(() => parseCron("61 * * * *")).toThrow();
     expect(() => parseCron("daily")).toThrow();
+  });
+
+  it("combines day and weekday the way standard cron does", () => {
+    const from = new Date("2026-10-14T00:00:00Z");
+    expect(nextCronTime("0 0 1,15 * 1", from)?.toISOString()).toBe("2026-10-15T00:00:00.000Z");
+    expect(nextCronTime("0 0 */2 * 1", from)?.toISOString()).toBe("2026-10-19T00:00:00.000Z");
+    expect(nextCronTime("0 0 31 * *", new Date("2026-10-31T00:00:00Z"))?.toISOString()).toBe("2026-12-31T00:00:00.000Z");
   });
 
   it("forecasts, scores anomalies, and answers from books", () => {

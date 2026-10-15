@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EmptyState, Field, Loadable, PageHeader, Pagination } from "../components/ui";
 import { Select } from "../components/Select";
 import { useCompany } from "../lib/company";
-import { amount, date, isoDay, moduleLabel } from "../lib/format";
+import { amount, calendarDate, date, isoDay, moduleLabel } from "../lib/format";
 import { useResource } from "../lib/session";
 import { TAX_TYPE_LABELS } from "../lib/tax";
 import type { TaxLedger, TaxType } from "../lib/types";
@@ -65,7 +65,7 @@ export function TaxLedgerPage() {
           <div className="panel">
             <div className="panel-head">
               <h2>
-                {date(r.from)} – {date(r.to)} · {currency}
+                {calendarDate(r.from)} – {calendarDate(r.to)} · {currency}
               </h2>
               <span className="muted">
                 Opening {amount(r.openingBalance)} · Closing {amount(r.closingBalance)}

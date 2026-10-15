@@ -7,16 +7,23 @@ import {
   buildExpenseLines,
   buildImpairmentLines,
   buildRevaluationLines,
-  depreciationCharge,
+  depreciationForMonths,
+  isDepreciationBoundary,
   netBookValue,
+  periodsBetween,
+  revaluationSplit,
   roundMoney,
+  shiftPeriod,
   type AssetStatus,
+  type DepreciationFrequency,
   type DepreciationMethod,
   type DisposalMethod,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
-import { prisma } from "../../lib/prisma";
+import type { FixedAsset } from "@prisma/client";
+import { inTransaction, lockForTransaction, prisma } from "../../lib/prisma";
+import { documentApprovalPlan, requestApproval } from "../approvals/approval.service";
 import { writeAudit } from "../audit/audit.service";
 import { endOfDay, isoDay, startOfDay } from "../banking/banking.service";
 import { createAndPostJournal } from "../journals/journal.service";
@@ -225,6 +232,7 @@ async function serializeAsset(companyId: string, id: string) {
       transfers: { orderBy: { transferDate: "desc" }, take: 10 },
       revaluations: { orderBy: { effectiveDate: "desc" }, take: 5 },
       impairments: { orderBy: { impairmentDate: "desc" }, take: 5 },
+      usages: { orderBy: { period: "desc" }, take: 24 },
     },
   });
   if (!a) throw new Error("Asset does not exist");
@@ -250,7 +258,13 @@ async function serializeAsset(companyId: string, id: string) {
     residualValue: residual,
     usefulLifeMonths: a.usefulLifeMonths,
     depreciationMethod: a.depreciationMethod,
+    depreciationFrequency: a.depreciationFrequency,
     ratePercent: a.ratePercent == null ? null : money(a.ratePercent),
+    totalUnits: a.totalUnits == null ? null : money(a.totalUnits),
+    unitsDepreciated: money(a.unitsDepreciated),
+    depreciatedMonths: a.depreciatedMonths,
+    revaluationSurplus: money(a.revaluationSurplus),
+    revaluationLossInPl: money(a.revaluationLossInPl),
     assetAccountId: a.assetAccountId,
     accumDepAccountId: a.accumDepAccountId,
     depExpenseAccountId: a.depExpenseAccountId,
@@ -300,7 +314,16 @@ async function serializeAsset(companyId: string, id: string) {
       fairValue: money(r.fairValue),
       amount: money(r.amount),
       increase: r.increase,
+      reserveAmount: money(r.reserveAmount),
+      plAmount: money(r.plAmount),
       journalId: r.journalId,
+    })),
+    usages: a.usages.map((u) => ({
+      id: u.id,
+      period: u.period,
+      units: money(u.units),
+      notes: u.notes,
+      locked: !!a.lastDepreciationPeriod && a.lastDepreciationPeriod >= u.period,
     })),
     impairments: a.impairments.map((i) => ({
       id: i.id,
@@ -308,6 +331,7 @@ async function serializeAsset(companyId: string, id: string) {
       recoverableAmount: money(i.recoverableAmount),
       lossAmount: money(i.lossAmount),
       reason: i.reason,
+      status: i.status,
       journalId: i.journalId,
     })),
   };
@@ -383,7 +407,9 @@ export async function registerAsset(
     acquisitionMethod?: string;
     usefulLifeMonths?: number;
     depreciationMethod?: DepreciationMethod;
+    depreciationFrequency?: DepreciationFrequency;
     ratePercent?: number;
+    totalUnits?: number;
     branch?: string;
     department?: string;
     costCentre?: string;
@@ -413,6 +439,10 @@ export async function registerAsset(
   const life = input.usefulLifeMonths ?? category.usefulLifeMonths;
   const rate = input.ratePercent ?? (category.ratePercent == null ? undefined : money(category.ratePercent));
   if (method === "REDUCING_BALANCE" && !(rate && rate > 0)) throw new Error("Reducing-balance assets need a depreciation rate percent");
+  if (method === "UNITS_OF_PRODUCTION" && !(input.totalUnits && input.totalUnits > 0)) {
+    throw new Error("Units-of-production assets need the total units the asset is expected to produce");
+  }
+  if (method === "SUM_OF_YEARS_DIGITS" && !(life > 0)) throw new Error("Sum-of-years-digits assets need a useful life");
   if (life < 0) throw new Error("Useful life cannot be negative");
 
   const defaults = await faDefaults(companyId);
@@ -434,7 +464,9 @@ export async function registerAsset(
       residualValue: residual,
       usefulLifeMonths: life,
       depreciationMethod: method,
+      depreciationFrequency: input.depreciationFrequency ?? "MONTHLY",
       ratePercent: rate ?? null,
+      totalUnits: method === "UNITS_OF_PRODUCTION" ? input.totalUnits : null,
       assetAccountId: category.assetAccountId ?? defaults.fixedAssetCostId,
       accumDepAccountId: category.accumDepAccountId ?? defaults.accumulatedDepreciationId,
       depExpenseAccountId: category.depExpenseAccountId ?? defaults.depreciationExpenseId,
@@ -521,41 +553,99 @@ function periodEndDate(period: string) {
   return new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
 }
 
+/** First month of the financial year that contains `period` (January when no year is set up). */
+async function yearStartMonth(companyId: string, period: string) {
+  const end = periodEndDate(period);
+  const year =
+    (await prisma.financialYear.findFirst({ where: { companyId, startDate: { lte: end }, endDate: { gte: end } }, orderBy: { startDate: "desc" } })) ??
+    (await prisma.financialYear.findFirst({ where: { companyId, isCurrent: true } }));
+  return year ? year.startDate.getUTCMonth() + 1 : 1;
+}
+
+const FREQUENCY_LABEL: Record<DepreciationFrequency, string> = { MONTHLY: "Monthly", QUARTERLY: "Quarterly", ANNUAL: "Annual" };
+
 export async function previewDepreciation(companyId: string, period: string) {
   await ensureFaCategories(companyId);
+  const periodEnd = periodEndDate(period);
+  const startMonth = await yearStartMonth(companyId, period);
   const assets = await prisma.fixedAsset.findMany({
     where: { companyId, status: { in: ["ACTIVE", "FULLY_DEPRECIATED"] } },
+    orderBy: { number: "asc" },
   });
   const items = [];
+  const skipped: Array<{ assetId: string; number: string; name: string; reason: string }> = [];
   for (const a of assets) {
     if (a.status === "FULLY_DEPRECIATED") continue;
     if (a.lastDepreciationPeriod && a.lastDepreciationPeriod >= period) continue;
     const existing = await prisma.fixedAssetDepreciation.findUnique({ where: { assetId_period: { assetId: a.id, period } } });
     if (existing) continue;
-    const charge = depreciationCharge(a.depreciationMethod as DepreciationMethod, {
-      cost: money(a.acquisitionCost),
-      residual: money(a.residualValue),
-      usefulLifeMonths: a.usefulLifeMonths,
-      ratePercent: a.ratePercent == null ? undefined : money(a.ratePercent),
-      accumulated: money(a.accumulatedDepreciation),
-    });
+    if (a.capitalizedAt && a.capitalizedAt > periodEnd) continue;
+    const frequency = a.depreciationFrequency as DepreciationFrequency;
+    const method = a.depreciationMethod as DepreciationMethod;
+    if (!isDepreciationBoundary(frequency, period, startMonth)) {
+      skipped.push({ assetId: a.id, number: a.number, name: a.name, reason: `${FREQUENCY_LABEL[frequency]} depreciation posts at the end of the financial ${frequency === "ANNUAL" ? "year" : "quarter"}` });
+      continue;
+    }
+    let months = 1;
+    if (frequency !== "MONTHLY") {
+      const from = a.lastDepreciationPeriod ? shiftPeriod(a.lastDepreciationPeriod, 1) : a.capitalizedAt ? isoDay(a.capitalizedAt).slice(0, 7) : period;
+      months = periodsBetween(from, period);
+      if (months <= 0) continue;
+    }
+    let units = 0;
+    if (method === "UNITS_OF_PRODUCTION") {
+      const used = await prisma.fixedAssetUsage.aggregate({
+        where: { assetId: a.id, period: { lte: period, ...(a.lastDepreciationPeriod ? { gt: a.lastDepreciationPeriod } : {}) } },
+        _sum: { units: true },
+      });
+      units = money(used._sum.units ?? 0);
+      if (!(units > 0)) {
+        skipped.push({ assetId: a.id, number: a.number, name: a.name, reason: "No units used recorded for this period" });
+        continue;
+      }
+    }
+    const charge = depreciationForMonths(
+      method,
+      {
+        cost: money(a.acquisitionCost),
+        residual: money(a.residualValue),
+        usefulLifeMonths: a.usefulLifeMonths,
+        ratePercent: a.ratePercent == null ? undefined : money(a.ratePercent),
+        accumulated: money(a.accumulatedDepreciation),
+        monthsElapsed: a.depreciatedMonths,
+        base: a.depreciationBase == null ? null : money(a.depreciationBase),
+        baseMonth: a.depreciationBaseMonth,
+        totalUnits: a.totalUnits == null ? null : money(a.totalUnits),
+        unitsDepreciated: money(a.unitsDepreciated),
+        units,
+      },
+      months,
+    );
     if (!(charge > 0)) continue;
     items.push({
       assetId: a.id,
       number: a.number,
       name: a.name,
+      method,
+      frequency,
+      months,
+      units,
       amount: charge,
       netBookValueAfter: roundMoney(assetNbv(a) - charge),
     });
   }
-  return { period, assetCount: items.length, totalAmount: roundMoney(items.reduce((s, i) => s + i.amount, 0)), items };
+  return { period, assetCount: items.length, totalAmount: roundMoney(items.reduce((s, i) => s + i.amount, 0)), items, skipped };
 }
 
 export async function runDepreciation(companyId: string, period: string, actor: Actor = {}) {
+  await lockForTransaction(`fa-depreciation:${companyId}`);
   const existing = await prisma.fixedAssetDepreciationRun.findUnique({ where: { companyId_period: { companyId, period } } });
   if (existing) throw new Error(`Depreciation for ${period} is already posted`);
   const preview = await previewDepreciation(companyId, period);
-  if (preview.assetCount === 0) throw new Error("No assets need depreciation for this period");
+  if (preview.assetCount === 0) {
+    const why = preview.skipped.slice(0, 5).map((s) => `${s.number}: ${s.reason}`);
+    throw new Error(`No assets need depreciation for this period${why.length ? ` (${why.join("; ")})` : ""}`);
+  }
   const defaults = await faDefaults(companyId);
   const assets = await prisma.fixedAsset.findMany({ where: { id: { in: preview.items.map((i) => i.assetId) } } });
   const byId = new Map(assets.map((a) => [a.id, a]));
@@ -626,7 +716,13 @@ export async function runDepreciation(companyId: string, period: string, actor: 
     });
     await prisma.fixedAsset.update({
       where: { id: a.id },
-      data: { accumulatedDepreciation: newAccum, lastDepreciationPeriod: period, status },
+      data: {
+        accumulatedDepreciation: newAccum,
+        lastDepreciationPeriod: period,
+        status,
+        depreciatedMonths: a.depreciatedMonths + item.months,
+        unitsDepreciated: roundMoney(money(a.unitsDepreciated) + item.units),
+      },
     });
   }
 
@@ -656,6 +752,29 @@ export async function listDepreciationRuns(companyId: string) {
     journalId: r.journalId,
     postedAt: r.postedAt.toISOString(),
   }));
+}
+
+/** Records (or corrects) the units a units-of-production asset used in a month, until that month is depreciated. */
+export async function recordUsage(companyId: string, id: string, input: { period: string; units: number; notes?: string }, actor: Actor = {}) {
+  periodEndDate(input.period);
+  await lockForTransaction(`fa-depreciation:${companyId}`);
+  const asset = await prisma.fixedAsset.findFirst({ where: { id, companyId } });
+  if (!asset) throw new Error("Asset does not exist");
+  if (asset.depreciationMethod !== "UNITS_OF_PRODUCTION") throw new Error("Usage is only recorded for units-of-production assets");
+  if (asset.status === "DISPOSED") throw new Error("Disposed assets cannot record usage");
+  if (asset.lastDepreciationPeriod && asset.lastDepreciationPeriod >= input.period) {
+    throw new Error(`Depreciation is already posted through ${asset.lastDepreciationPeriod}; usage for ${input.period} can no longer change`);
+  }
+  const units = roundMoney(input.units);
+  if (units < 0) throw new Error("Units used cannot be negative");
+  const before = await prisma.fixedAssetUsage.findUnique({ where: { assetId_period: { assetId: id, period: input.period } } });
+  const row = await prisma.fixedAssetUsage.upsert({
+    where: { assetId_period: { assetId: id, period: input.period } },
+    create: { companyId, assetId: id, period: input.period, units, notes: input.notes, createdByErpUserId: actor.erpUserId },
+    update: { units, notes: input.notes },
+  });
+  await audit(companyId, actor, before ? "UPDATE_USAGE" : "RECORD_USAGE", "FixedAsset", id, row, before ?? undefined);
+  return serializeAsset(companyId, id);
 }
 
 export async function transferAsset(
@@ -802,6 +921,7 @@ export async function revalueAsset(
   input: { effectiveDate: string; fairValue: number; valuationReference?: string },
   actor: Actor = {},
 ) {
+  await lockForTransaction(`fa-depreciation:${companyId}`);
   const asset = await prisma.fixedAsset.findFirst({ where: { id, companyId } });
   if (!asset) throw new Error("Asset does not exist");
   if (asset.status !== "ACTIVE" && asset.status !== "FULLY_DEPRECIATED") throw new Error("Only active assets can be revalued");
@@ -809,14 +929,29 @@ export async function revalueAsset(
   if (!defaults.assetRevaluationReserveId) throw new Error("Map an asset revaluation reserve account in company defaults");
   const carrying = assetNbv(asset);
   const fairValue = roundMoney(input.fairValue);
-  const amount = roundMoney(Math.abs(fairValue - carrying));
+  const split = revaluationSplit({
+    carrying,
+    fairValue,
+    surplusBalance: money(asset.revaluationSurplus),
+    lossInPl: money(asset.revaluationLossInPl),
+  });
+  const { amount, increase } = split;
   if (!(amount > 0)) throw new Error("Fair value equals current carrying amount");
-  const increase = fairValue > carrying;
+  if (fairValue <= 0) throw new Error("Revaluation would reduce asset cost to zero or below");
+  const residual = money(asset.residualValue);
+  assertResidualOk(fairValue, residual);
   const assetAccountId = asset.assetAccountId ?? defaults.fixedAssetCostId!;
+  const accumAccountId = asset.accumDepAccountId ?? defaults.accumulatedDepreciationId!;
+  const accumulated = money(asset.accumulatedDepreciation);
+  // Eliminate accum dep against cost, then move carrying amount to fair value (IAS 16 restatement).
   const lines = buildRevaluationLines({
     assetAccountId,
+    accumAccountId,
+    accumulated,
     reserveAccountId: defaults.assetRevaluationReserveId,
+    plAccountId: split.plAmount > 0 ? await revaluationLossAccount(companyId, defaults.revaluationLossId ?? null) : null,
     amount,
+    plAmount: split.plAmount,
     increase,
     description: `Revaluation ${asset.number}`,
   });
@@ -833,9 +968,6 @@ export async function revalueAsset(
     },
     actor,
   );
-  const newCost = roundMoney(money(asset.acquisitionCost) + (increase ? amount : -amount));
-  if (newCost <= 0) throw new Error("Revaluation would reduce asset cost to zero or below");
-  assertResidualOk(newCost, money(asset.residualValue));
   await prisma.fixedAssetRevaluation.create({
     data: {
       companyId,
@@ -845,6 +977,8 @@ export async function revalueAsset(
       fairValue,
       amount,
       increase,
+      reserveAmount: split.reserveAmount,
+      plAmount: split.plAmount,
       valuationReference: input.valuationReference,
       journalId: journal.id,
       createdByErpUserId: actor.erpUserId,
@@ -852,10 +986,35 @@ export async function revalueAsset(
   });
   await prisma.fixedAsset.update({
     where: { id },
-    data: { acquisitionCost: newCost, assetAccountId },
+    data: {
+      acquisitionCost: fairValue,
+      accumulatedDepreciation: 0,
+      assetAccountId,
+      accumDepAccountId: accumAccountId,
+      revaluationSurplus: split.surplusAfter,
+      revaluationLossInPl: split.lossInPlAfter,
+      depreciationBase: roundMoney(Math.max(0, fairValue - residual)),
+      depreciationBaseMonth: asset.depreciatedMonths,
+      status: fairValue > residual ? "ACTIVE" : "FULLY_DEPRECIATED",
+    },
   });
-  await audit(companyId, actor, "REVALUE", "FixedAsset", id, { fairValue, amount, increase, journalId: journal.id });
+  await audit(companyId, actor, "REVALUE", "FixedAsset", id, { fairValue, ...split, journalId: journal.id, restatedAccum: accumulated });
   return serializeAsset(companyId, id);
+}
+
+/** Profit-or-loss account for revaluation decreases (and their later reversal); created and mapped on first use. */
+async function revaluationLossAccount(companyId: string, mappedId: string | null) {
+  if (mappedId) return mappedId;
+  const account =
+    (await prisma.account.findFirst({ where: { companyId, code: "7130" } })) ??
+    (await prisma.account.create({
+      data: { companyId, code: "7130", name: "Revaluation loss", type: "OTHER_EXPENSE", isActive: true, systemProtected: false, allowManualPost: true },
+    }));
+  if ((account.type !== "OTHER_EXPENSE" && account.type !== "EXPENSE") || !account.isActive) {
+    throw new Error(`Account 7130 ${account.name} is not an active expense account; map a revaluation loss account in company defaults`);
+  }
+  await prisma.defaultPostingAccounts.update({ where: { companyId }, data: { revaluationLossId: account.id } });
+  return account.id;
 }
 
 export async function impairAsset(
@@ -864,39 +1023,20 @@ export async function impairAsset(
   input: { impairmentDate: string; recoverableAmount: number; reason?: string },
   actor: Actor = {},
 ) {
+  return inTransaction(() => impairOnce(companyId, id, input, actor));
+}
+
+async function impairOnce(companyId: string, id: string, input: { impairmentDate: string; recoverableAmount: number; reason?: string }, actor: Actor) {
+  await lockForTransaction(`fa-depreciation:${companyId}`);
   const asset = await prisma.fixedAsset.findFirst({ where: { id, companyId } });
   if (!asset) throw new Error("Asset does not exist");
-  if (asset.status !== "ACTIVE" && asset.status !== "FULLY_DEPRECIATED") throw new Error("Only active assets can be impaired");
-  const defaults = await faDefaults(companyId);
-  const carrying = assetNbv(asset);
   const recoverable = roundMoney(input.recoverableAmount);
-  if (recoverable < 0) throw new Error("Recoverable amount cannot be negative");
-  const loss = roundMoney(carrying - recoverable);
-  if (!(loss > 0)) throw new Error("Recoverable amount is not below carrying amount");
-  const lossAccountId = defaults.lossOnDisposalId ?? defaults.depreciationExpenseId;
-  const accumAccountId = asset.accumDepAccountId ?? defaults.accumulatedDepreciationId!;
-  if (!lossAccountId) throw new Error("Map a loss account for impairment");
-  const lines = buildImpairmentLines({
-    lossAccountId,
-    accumulatedAccountId: accumAccountId,
-    amount: loss,
-    description: `Impairment ${asset.number}`,
-  });
-  const journal = await postFaJournal(
-    companyId,
-    {
-      journalDate: startOfDay(input.impairmentDate),
-      description: `Asset impairment ${asset.number}`,
-      referenceNumber: asset.number,
-      sourceDocumentType: "FA_IMPAIRMENT",
-      sourceDocumentId: id,
-      sourceDocumentNumber: asset.number,
-      lines,
-    },
-    actor,
-  );
-  const newAccum = roundMoney(money(asset.accumulatedDepreciation) + loss);
-  await prisma.fixedAssetImpairment.create({
+  const { loss } = await impairmentPlan(companyId, asset, recoverable);
+  const plan = await documentApprovalPlan(companyId, "FixedAssetImpairment", loss);
+  if (plan && (await prisma.fixedAssetImpairment.count({ where: { companyId, assetId: id, status: "PENDING_APPROVAL" } }))) {
+    throw new Error(`An impairment of ${asset.number} is already waiting for approval`);
+  }
+  const impairment = await prisma.fixedAssetImpairment.create({
     data: {
       companyId,
       assetId: id,
@@ -904,19 +1044,83 @@ export async function impairAsset(
       recoverableAmount: recoverable,
       lossAmount: loss,
       reason: input.reason,
-      journalId: journal.id,
+      status: plan ? "PENDING_APPROVAL" : "POSTED",
       createdByErpUserId: actor.erpUserId,
     },
   });
+  if (plan) {
+    await audit(companyId, actor, "REQUEST_IMPAIRMENT", "FixedAsset", id, { impairmentId: impairment.id, loss, recoverable });
+    const approval = await requestApproval(companyId, { entityType: "FixedAssetImpairment", entityId: impairment.id, amount: loss, plan }, actor);
+    return { ...(await serializeAsset(companyId, id)), approval };
+  }
+  await postImpairmentJournal(companyId, impairment.id, actor);
+  return serializeAsset(companyId, id);
+}
+
+/** Posts an impairment that was held for approval, measured against the asset's carrying amount now. */
+export async function postPendingImpairment(companyId: string, impairmentId: string, actor: Actor = {}) {
+  await inTransaction(async () => {
+    await lockForTransaction(`fa-depreciation:${companyId}`);
+    const claimed = await prisma.fixedAssetImpairment.updateMany({ where: { id: impairmentId, companyId, status: "PENDING_APPROVAL" }, data: { status: "POSTED" } });
+    if (!claimed.count) throw new Error("This impairment is not waiting for approval");
+    await postImpairmentJournal(companyId, impairmentId, actor);
+  });
+}
+
+async function impairmentPlan(companyId: string, asset: FixedAsset, recoverable: number) {
+  if (asset.status !== "ACTIVE" && asset.status !== "FULLY_DEPRECIATED") throw new Error("Only active assets can be impaired");
+  if (recoverable < 0) throw new Error("Recoverable amount cannot be negative");
+  const loss = roundMoney(assetNbv(asset) - recoverable);
+  if (!(loss > 0)) throw new Error("Recoverable amount is not below carrying amount");
+  const defaults = await faDefaults(companyId);
+  const lossAccountId = defaults.lossOnDisposalId ?? defaults.depreciationExpenseId;
+  if (!lossAccountId) throw new Error("Map a loss account for impairment");
+  return { loss, lossAccountId, accumAccountId: asset.accumDepAccountId ?? defaults.accumulatedDepreciationId!, reserveAccountId: defaults.assetRevaluationReserveId };
+}
+
+async function postImpairmentJournal(companyId: string, impairmentId: string, actor: Actor) {
+  const impairment = await prisma.fixedAssetImpairment.findUniqueOrThrow({ where: { id: impairmentId } });
+  const asset = await prisma.fixedAsset.findUniqueOrThrow({ where: { id: impairment.assetId } });
+  const recoverable = money(impairment.recoverableAmount);
+  const { loss, lossAccountId, accumAccountId, reserveAccountId } = await impairmentPlan(companyId, asset, recoverable);
+  const surplus = money(asset.revaluationSurplus);
+  const reserveAmount = roundMoney(Math.min(loss, Math.max(0, surplus)));
+  const plAmount = roundMoney(loss - reserveAmount);
+  const revalued = (await prisma.fixedAssetRevaluation.count({ where: { assetId: asset.id } })) > 0;
+  const lines = buildImpairmentLines({
+    lossAccountId,
+    accumulatedAccountId: accumAccountId,
+    reserveAccountId,
+    amount: loss,
+    reserveAmount,
+    description: `Impairment ${asset.number}`,
+  });
+  const journal = await postFaJournal(
+    companyId,
+    {
+      journalDate: impairment.impairmentDate,
+      description: `Asset impairment ${asset.number}`,
+      referenceNumber: asset.number,
+      sourceDocumentType: "FA_IMPAIRMENT",
+      sourceDocumentId: asset.id,
+      sourceDocumentNumber: asset.number,
+      lines,
+    },
+    actor,
+  );
+  await prisma.fixedAssetImpairment.update({ where: { id: impairmentId }, data: { lossAmount: loss, journalId: journal.id } });
   await prisma.fixedAsset.update({
-    where: { id },
+    where: { id: asset.id },
     data: {
-      accumulatedDepreciation: newAccum,
+      accumulatedDepreciation: roundMoney(money(asset.accumulatedDepreciation) + loss),
+      revaluationSurplus: roundMoney(surplus - reserveAmount),
+      revaluationLossInPl: revalued ? roundMoney(money(asset.revaluationLossInPl) + plAmount) : undefined,
+      depreciationBase: roundMoney(Math.max(0, recoverable - money(asset.residualValue))),
+      depreciationBaseMonth: asset.depreciatedMonths,
       status: recoverable <= money(asset.residualValue) ? "FULLY_DEPRECIATED" : asset.status,
     },
   });
-  await audit(companyId, actor, "IMPAIR", "FixedAsset", id, { loss, recoverable, journalId: journal.id });
-  return serializeAsset(companyId, id);
+  await audit(companyId, actor, "IMPAIR", "FixedAsset", asset.id, { loss, reserveAmount, plAmount, recoverable, journalId: journal.id });
 }
 
 export async function disposeAsset(
@@ -925,6 +1129,7 @@ export async function disposeAsset(
   input: { disposalDate: string; disposalMethod: DisposalMethod; proceeds?: number; proceedsAccountId?: string; notes?: string },
   actor: Actor = {},
 ) {
+  await lockForTransaction(`fa-depreciation:${companyId}`);
   const asset = await prisma.fixedAsset.findFirst({ where: { id, companyId } });
   if (!asset) throw new Error("Asset does not exist");
   if (asset.status === "DISPOSED") throw new Error("Asset is already disposed");
@@ -940,6 +1145,9 @@ export async function disposeAsset(
     cost: money(asset.acquisitionCost),
     accumulated: money(asset.accumulatedDepreciation),
     proceeds,
+    revaluationSurplus: money(asset.revaluationSurplus),
+    reserveAccountId: defaults.assetRevaluationReserveId,
+    retainedEarningsId: defaults.retainedEarningsId,
     description: `Dispose ${asset.number}`,
   });
   const journal = await postFaJournal(
@@ -964,6 +1172,7 @@ export async function disposeAsset(
       disposalProceeds: proceeds,
       disposalJournalId: journal.id,
       disposalNotes: input.notes,
+      revaluationSurplus: 0,
     },
   });
   await audit(companyId, actor, "DISPOSE", "FixedAsset", id, updated, asset);
