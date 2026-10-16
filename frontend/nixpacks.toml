@@ -1,0 +1,15 @@
+# Dokploy: Build Type = Nixpacks, Root Directory = frontend
+# Publish Directory = dist
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "24"
+
+[phases.setup]
+nixPkgs = ["nodejs_24", "npm-11_x"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]

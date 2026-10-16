@@ -12,7 +12,7 @@ export default defineConfig({
     alias: {
       "@exceledge/accounting-domain": path.resolve(
         __dirname,
-        "../../packages/domain/src/index.ts",
+        "./packages/domain/src/index.ts",
       ),
     },
   },

@@ -1,22 +1,14 @@
 {
   "name": "exceledge-accounting",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "description": "Accounting monorepo: deploy backend/ and frontend/ as separate Dokploy roots",
   "scripts": {
-    "postinstall": "node scripts/ensure-workspace-links.js",
-    "build": "npm run build -w @exceledge/accounting-api",
-    "build:api": "npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-api",
-    "build:web": "npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-web",
-    "start": "npm run prisma:deploy -w @exceledge/accounting-api && npm run start -w @exceledge/accounting-api",
-    "dev:api": "npm run dev -w @exceledge/accounting-api",
-    "dev:web": "npm run dev -w @exceledge/accounting-web",
-    "test": "npm run test -w @exceledge/accounting-api && npm run test -w @exceledge/accounting-domain",
-    "typecheck": "npm run typecheck -w @exceledge/accounting-api && npm run typecheck -w @exceledge/accounting-domain",
-    "db:migrate": "npm run prisma:migrate -w @exceledge/accounting-api",
-    "db:generate": "npm run prisma:generate -w @exceledge/accounting-api"
+    "dev:api": "npm run dev --prefix backend",
+    "dev:web": "npm run dev --prefix frontend",
+    "build:api": "npm run build --prefix backend",
+    "build:web": "npm run build --prefix frontend",
+    "test": "npm test --prefix backend && npm test --prefix backend/packages/domain",
+    "sync:domain": "node scripts/sync-domain.js"
   },
   "engines": {
     "node": ">=20"

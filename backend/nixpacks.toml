@@ -1,0 +1,17 @@
+# Dokploy: Build Type = Nixpacks, Root Directory = backend
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "24"
+
+[phases.setup]
+nixPkgs = ["nodejs_24", "npm-11_x", "openssl"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run prisma:deploy && npm run start"
