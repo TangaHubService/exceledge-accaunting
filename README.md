@@ -20,7 +20,15 @@ exceledge-accaunting/
 - Root Directory: **`frontend`**
 - Publish Directory: **`dist`**
 - Port: **80**
-- Env: `VITE_ERP_URL`, `VITE_ERP_API_URL`, `VITE_ACCOUNTING_API_URL` (= backend domain)
+- **Build-time env** (Vite inlines these — redeploy after changing):
+
+```env
+VITE_ERP_URL=https://erp.exceledgecpa.com
+VITE_ERP_API_URL=https://erpapi.exceledgecpa.com/api
+VITE_ACCOUNTING_API_URL=https://<your-accounting-api-domain>
+```
+
+On the **ERP API** (`erpapi`), set `ACCOUNTING_WEB_URL=https://accounting.exceledgecpa.com` (or rely on the hardcoded allowlist) so browser login from Accounting is allowed by CORS.
 
 Open the **frontend** domain in the browser.
 

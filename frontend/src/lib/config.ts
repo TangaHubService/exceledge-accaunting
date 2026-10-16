@@ -3,10 +3,10 @@ function url(value: string | undefined, fallback: string) {
 }
 
 /** Main Excel Edge ERP web app: session handoff, password reset and the way back from Accounting. */
-export const ERP_URL = url(import.meta.env.VITE_ERP_URL, "http://localhost:5173");
+export const ERP_URL = url(import.meta.env.VITE_ERP_URL, "https://erp.exceledgecpa.com");
 
-/** Excel Edge ERP API, used for email sign-in. */
-export const ERP_API_URL = url(import.meta.env.VITE_ERP_API_URL, `${ERP_URL}/api`);
+/** Excel Edge ERP API, used for email sign-in. Always an absolute API host — never derive from ERP_URL. */
+export const ERP_API_URL = url(import.meta.env.VITE_ERP_API_URL, "https://erpapi.exceledgecpa.com/api");
 
 /**
  * Accounting API base. Empty = same origin as the web app (relative `/api/...`
