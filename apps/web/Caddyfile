@@ -1,0 +1,7 @@
+# SPA: serve built Vite assets; fall back to index.html for client routes.
+:80 {
+	root * /srv
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}
