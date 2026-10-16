@@ -1,0 +1,27 @@
+# Dokploy / Nixpacks build for the Accounting WEB (static SPA).
+# Same Git repo as the API — deploy as a SEPARATE Dokploy application.
+#
+# In Dokploy (web app):
+#   Build Type        = Nixpacks
+#   Root Directory    = empty (repo root — required for workspaces)
+#   Publish Directory = apps/web/dist
+#   Environment:
+#     NIXPACKS_CONFIG_FILE=nixpacks.web.toml
+#     VITE_ERP_URL=...
+#     VITE_ERP_API_URL=...
+#     VITE_ACCOUNTING_API_URL=https://<your-accounting-api-domain>
+#
+# Do NOT set Root Directory to apps/web — that drops packages/domain.
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "24"
+
+[phases.setup]
+nixPkgs = ["nodejs_24", "npm-11_x"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-web"]

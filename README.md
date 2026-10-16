@@ -18,28 +18,49 @@ npm run dev:web    # :5174
 
 ## Dokploy deploy
 
-This repo is an **npm workspaces monorepo**. The build context must always be the **repository root** so `packages/domain` resolves. Do **not** set Root Directory / Build Path to `apps/web` or `apps/api` — that strips workspace packages and fails with `domain package not found at /packages/domain`.
+This repo is an **npm workspaces monorepo**. Deploy **two Dokploy applications** from the **same Git repo**. Both must use **Root Directory = empty** (repo root) so `packages/domain` resolves. Do **not** set Root Directory to `apps/web` or `apps/api`.
 
-### Accounting API
+| App | Role | Config file |
+|-----|------|-------------|
+| Accounting **API** | Node server | [`nixpacks.toml`](./nixpacks.toml) (default) |
+| Accounting **WEB** | Static SPA | [`nixpacks.web.toml`](./nixpacks.web.toml) via env |
 
-- Build Type: **Nixpacks** (uses root [`nixpacks.toml`](./nixpacks.toml)), **or** Dockerfile
+### 1) Accounting API (you already have this)
+
+- Build Type: **Nixpacks**
 - Root Directory: **empty**
-- If Dockerfile: path `apps/api/Dockerfile`, Docker Context Path `.`
+- Leave Install / Build / Start empty (honours `nixpacks.toml`)
+- Attach API domain, e.g. `https://api.exceledgecpa.com` (port from the API, usually `4600`)
 
-### Accounting WEB (static SPA)
+### 2) Accounting WEB (separate Dokploy app, same repo)
 
-- Build Type: **Dockerfile** (do not use Nixpacks with Root Directory `apps/web`)
-- Root Directory: **empty**
-- Dockerfile path: `apps/web/Dockerfile`
-- Docker Context Path: `.` (repo root)
-- Port: **80**
-- Build-time env (optional Vite public URLs): `VITE_ERP_URL`, `VITE_ERP_API_URL`, `VITE_ACCOUNTING_API_URL`
+- Build Type: **Nixpacks**
+- Root Directory: **empty** (same as API — required)
+- **Publish Directory:** `apps/web/dist`
+- Environment variables:
 
-Local image check:
-
-```bash
-docker build -f apps/web/Dockerfile -t accounting-web .
+```env
+NIXPACKS_CONFIG_FILE=nixpacks.web.toml
+VITE_ERP_URL=https://erp.exceledgecpa.com
+VITE_ERP_API_URL=https://erpapi.exceledgecpa.com/api
+VITE_ACCOUNTING_API_URL=https://api.exceledgecpa.com
 ```
+
+(`VITE_ACCOUNTING_API_URL` = your **API** Dokploy domain. Required when web and API are on different hosts.)
+
+- Domains → Generate / add a **web** domain, e.g. `https://accounting.exceledgecpa.com`
+- Port for the static Nginx image is usually **80**
+
+### How you access them
+
+| What | URL |
+|------|-----|
+| Web UI | `https://<web-app-domain>` (the WEB Dokploy app) |
+| API | `https://<api-app-domain>` (the API Dokploy app) |
+
+Open the **web** domain in the browser. The SPA calls the API using `VITE_ACCOUNTING_API_URL` baked in at build time — redeploy web after changing those `VITE_*` values.
+
+Optional Dockerfile fallback: `apps/web/Dockerfile` (context `.`) if you prefer Docker over Nixpacks.
 
 ## Phase status
 

@@ -1,7 +1,8 @@
-# Dokploy / Nixpacks build for the Accounting API.
+# Dokploy / Nixpacks build for the Accounting API (default nixpacks.toml).
 # Build context MUST be the repository root (it holds package.json workspaces).
-# In Dokploy: Build Provider = NIXPACKS, Root Directory = empty, and leave
-# Install/Build/Start commands empty so this file is honoured.
+# In Dokploy (API app): Build Type = Nixpacks, Root Directory = empty, leave
+# Install/Build/Start empty so this file is honoured.
+# Web SPA uses a separate Dokploy app + nixpacks.web.toml (see README).
 # The API lives in an npm workspace; plain `npm i` re-resolves the private
 # workspace package (@exceledge/accounting-domain) against the public
 # registry and 404s. `npm ci` honours package-lock.json workspace links.
