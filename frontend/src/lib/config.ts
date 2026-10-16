@@ -26,4 +26,5 @@ export const erpLinks = {
   forgotPassword: `${ERP_URL}/forgot-password`,
   handoff: (returnTo: string) => `${ERP_URL}/accounting-handoff?return=${encodeURIComponent(returnTo)}`,
   login: `${ERP_API_URL}/auth/login`,
+  refresh: `${ERP_API_URL}/auth/refresh`,
 };

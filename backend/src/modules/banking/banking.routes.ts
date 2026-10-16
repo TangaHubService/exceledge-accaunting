@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as banking from "./banking.service";
 import * as recon from "./reconciliation.service";
+import { inTransaction } from "../../lib/prisma";
 
 export const bankingRouter = Router();
 
@@ -21,7 +22,8 @@ function fail(res: Response, e: unknown, status = 400) {
 type Handler = (req: AuthedRequest) => Promise<unknown>;
 const handle = (fn: Handler, status = 200) => async (req: AuthedRequest, res: Response) => {
   try {
-    res.status(status).json({ success: true, data: await fn(req) });
+    const data = req.method === "GET" ? await fn(req) : await inTransaction(async () => fn(req));
+    res.status(status).json({ success: true, data });
   } catch (e) {
     fail(res, e);
   }
@@ -37,7 +39,11 @@ const METHODS = ["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE", "EFT", "CARD
 const moneyBody = z.object({
   financialAccountId: z.string().min(1),
   transactionDate: day,
-  lines: z.array(allocation).min(1).max(50),
+  lines: z.array(allocation).min(1).max(50).optional(),
+  amount: money.optional(),
+  customerId: z.string().min(1).optional(),
+  supplierId: z.string().min(1).optional(),
+  allocations: z.array(z.object({ documentId: z.string().min(1), amount: money })).max(100).optional(),
   kind: z.enum(["RECEIPT", "PAYMENT", "BANK_CHARGE", "INTEREST"]).optional(),
   method: z.enum(METHODS).optional(),
   reference: text(120),

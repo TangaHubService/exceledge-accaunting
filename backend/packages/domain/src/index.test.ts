@@ -73,6 +73,13 @@ import {
   netBookValue,
   reducingBalanceMonthly,
   straightLineMonthly,
+  depreciationForMonths,
+  isDepreciationBoundary,
+  periodsBetween,
+  revaluationSplit,
+  shiftPeriod,
+  sumOfYearsDigitsMonthly,
+  unitsOfProductionCharge,
 } from "./index";
 
 describe("generateAccountingPeriods", () => {
@@ -490,7 +497,11 @@ describe("Inventory accounting rules", () => {
     expect(damage[1]).toMatchObject({ accountId: "inv", credit: 80 });
     expect(buildInventoryMovementLines(defaults, { kind: "TRANSFER_OUT", value: 60 })[0]).toMatchObject({ accountId: "git", debit: 60 });
     expect(buildInventoryMovementLines(defaults, { kind: "CUSTOMER_RETURN", value: 40 })[1]).toMatchObject({ accountId: "cogs", credit: 40 });
-    expect(buildInventoryMovementLines(defaults, { kind: "SALE", value: 90 })).toEqual([]);
+    expect(buildInventoryMovementLines(defaults, { kind: "SALE", value: 90 })).toEqual([
+      { accountId: "cogs", description: "Cost of goods sold", debit: 90, credit: 0 },
+      { accountId: "inv", description: "Inventory", debit: 0, credit: 90 },
+    ]);
+    expect(inventoryKindForErpMovement("RETURN_SUPPLIER", "OUT")).toBeNull();
     expect(buildInventoryMovementLines(defaults, { kind: "PURCHASE", value: 0 })).toEqual([]);
   });
 
@@ -828,5 +839,121 @@ describe("fixed assets (phase 10)", () => {
     expect(hasCapability("BRANCH_MANAGER", "fa:view")).toBe(true);
     expect(hasCapability("BRANCH_MANAGER", "fa:manage")).toBe(false);
     expect(hasCapability("SELLER", "fa:view")).toBe(false);
+  });
+});
+
+describe("fixed assets (wave C)", () => {
+  const syd = { cost: 1_560_000, residual: 60_000, usefulLifeMonths: 60, accumulated: 0, monthsElapsed: 0 };
+
+  it("spreads sum-of-years-digits by asset year and ends exactly at residual", () => {
+    expect(sumOfYearsDigitsMonthly(syd)).toBe(41_666.6667);
+    expect(sumOfYearsDigitsMonthly({ ...syd, monthsElapsed: 12, accumulated: 500_000 })).toBe(33_333.3333);
+    expect(sumOfYearsDigitsMonthly({ ...syd, monthsElapsed: 48, accumulated: 1_400_000 })).toBe(8_333.3333);
+    expect(depreciationForMonths("SUM_OF_YEARS_DIGITS", syd, 12)).toBeCloseTo(500_000, 2);
+    expect(depreciationForMonths("SUM_OF_YEARS_DIGITS", syd, 60)).toBe(1_500_000);
+    expect(depreciationForMonths("SUM_OF_YEARS_DIGITS", syd, 72)).toBe(1_500_000);
+    expect(sumOfYearsDigitsMonthly({ ...syd, monthsElapsed: 60, accumulated: 1_500_000 })).toBe(0);
+  });
+
+  it("gives a short final sum-of-years year its share over the months it has", () => {
+    const short = { cost: 600_000, residual: 0, usefulLifeMonths: 30, accumulated: 0, monthsElapsed: 0 };
+    expect(sumOfYearsDigitsMonthly(short)).toBe(25_000);
+    expect(depreciationForMonths("SUM_OF_YEARS_DIGITS", short, 12)).toBe(300_000);
+    expect(sumOfYearsDigitsMonthly({ ...short, monthsElapsed: 24, accumulated: 500_000 })).toBe(16_666.6667);
+    expect(depreciationForMonths("SUM_OF_YEARS_DIGITS", short, 30)).toBe(600_000);
+  });
+
+  it("restarts straight-line over the remaining life after a revaluation", () => {
+    const base = { cost: 1_200_000, residual: 0, usefulLifeMonths: 36, accumulated: 400_000 };
+    expect(straightLineMonthly({ ...base, monthsElapsed: 12 })).toBe(33_333.3333);
+    expect(straightLineMonthly({ cost: 1_360_000, residual: 0, usefulLifeMonths: 36, accumulated: 400_000, monthsElapsed: 12, base: 960_000, baseMonth: 12 })).toBe(40_000);
+    expect(straightLineMonthly({ cost: 900, residual: 0, usefulLifeMonths: 3, accumulated: 600, monthsElapsed: 2 })).toBe(300);
+    expect(straightLineMonthly({ cost: 1_000, residual: 0, usefulLifeMonths: 3, accumulated: 666.6666, monthsElapsed: 2 })).toBe(333.3334);
+  });
+
+  it("charges units of production on usage and never below residual", () => {
+    const uop = { cost: 10_000_000, residual: 1_000_000, accumulated: 0, totalUnits: 100_000, unitsDepreciated: 0 };
+    expect(unitsOfProductionCharge({ ...uop, units: 2_500 })).toBe(225_000);
+    expect(unitsOfProductionCharge({ ...uop, accumulated: 225_000, unitsDepreciated: 2_500, units: 4_000 })).toBe(360_000);
+    expect(unitsOfProductionCharge({ ...uop, accumulated: 8_500_000, unitsDepreciated: 95_000, units: 20_000 })).toBe(500_000);
+    expect(unitsOfProductionCharge({ ...uop, units: 0 })).toBe(0);
+    expect(() => unitsOfProductionCharge({ ...uop, totalUnits: null, units: 10 })).toThrow(/total estimated units/);
+    expect(depreciationForMonths("UNITS_OF_PRODUCTION", { ...uop, usefulLifeMonths: 0, units: 1_000 }, 3)).toBe(90_000);
+  });
+
+  it("finds quarter and year ends from the financial year start", () => {
+    expect(isDepreciationBoundary("MONTHLY", "2026-02")).toBe(true);
+    expect(isDepreciationBoundary("QUARTERLY", "2026-02")).toBe(false);
+    expect(isDepreciationBoundary("QUARTERLY", "2026-03")).toBe(true);
+    expect(isDepreciationBoundary("QUARTERLY", "2026-09", 7)).toBe(true);
+    expect(isDepreciationBoundary("QUARTERLY", "2026-08", 7)).toBe(false);
+    expect(isDepreciationBoundary("ANNUAL", "2026-12")).toBe(true);
+    expect(isDepreciationBoundary("ANNUAL", "2026-06", 7)).toBe(true);
+    expect(isDepreciationBoundary("ANNUAL", "2026-12", 7)).toBe(false);
+    expect(periodsBetween("2025-11", "2026-03")).toBe(5);
+    expect(periodsBetween("2026-04", "2026-03")).toBe(0);
+    expect(shiftPeriod("2025-12", 1)).toBe("2026-01");
+  });
+
+  it("splits a revaluation decrease between the surplus and profit or loss, and reverses the loss first on a later increase", () => {
+    const down = revaluationSplit({ carrying: 800_000, fairValue: 700_000, surplusBalance: 50_000, lossInPl: 0 });
+    expect(down).toEqual({ increase: false, amount: 100_000, reserveAmount: 50_000, plAmount: 50_000, surplusAfter: 0, lossInPlAfter: 50_000 });
+    const up = revaluationSplit({ carrying: 700_000, fairValue: 780_000, surplusBalance: 0, lossInPl: 50_000 });
+    expect(up).toEqual({ increase: true, amount: 80_000, reserveAmount: 30_000, plAmount: 50_000, surplusAfter: 30_000, lossInPlAfter: 0 });
+
+    const lines = buildRevaluationLines({ assetAccountId: "fa", reserveAccountId: "reserve", plAccountId: "loss", amount: 100_000, plAmount: 50_000, increase: false });
+    expect(lines.map((l) => [l.accountId, l.debit, l.credit])).toEqual([
+      ["reserve", 50_000, 0],
+      ["loss", 50_000, 0],
+      ["fa", 0, 100_000],
+    ]);
+    expect(() => buildRevaluationLines({ assetAccountId: "fa", reserveAccountId: "reserve", amount: 100, plAmount: 50, increase: false })).toThrow(/loss account/);
+
+    const restated = buildRevaluationLines({
+      assetAccountId: "fa",
+      accumAccountId: "accum",
+      accumulated: 200_000,
+      reserveAccountId: "reserve",
+      amount: 50_000,
+      increase: true,
+    });
+    expect(restated.map((l) => [l.accountId, l.debit, l.credit])).toEqual([
+      ["accum", 200_000, 0],
+      ["fa", 0, 200_000],
+      ["fa", 50_000, 0],
+      ["reserve", 0, 50_000],
+    ]);
+  });
+
+  it("charges an impairment against the revaluation surplus first and releases the surplus on disposal", () => {
+    const impair = buildImpairmentLines({ lossAccountId: "loss", accumulatedAccountId: "accum", reserveAccountId: "reserve", amount: 150_000, reserveAmount: 100_000 });
+    expect(impair.map((l) => [l.accountId, l.debit, l.credit])).toEqual([
+      ["reserve", 100_000, 0],
+      ["loss", 50_000, 0],
+      ["accum", 0, 150_000],
+    ]);
+    expect(() => buildImpairmentLines({ lossAccountId: "loss", accumulatedAccountId: "accum", amount: 100, reserveAmount: 150, reserveAccountId: "reserve" })).toThrow(/between zero/);
+
+    const sale = buildDisposalLines({
+      assetAccountId: "fa",
+      accumulatedAccountId: "accum",
+      proceedsAccountId: "bank",
+      gainAccountId: "gain",
+      lossAccountId: "loss",
+      cost: 650_000,
+      accumulated: 10_000,
+      proceeds: 700_000,
+      revaluationSurplus: 50_000,
+      reserveAccountId: "reserve",
+      retainedEarningsId: "re",
+    });
+    expect(sale.filter((l) => l.accountId === "reserve" || l.accountId === "re" || l.accountId === "gain").map((l) => [l.accountId, l.debit, l.credit])).toEqual([
+      ["gain", 0, 60_000],
+      ["reserve", 50_000, 0],
+      ["re", 0, 50_000],
+    ]);
+    expect(() =>
+      buildDisposalLines({ assetAccountId: "fa", accumulatedAccountId: "accum", cost: 100, accumulated: 100, proceeds: 0, revaluationSurplus: 10, reserveAccountId: "reserve" }),
+    ).toThrow(/retained earnings/);
   });
 });

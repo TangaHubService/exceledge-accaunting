@@ -1,4 +1,3 @@
-# Netlify: Base directory = frontend (or leave empty and use this file's base).
 [build]
   base = "frontend"
   publish = "dist"

@@ -83,10 +83,10 @@ describe("Phase 6 inventory accounting", () => {
     expect(duplicate.duplicate).toBe(true);
     await ingest(movement({ movementType: "PURCHASE", direction: "IN", quantity: 10, runningBalance: 20, unitCost: 130, reference: "PO-2" }));
 
-    // Sale of 7 at the ERP batch cost of 110 (770). The cost of goods sold is posted by the sale journal.
+    // Sale of 7 at the ERP batch cost of 110 (770). Cost of goods sold posts from the subledger, not the sale journal.
     const sale = await ingest(movement({ movementType: "SALE", direction: "OUT", quantity: 7, runningBalance: 13, unitCost: 110, reference: "S-1" }));
-    expect(sale.journal).toBeNull();
-    await ingest({
+    expect(sale.journal.status).toBe("POSTED");
+    const saleJournal = await ingest({
       eventId: "evt-sale-S-1",
       idempotencyKey: `${orgId}|POS|Sale|S-1|SALE_COMPLETED|1`,
       externalOrganizationId: String(orgId),
@@ -102,6 +102,7 @@ describe("Phase 6 inventory accounting", () => {
       paymentSplits: [{ paymentMethod: "CASH", amount: 1180 }],
       metadata: { paymentType: "CASH", cogs: 770 },
     });
+    expect(saleJournal.journal.lines).toHaveLength(3);
 
     // Damage of 2 with no ERP cost: weighted average 2 × 1,530 / 13 → 235.3846
     const damage = await ingest(movement({ movementType: "DAMAGE", direction: "OUT", quantity: 2, runningBalance: 11 }));
@@ -120,7 +121,8 @@ describe("Phase 6 inventory accounting", () => {
     expect(rows.find((r) => r.kind === "DAMAGE")).toMatchObject({ value: -235.3846, costSource: "AVERAGE" });
     expect(rows.find((r) => r.kind === "TRANSFER_OUT")?.value).toBe(-353.0769);
     expect(rows.find((r) => r.kind === "TRANSFER_IN")).toMatchObject({ value: 353.0769, costSource: "TRANSFER" });
-    expect(rows.find((r) => r.kind === "SALE")).toMatchObject({ value: -770, costSource: "ERP", journalNumber: null });
+    expect(rows.find((r) => r.kind === "SALE")).toMatchObject({ value: -770, costSource: "ERP" });
+    expect(rows.find((r) => r.kind === "SALE")?.journalNumber).toBeTruthy();
     expect(rows.find((r) => r.kind === "PURCHASE")?.journalNumber).toBeTruthy();
   });
 
@@ -162,6 +164,7 @@ describe("Phase 6 inventory accounting", () => {
     expect(recon.status).toBe(200);
     expect(recon.body.data).toMatchObject({ glValue: 1513.0769, subledgerValue: 1513.0769, difference: 0 });
     expect(recon.body.data.explained.saleCostDifference).toBe(0);
+    expect(recon.body.data.costOfSalesComparison).toMatchObject({ erpReported: 770, valuation: 770, difference: 0 });
     expect(recon.body.data.quantityDifferences).toEqual([]);
     expect(recon.body.data.failedEvents).toHaveLength(1);
     expect(recon.body.data.failedEvents[0].lastError).toMatch(/PRODUCTION_CONSUME/);

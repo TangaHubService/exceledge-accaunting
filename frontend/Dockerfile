@@ -1,4 +1,3 @@
-# Dokploy: Dockerfile path Dockerfile, Root Directory = frontend, Context = .
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package*.json ./

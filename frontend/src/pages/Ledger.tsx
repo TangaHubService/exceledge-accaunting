@@ -1,6 +1,9 @@
 import { Printer } from "lucide-react";
 import { useMemo } from "react";
+import { addDimensionParams, DimensionFilters } from "../components/DimensionFilters";
+import { ExportButtons } from "../components/ExportButtons";
 import { useFeedback } from "../components/feedback";
+import { Pagination } from "../components/Pagination";
 import { Select } from "../components/Select";
 import { Badge, EmptyState, Field, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
@@ -18,13 +21,18 @@ export function Ledger() {
   const accountId = query.get("account");
   const from = query.get("from") ?? "";
   const to = query.get("to") ?? "";
+  const page = Math.max(1, Number(query.get("page")) || 1);
+  const pageSize = Number(query.get("pageSize")) || 100;
 
   const accounts = useResource<Account[]>("/api/v1/coa");
   const range = new URLSearchParams();
-  if (from) range.set("from", `${from}T00:00:00.000Z`);
-  if (to) range.set("to", `${to}T23:59:59.999Z`);
-  const qs = range.toString();
-  const ledger = useResource<AccountLedger>(accountId ? `/api/v1/gl/accounts/${accountId}${qs ? `?${qs}` : ""}` : null);
+  if (from) range.set("from", from);
+  if (to) range.set("to", to);
+  addDimensionParams(range, query);
+  const exportPath = accountId ? `/api/v1/gl/accounts/${accountId}?${range}` : "";
+  range.set("page", String(page));
+  range.set("pageSize", String(pageSize));
+  const ledger = useResource<AccountLedger>(accountId ? `/api/v1/gl/accounts/${accountId}?${range}` : null);
 
   const options = useMemo(() => accountOptions(accounts.data ?? []), [accounts.data]);
   const account = accounts.data?.find((a) => a.id === accountId);
@@ -71,6 +79,7 @@ export function Ledger() {
         actions={
           account && (
             <>
+              <ExportButtons path={exportPath} filename={`ledger-${account.code}${to ? `-${to}` : ""}`} />
               <button type="button" className="btn" onClick={() => window.print()}>
                 <Printer size={16} aria-hidden="true" />
                 Print
@@ -113,6 +122,7 @@ export function Ledger() {
             All dates
           </button>
         )}
+        <DimensionFilters query={query} />
       </div>
 
       {!accountId ? (
@@ -122,11 +132,7 @@ export function Ledger() {
       ) : (
         <Loadable resource={ledger}>
           {(l) => {
-            const first = l.entries[0];
-            const broughtForward = first ? first.runningBalance - (first.debit - first.credit) : 0;
-            const last = l.entries[l.entries.length - 1];
-            const debits = l.entries.reduce((s, e) => s + e.debit, 0);
-            const credits = l.entries.reduce((s, e) => s + e.credit, 0);
+            const broughtForward = l.pageOpeningBalance;
             return (
               <div className="table-wrap">
                 <table className="table">
@@ -145,9 +151,9 @@ export function Ledger() {
                   <tbody>
                     {l.entries.length > 0 && (from || Math.abs(broughtForward) > 0.005) && (
                       <tr>
-                        <td className="muted">{from ? date(from) : ""}</td>
+                        <td className="muted">{page > 1 ? "" : from ? date(from) : ""}</td>
                         <td className="hide-sm" />
-                        <td className="muted">Balance brought forward</td>
+                        <td className="muted">{page > 1 ? "Balance from previous page" : "Opening balance"}</td>
                         <td />
                         <td />
                         <td className="num muted">{drCr(broughtForward)}</td>
@@ -155,7 +161,7 @@ export function Ledger() {
                     )}
                     {l.entries.map((e) => (
                       <tr key={e.id}>
-                        <td className="nowrap">{date(e.postingDate)}</td>
+                        <td className="nowrap">{date(e.transactionDate)}</td>
                         <td className="hide-sm">
                           <Link to={`/journals?id=${e.journalId}`} className="mono">
                             {e.journalNumber}
@@ -187,14 +193,24 @@ export function Ledger() {
                     <tfoot>
                       <tr>
                         <td colSpan={2} className="hide-sm" />
-                        <td>{from || to ? "Totals for the period" : "Totals"}</td>
-                        <td className="num">{amount(debits)}</td>
-                        <td className="num">{amount(credits)}</td>
-                        <td className="num">{drCr(last.runningBalance)}</td>
+                        <td>{from || to ? "Totals for the period and closing balance" : "Totals and closing balance"}</td>
+                        <td className="num">{amount(l.totals.debit)}</td>
+                        <td className="num">{amount(l.totals.credit)}</td>
+                        <td className="num">{drCr(l.closingBalance)}</td>
                       </tr>
                     </tfoot>
                   )}
                 </table>
+                <Pagination
+                  page={l.page}
+                  pageSize={l.pageSize}
+                  total={l.total}
+                  onPage={(p) => setQueryParam("page", p > 1 ? String(p) : null)}
+                  onPageSize={(n) => {
+                    setQueryParam("page", null);
+                    setQueryParam("pageSize", String(n));
+                  }}
+                />
               </div>
             );
           }}

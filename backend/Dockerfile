@@ -1,4 +1,3 @@
-# Dokploy: Dockerfile path Dockerfile, Root Directory = backend, Context = .
 FROM node:24-alpine AS build
 RUN apk add --no-cache openssl libc6-compat python3 make g++
 WORKDIR /app

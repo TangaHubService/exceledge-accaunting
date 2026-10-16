@@ -52,6 +52,15 @@ export function date(value: string | Date | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "—" : dateFormat.format(d);
 }
 
+const calendarFormat = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+
+/** Financial year and period bounds are UTC calendar days (ends at 23:59:59.999Z), not instants. */
+export function calendarDate(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(d.getTime()) ? "—" : calendarFormat.format(d);
+}
+
 export function dateTime(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;

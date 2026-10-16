@@ -2,7 +2,7 @@ import request from "supertest";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { activateCompany, authHeaders, resetCompany } from "./helpers";
+import { LEGACY_CONTROLS, activateCompany, authHeaders, resetCompany } from "./helpers";
 
 const app = createApp();
 const orgId = 97071;
@@ -51,7 +51,7 @@ describe("Phase 7 banking and reconciliation", () => {
   beforeAll(async () => {
     await prisma.$connect();
     await resetCompany(orgId);
-    admin = await activateCompany(app, orgId, { name: "Phase7 Co", tin: "777888999" });
+    admin = await activateCompany(app, orgId, { name: "Phase7 Co", tin: "777888999" }, { ...LEGACY_CONTROLS, approvalWorkflowEnabled: true });
     accountant = authHeaders(orgId, "ACCOUNTANT", 501);
     companyId = (await prisma.company.findFirstOrThrow({ where: { externalErpOrganizationId: String(orgId) } })).id;
   });
@@ -78,7 +78,7 @@ describe("Phase 7 banking and reconciliation", () => {
   });
 
   it("posts receipts, payments, transfers, cash counts and reversals through the GL", async () => {
-    const suspense = await accountId("6600");
+    const suspense = await accountId("1900");
     const salaries = await accountId("6100");
     const rounding = await accountId("6700");
 

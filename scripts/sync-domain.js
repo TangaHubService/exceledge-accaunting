@@ -1,16 +1,10 @@
 #!/usr/bin/env node
-/** Copy backend/packages/domain → frontend/packages/domain (keep both deploy roots in sync). */
+/** Copy backend/packages/domain → frontend/packages/domain */
 const fs = require("fs");
 const path = require("path");
-
 const root = path.resolve(__dirname, "..");
 const src = path.join(root, "backend", "packages", "domain");
 const dest = path.join(root, "frontend", "packages", "domain");
-
-function rimraf(p) {
-  fs.rmSync(p, { recursive: true, force: true });
-}
-
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
@@ -21,11 +15,6 @@ function copyDir(from, to) {
     else fs.copyFileSync(s, d);
   }
 }
-
-if (!fs.existsSync(path.join(src, "package.json"))) {
-  console.error("Missing", src);
-  process.exit(1);
-}
-rimraf(dest);
+fs.rmSync(dest, { recursive: true, force: true });
 copyDir(src, dest);
 console.log("Synced domain → frontend/packages/domain");

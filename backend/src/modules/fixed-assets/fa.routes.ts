@@ -1,8 +1,9 @@
-import { DEPRECIATION_METHODS, DISPOSAL_METHODS } from "@exceledge/accounting-domain";
+import { DEPRECIATION_FREQUENCIES, DEPRECIATION_METHODS, DISPOSAL_METHODS } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as fa from "./fa.service";
+import { inTransaction } from "../../lib/prisma";
 
 export const faRouter = Router();
 
@@ -20,7 +21,8 @@ function fail(res: Response, e: unknown, status = 400) {
 type Handler = (req: AuthedRequest) => Promise<unknown>;
 const handle = (fn: Handler, status = 200) => async (req: AuthedRequest, res: Response) => {
   try {
-    res.status(status).json({ success: true, data: await fn(req) });
+    const data = req.method === "GET" ? await fn(req) : await inTransaction(async () => fn(req));
+    res.status(status).json({ success: true, data });
   } catch (e) {
     fail(res, e);
   }
@@ -132,7 +134,9 @@ faRouter.post(
         acquisitionMethod: z.enum(["PURCHASE", "CAPITALIZATION", "DONATION", "TRANSFER", "OTHER"]).optional(),
         usefulLifeMonths: z.number().int().min(0).max(1200).optional(),
         depreciationMethod: method.optional(),
+        depreciationFrequency: z.enum(DEPRECIATION_FREQUENCIES).optional(),
         ratePercent: z.number().positive().max(100).optional(),
+        totalUnits: z.number().positive().max(1e13).optional(),
         branch: text(80),
         department: text(80),
         costCentre: text(80),
@@ -201,6 +205,14 @@ faRouter.post(
       })
       .parse(req.body);
     return fa.recordMaintenance(req.companyId!, req.params.id, body, actor(req));
+  }),
+);
+faRouter.put(
+  "/assets/:id/usage",
+  requireCapability("fa:manage"),
+  handle(async (req) => {
+    const body = z.object({ period, units: money0, notes: text(500) }).parse(req.body);
+    return fa.recordUsage(req.companyId!, req.params.id, body, actor(req));
   }),
 );
 faRouter.post(

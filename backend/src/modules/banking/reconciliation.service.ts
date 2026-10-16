@@ -15,6 +15,7 @@ import type { FinancialAccount } from "@prisma/client";
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { assertOpenPeriod } from "../journals/journal.service";
+import { notify } from "../notifications/notification.service";
 import { audit, endOfDay, glBalance, isoDay, loadFinancialAccount, makePayment, receiveMoney, startOfDay, type Actor } from "./banking.service";
 
 const DAY = 86_400_000;
@@ -527,6 +528,16 @@ export async function completeReconciliation(companyId: string, id: string, acto
   const rec = await getReconciliation(companyId, id);
   if (rec.status === "COMPLETED") throw new Error("This reconciliation is already completed");
   if (rec.workflowEnabled && rec.status !== "APPROVED") throw new Error("The reconciliation must be reviewed and approved before it is completed");
+  if (rec.checks.statementImported && !rec.checks.differenceZero) {
+    await notify({
+      companyId,
+      title: "Bank reconciliation out of balance",
+      body: `Completing the reconciliation was refused: it is out by ${rec.summary.difference}.`,
+      severity: "WARNING",
+      entityType: "BankReconciliation",
+      entityId: id,
+    });
+  }
   assertReady(rec);
   const account = await loadFinancialAccount(companyId, rec.financialAccountId);
   const snapshot = await position(companyId, account, startOfDay(rec.statementDate), rec.statementBalance);

@@ -43,8 +43,25 @@ export function authHeaders(orgId: number, role = "ADMIN", userId = 441) {
   return { Authorization: `Bearer ${signErpToken({ activeOrganizationId: orgId, role, userId })}` };
 }
 
+/**
+ * Approval and posting controls are on by default; suites that are not about them post their own
+ * January-2026 (backdated) manual journals, so they switch the controls off. Wave B tests pass their own.
+ */
+export const LEGACY_CONTROLS = {
+  approvalLevels: 1,
+  approvalWorkflowEnabled: false,
+  requireDifferentPoster: false,
+  backdatedTransactionPolicy: "ALLOW",
+  futureDatedTransactionPolicy: "ALLOW",
+};
+
 /** Runs company setup through the API and activates the books. Returns admin headers. */
-export async function activateCompany(app: Express, orgId: number, profile: { name: string; tin: string }) {
+export async function activateCompany(
+  app: Express,
+  orgId: number,
+  profile: { name: string; tin: string },
+  controls: Record<string, unknown> = LEGACY_CONTROLS,
+) {
   const headers = authHeaders(orgId);
   await request(app).get("/api/v1/setup/dashboard").set(headers);
   await request(app).put("/api/v1/setup/profile").set(headers).send({ registeredName: profile.name, taxIdentificationNumber: profile.tin, country: "RW" });
@@ -63,7 +80,7 @@ export async function activateCompany(app: Express, orgId: number, profile: { na
   await request(app).put("/api/v1/setup/party-defaults").set(headers).send({});
   await request(app).put("/api/v1/setup/banking").set(headers).send({});
   await request(app).post("/api/v1/setup/numbering/ensure").set(headers);
-  await request(app).put("/api/v1/setup/approvals").set(headers).send({ approvalLevels: 1 });
+  await request(app).put("/api/v1/setup/approvals").set(headers).send(controls);
   for (const key of ["FINANCIAL_YEAR_PERIODS", "CURRENCY", "ACCOUNTING_POLICIES"]) {
     await request(app).post(`/api/v1/setup/sections/${key}/approve`).set(headers);
   }

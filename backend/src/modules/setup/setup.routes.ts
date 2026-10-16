@@ -8,6 +8,8 @@ import {
   requireCapability,
   resolveCompany,
 } from "../../middleware/auth";
+import { GATED_ENTITY_TYPES } from "../approvals/approval.service";
+import * as branches from "./branch.service";
 import * as setup from "./setup.service";
 
 export const setupRouter = Router();
@@ -25,6 +27,41 @@ function actor(req: AuthedRequest) {
 setupRouter.get("/dashboard", async (req: AuthedRequest, res) => {
   const data = await setup.getSetupDashboard(req.companyId!);
   res.json({ success: true, data });
+});
+
+setupRouter.get("/branches", async (req: AuthedRequest, res) => {
+  res.json({ success: true, data: await branches.listBranches(req.companyId!) });
+});
+
+setupRouter.post("/branches", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({ externalErpBranchId: z.string().trim().min(1).max(64), name: z.string().trim().min(1).max(120), code: z.string().trim().max(30).nullable().optional() })
+      .parse(req.body);
+    res.status(201).json({ success: true, data: await branches.createBranch(req.companyId!, body, actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.post("/branches/sync", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const token = (req.headers.authorization ?? "").slice("Bearer ".length);
+    res.json({ success: true, data: await branches.syncBranchesFromErp(req.companyId!, token, actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.patch("/branches/:id", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({ name: z.string().trim().min(1).max(120).optional(), code: z.string().trim().max(30).nullable().optional(), isActive: z.boolean().optional() })
+      .parse(req.body);
+    res.json({ success: true, data: await branches.updateBranch(req.companyId!, req.params.id, body, actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
 });
 
 setupRouter.get("/snapshot", async (req: AuthedRequest, res) => {
@@ -287,6 +324,79 @@ setupRouter.post(
   },
 );
 
+const datePolicy = z
+  .string()
+  .transform((v) => v.toUpperCase())
+  .pipe(z.enum(["ALLOW", "REQUIRE_APPROVAL", "BLOCK"]));
+
+setupRouter.get("/numbering", async (req: AuthedRequest, res) => {
+  const data = await setup.listNumberSequences(req.companyId!);
+  res.json({ success: true, data });
+});
+
+setupRouter.put("/numbering/:documentType", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({
+        prefix: z.string().min(1).max(12).optional(),
+        includeYear: z.boolean().optional(),
+        includeMonth: z.boolean().optional(),
+        includeBranch: z.boolean().optional(),
+        sequenceLength: z.number().int().optional(),
+        resetFrequency: z.string().optional(),
+        startingNumber: z.number().int().optional(),
+      })
+      .parse(req.body);
+    const data = await setup.updateNumberSequence(req.companyId!, req.params.documentType.toUpperCase(), body, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.put("/default-accounts", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.record(z.string().min(1).nullable()).parse(req.body);
+    const data = await setup.updateDefaultAccounts(req.companyId!, body, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.put("/financial-years/:id", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ name: z.string().optional(), isCurrent: z.boolean().optional() }).parse(req.body);
+    const data = await setup.updateFinancialYear(req.companyId!, req.params.id, body, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.get("/opening-balances", async (req: AuthedRequest, res) => {
+  const data = await setup.listOpeningBalances(req.companyId!);
+  res.json({ success: true, data });
+});
+
+setupRouter.post("/opening-balances/:id/approve", requireCapability("setup:approve"), async (req: AuthedRequest, res) => {
+  try {
+    const data = await setup.approveOpeningBalances(req.companyId!, req.params.id, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+setupRouter.post("/opening-balances/:id/post", requireCapability("setup:approve"), async (req: AuthedRequest, res) => {
+  try {
+    const data = await setup.postOpeningBalances(req.companyId!, req.params.id, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
 setupRouter.put("/approvals", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
   try {
     const body = z
@@ -296,12 +406,16 @@ setupRouter.put("/approvals", requireCapability("setup:prepare"), async (req: Au
         approvalWorkflowEnabled: z.boolean().optional(),
         approvalLevels: z.number().int().min(1).max(5).optional(),
         amountBasedApprovalLimits: z.any().optional(),
-        backdatedTransactionPolicy: z.string().optional(),
-        futureDatedTransactionPolicy: z.string().optional(),
+        backdatedTransactionPolicy: datePolicy.optional(),
+        futureDatedTransactionPolicy: datePolicy.optional(),
         transactionEditingPolicy: z.string().optional(),
         transactionDeletionPolicy: z.string().optional(),
         supportingDocumentRequired: z.boolean().optional(),
         periodLockEnforcement: z.boolean().optional(),
+        requireDifferentPoster: z.boolean().optional(),
+        approvalRequiredFor: z.array(z.enum(GATED_ENTITY_TYPES)).optional(),
+        closeApprovalRequired: z.boolean().optional(),
+        budgetControl: z.enum(["OFF", "WARN", "BLOCK"]).optional(),
       })
       .parse(req.body);
     const data = await setup.upsertApprovalControls(req.companyId!, body, actor(req));
@@ -323,6 +437,8 @@ setupRouter.post("/opening-balances", requireCapability("setup:prepare"), async 
               memo: z.string().optional(),
               debit: z.number().nonnegative(),
               credit: z.number().nonnegative(),
+              partyType: z.enum(["CUSTOMER", "SUPPLIER"]).optional(),
+              partyRef: z.string().optional(),
             }),
           )
           .min(1),

@@ -1,5 +1,6 @@
 import { Check, Lock, Plus, Printer, Unlink, WandSparkles, X } from "lucide-react";
 import { type CSSProperties, type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { RecordLineForm, StartReconciliationForm, useConfirmAction } from "../components/BankingForms";
 import { type Column, DataTable } from "../components/DataTable";
 import { useFeedback } from "../components/feedback";
@@ -697,6 +698,15 @@ export function BankReconciliationDetail({ id }: { id: string }) {
 
             <section className="section">
               <ReconciliationReport rec={r} />
+            </section>
+
+            <section className="panel panel-body section no-print">
+              <AttachmentsPanel
+                entityType="BankReconciliation"
+                entityId={r.id}
+                title="Bank statements and working papers"
+                locked={r.status === "COMPLETED" ? "the reconciliation is completed" : null}
+              />
             </section>
           </>
         );

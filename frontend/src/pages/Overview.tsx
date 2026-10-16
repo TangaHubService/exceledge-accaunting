@@ -1,10 +1,12 @@
-import { type CSSProperties, type ReactNode, useMemo } from "react";
-import { BarsSkeleton, EmptyState, Figure, FiguresSkeleton, ListSkeleton, PageHeader, TableSkeleton } from "../components/ui";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { useFeedback } from "../components/feedback";
+import { Badge, BarsSkeleton, EmptyState, Figure, FiguresSkeleton, ListSkeleton, PageHeader, TableSkeleton } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { amount, date, money, plural, toNumber } from "../lib/format";
+import { amount, date, dateTime, money, plural, toNumber } from "../lib/format";
 import { Link, navigate } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
 import type { ApDashboard, ArDashboard, Customer, Journal, PostingException } from "../lib/types";
+import { OverviewKpis } from "./Insights";
 
 type Attention = { key: string; tone: "negative" | "warning" | "info"; what: string; why?: string; value?: ReactNode; to: string };
 
@@ -49,6 +51,89 @@ function AgeingColumns({
         <span className="amount">{money(total, currency)}</span>
       </div>
     </div>
+  );
+}
+
+type IntegrityScan = {
+  id: string;
+  ranAt: string;
+  trigger: "SCHEDULED" | "MANUAL";
+  findingCount: number;
+  errors: number;
+  checks: Array<{ check: string; label: string; count: number }>;
+  findings: Array<{ check: string; severity: "ERROR" | "WARNING"; message: string }>;
+};
+
+/** Last data integrity scan: ledgers vs subledgers, numbering gaps, unbalanced journals, negative cash. */
+function IntegrityCard() {
+  const { can, api } = useSession();
+  const { toast } = useFeedback();
+  const scan = useResource<IntegrityScan | null>("/api/v1/books/integrity");
+  const [running, setRunning] = useState(false);
+  const last = scan.data;
+
+  async function runNow() {
+    setRunning(true);
+    try {
+      const result = await api<IntegrityScan>("/api/v1/books/integrity/run", { method: "POST", body: "{}" });
+      toast(result.findingCount ? `${plural(result.findingCount, "integrity issue")} found` : "No integrity issues found");
+      scan.reload();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+    setRunning(false);
+  }
+
+  return (
+    <section>
+      <div className="section-head">
+        <h2 className="section-title">Data integrity</h2>
+        {can("close:manage") && (
+          <button type="button" className="btn small" disabled={running} onClick={() => void runNow()}>
+            {running ? "Checking…" : "Run now"}
+          </button>
+        )}
+      </div>
+      <div className="panel">
+        {scan.loading && scan.data === undefined ? (
+          <ListSkeleton rows={3} />
+        ) : !last ? (
+          <p className="all-clear">The books have not been checked yet. The check runs every day.</p>
+        ) : (
+          <>
+            <p className="muted" style={{ padding: "8px 12px", margin: 0 }}>
+              Last checked {dateTime(last.ranAt)}
+              {last.trigger === "MANUAL" ? " (run by hand)" : ""} ·{" "}
+              {last.findingCount ? (
+                <Badge tone={last.errors ? "negative" : "warning"}>{plural(last.findingCount, "issue")}</Badge>
+              ) : (
+                <Badge tone="positive">No issues</Badge>
+              )}
+            </p>
+            <table className="table">
+              <tbody>
+                {last.checks.map((c) => (
+                  <tr key={c.check}>
+                    <td>{c.label}</td>
+                    <td className={`num ${c.count ? "text-negative" : "muted"}`}>{c.count || "OK"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {last.findings.length > 0 && (
+              <ul className="attention">
+                {last.findings.slice(0, 5).map((f, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 18px" }}>
+                    <span className={`dot ${f.severity === "ERROR" ? "negative" : "warning"}`} />
+                    <span className="why">{f.message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -217,6 +302,8 @@ export function Overview() {
         )}
       </section>
       )}
+
+      <OverviewKpis />
 
       <div className="overview-grid">
         <section>
@@ -397,6 +484,12 @@ export function Overview() {
               </div>
             )}
           </section>
+        </div>
+      )}
+
+      {can("report:view") && (
+        <div className="overview-grid section">
+          <IntegrityCard />
         </div>
       )}
     </>

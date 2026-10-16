@@ -6,6 +6,7 @@ import { amount, date, humanize, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
 import type { AccountType, ApAdvance, ApBill, ApPayment, ApPaymentMethod, Supplier } from "../lib/types";
 import { SettlementAccountField } from "./BankingForms";
+import { emptyLine, EntryModeSwitch, LineItemsEditor, type LineDraft, linesPayload, priceLines, useLineTaxCodes } from "./Documents";
 import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
 import { Select, type SelectOption } from "./Select";
 import { Drawer, Field, Skeleton } from "./ui";
@@ -270,6 +271,9 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
   const [net, setNet] = useState("");
   const [tax, setTax] = useState("");
   const [discount, setDiscount] = useState("");
+  const [lined, setLined] = useState(false);
+  const taxCodes = useLineTaxCodes("purchase");
+  const [lines, setLines] = useState<LineDraft[]>(() => [emptyLine()]);
   const { busy, error, run } = useSubmit(onSaved);
   const expenseOptions = useAccountOptions(EXPENSE_TYPES, "Supplier's default account");
 
@@ -283,7 +287,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!Number.isFinite(n) || n <= 0 || !supplier) return;
+    if (!supplier || (lined ? priceLines(lines, taxCodes).gross <= 0 : !Number.isFinite(n) || n <= 0)) return;
     void run(async () => {
       const bill = await api<{ billNumber: string }>("/api/v1/ap/bills", {
         method: "POST",
@@ -295,9 +299,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
           poReference: poReference.trim() || undefined,
           grnReference: grnReference.trim() || undefined,
           expenseAccountId: expenseAccountId || undefined,
-          net: n,
-          tax: t || undefined,
-          discount: d || undefined,
+          ...(lined ? { lines: linesPayload(lines) } : { net: n, tax: t || undefined, discount: d || undefined }),
           description: description.trim() || undefined,
         }),
       });
@@ -356,26 +358,33 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
           </Field>
         </div>
 
-        <div className="form-section-title" style={{ marginTop: 22 }}>Amounts ({currency})</div>
-        <div className="form-grid">
-          <Field label="Amount before VAT" required className="span-2">
-            <MoneyInput value={net} onChange={setNet} required />
-          </Field>
-          <Field label="Input VAT" hint="As shown on the supplier's EBM invoice">
-            <MoneyInput value={tax} onChange={setTax} placeholder="0" />
-          </Field>
-          <Field label="Discount received">
-            <MoneyInput value={discount} onChange={setDiscount} placeholder="0" />
-          </Field>
-        </div>
-        <SummaryRows
-          rows={[
-            ["Amount before VAT", amount(Number.isFinite(n) ? n : 0)],
-            ["Input VAT", amount(t)],
-            ...(d ? ([["Discount", `−${amount(d)}`]] as Array<[ReactNode, ReactNode]>) : []),
-            ["Amount owed", money(total, currency), true],
-          ]}
-        />
+        <EntryModeSwitch lined={lined} onChange={setLined} />
+        <div className="form-section-title" style={{ marginTop: 16 }}>Amounts ({currency})</div>
+        {lined ? (
+          <LineItemsEditor lines={lines} onChange={setLines} side="purchase" codes={taxCodes} currency={currency} />
+        ) : (
+          <>
+            <div className="form-grid">
+              <Field label="Amount before VAT" required className="span-2">
+                <MoneyInput value={net} onChange={setNet} required />
+              </Field>
+              <Field label="Input VAT" hint="As shown on the supplier's EBM invoice">
+                <MoneyInput value={tax} onChange={setTax} placeholder="0" />
+              </Field>
+              <Field label="Discount received">
+                <MoneyInput value={discount} onChange={setDiscount} placeholder="0" />
+              </Field>
+            </div>
+            <SummaryRows
+              rows={[
+                ["Amount before VAT", amount(Number.isFinite(n) ? n : 0)],
+                ["Input VAT", amount(t)],
+                ...(d ? ([["Discount", `−${amount(d)}`]] as Array<[ReactNode, ReactNode]>) : []),
+                ["Amount owed", money(total, currency), true],
+              ]}
+            />
+          </>
+        )}
       </form>
     </Drawer>
   );
@@ -632,6 +641,48 @@ export function ReversePaymentForm({ payment, onClose, onSaved }: { payment: ApP
           </Field>
           <Field label="Reason" className="span-2">
             <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Transfer returned by the bank" />
+          </Field>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
+export function VoidBillForm({ bill, onClose, onSaved }: { bill: ApBill; onClose: () => void; onSaved: () => void }) {
+  const { api } = useSession();
+  const { currency } = useCompany();
+  const [voidDate, setVoidDate] = useState(isoDay());
+  const [reason, setReason] = useState("");
+  const { busy, error, run } = useSubmit(onSaved);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!reason.trim()) return;
+    void run(async () => {
+      await api(`/api/v1/ap/bills/${bill.id}/void`, { method: "POST", body: JSON.stringify({ reason: reason.trim(), voidDate }) });
+      return `Bill ${bill.billNumber} voided`;
+    });
+  }
+
+  return (
+    <Drawer
+      title={`Void bill ${bill.billNumber}`}
+      subtitle="Posts the exact reverse of the bill's journal and removes it from what you owe. This can't be undone."
+      onClose={onClose}
+      footer={<Footer onCancel={onClose} busy={busy} label="Void bill" formId="void-bill-form" danger />}
+    >
+      <form id="void-bill-form" onSubmit={submit}>
+        <FormError message={error} />
+        <p className="small" style={{ marginTop: 0 }}>
+          {money(bill.gross, currency)} comes off what you owe {bill.supplierName}
+          {bill.supplierInvoiceNumber && `, and invoice number ${bill.supplierInvoiceNumber} can be entered again`}.
+        </p>
+        <div className="form-grid">
+          <Field label="Reason" required className="span-2">
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Entered twice" maxLength={300} required />
+          </Field>
+          <Field label="Void date" required hint="Must fall in an open period">
+            <input className="input" type="date" value={voidDate} min={bill.billDate.slice(0, 10)} onChange={(e) => setVoidDate(e.target.value)} required />
           </Field>
         </div>
       </form>

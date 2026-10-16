@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { methodLabel, PaymentForm, ReversePaymentForm } from "../components/ApForms";
 import { type Column, DataTable } from "../components/DataTable";
+import { PdfButton } from "../components/Documents";
 import { Badge, EmptyState, Loadable, PageHeader } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, moduleLabel, money, plural } from "../lib/format";
@@ -70,6 +71,26 @@ export function SupplierPayments() {
       render: (p) => <span className={p.status === "REVERSED" ? "muted strike" : "strong"}>{amount(p.amount)}</span>,
     },
     { key: "status", header: <span className="sr-only">Status</span>, width: 96, render: (p) => (p.status === "REVERSED" ? <Badge tone="negative">Reversed</Badge> : null) },
+    {
+      key: "remittance",
+      header: <span className="sr-only">Remittance advice</span>,
+      width: 120,
+      render: (p) => <PdfButton path={`/api/v1/ap/payments/${p.id}/remittance.pdf`} filename={`remittance-${p.paymentNumber}.pdf`} label="Remittance" />,
+    },
+    ...(can("tax:view")
+      ? [
+          {
+            key: "whtCertificate",
+            header: <span className="sr-only">Withholding certificate</span>,
+            width: 130,
+            className: "hide-sm",
+            render: (p: ApPayment) =>
+              p.withholdingTax > 0 && p.status === "POSTED" ? (
+                <PdfButton path={`/api/v1/tax/wht/certificates/${p.id}.pdf`} filename={`wht-certificate-${p.paymentNumber}.pdf`} label="WHT certificate" />
+              ) : null,
+          },
+        ]
+      : []),
     ...(can("ap:manage")
       ? [
           {

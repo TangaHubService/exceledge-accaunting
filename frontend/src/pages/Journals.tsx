@@ -1,32 +1,54 @@
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { type Column, DataTable } from "../components/DataTable";
 import { useFeedback } from "../components/feedback";
+import { Select } from "../components/Select";
 import { Badge, Drawer, EmptyState, Loadable, PageHeader, type Tone } from "../components/ui";
+import { type ApprovalRequest, type ApprovalRequirement, APPROVAL_LABEL, APPROVAL_TONE, type JournalDetail } from "../lib/approvals";
 import { useCompany } from "../lib/company";
-import { amount, date, dateTime, humanize, moduleLabel, toNumber } from "../lib/format";
+import { amount, date, dateTime, humanize, moduleLabel, plural, toNumber } from "../lib/format";
 import { Link, navigate, setQueryParam, useLocation } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
 import type { Journal, JournalStatus } from "../lib/types";
+import { ApprovalHistory, ApprovalProgress } from "./Approvals";
 
 const STATUS_TONE: Partial<Record<JournalStatus, Tone>> = {
   DRAFT: "info",
   SUBMITTED: "warning",
   UNDER_REVIEW: "warning",
-  APPROVED: "info",
+  APPROVED: "positive",
   POSTING_FAILED: "negative",
 };
 
+export const JOURNAL_STATUS_LABEL: Record<JournalStatus, string> = {
+  DRAFT: "Draft",
+  SUBMITTED: "Awaiting approval",
+  UNDER_REVIEW: "Partly approved",
+  APPROVED: "Approved, ready to post",
+  POSTED: "Posted",
+  REVERSED: "Reversed",
+  CANCELLED: "Cancelled",
+  POSTING_FAILED: "Posting failed",
+};
+
+const OPEN_STATUSES: JournalStatus[] = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED"];
+
 export function JournalStatusBadge({ status, always }: { status: JournalStatus; always?: boolean }) {
   if (status === "POSTED" && !always) return null;
-  return <Badge tone={STATUS_TONE[status] ?? "neutral"}>{humanize(status)}</Badge>;
+  return <Badge tone={STATUS_TONE[status] ?? "neutral"}>{JOURNAL_STATUS_LABEL[status] ?? humanize(status)}</Badge>;
 }
 
-function sourceLabel(j: Journal) {
+function sourceLabel(j: Journal | JournalDetail) {
   if (j.journalType === "MANUAL") return "Manual entry";
   if (j.sourceDocumentType && j.sourceDocumentNumber) return `${moduleLabel(j.sourceModule)} · ${j.sourceDocumentNumber}`.replace(/^ · /, "");
   return humanize(j.journalType);
 }
+
+const STATUS_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All statuses" },
+  ...(Object.keys(JOURNAL_STATUS_LABEL) as JournalStatus[]).map((s) => ({ value: s, label: JOURNAL_STATUS_LABEL[s] })),
+];
 
 export function Journals() {
   const { can } = useSession();
@@ -64,15 +86,8 @@ export function Journals() {
         </>
       ),
     },
-    { key: "status", header: <span className="sr-only">Status</span>, width: 120, render: (j) => <JournalStatusBadge status={j.status} /> },
+    { key: "status", header: <span className="sr-only">Status</span>, width: 170, render: (j) => <JournalStatusBadge status={j.status} /> },
     { key: "amount", header: `Amount (${currency})`, numeric: true, sortValue: (j) => toNumber(j.totalDebit), render: (j) => amount(j.totalDebit) },
-  ];
-
-  const filters: Array<[string, string]> = [
-    ["", "All"],
-    ["DRAFT", "Drafts"],
-    ["POSTED", "Posted"],
-    ["REVERSED", "Reversed"],
   ];
 
   return (
@@ -92,13 +107,7 @@ export function Journals() {
 
       <div className="filter-bar">
         <input className="input search" type="search" placeholder="Search number, description or reference" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search journal entries" />
-        <div className="segmented" role="group" aria-label="Filter by status">
-          {filters.map(([key, label]) => (
-            <button key={key} type="button" className={status === key ? "on" : ""} onClick={() => setQueryParam("status", key || null)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Select style={{ width: 220 }} value={status} onChange={(v) => setQueryParam("status", v || null)} options={STATUS_FILTERS} aria-label="Filter by status" />
       </div>
 
       <Loadable resource={list}>
@@ -133,14 +142,39 @@ export function Journals() {
   );
 }
 
+function lastNote(approval: ApprovalRequest, decision: "RETURNED" | "REJECTED") {
+  return [...approval.decisions].filter((d) => d.decision === decision).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.note;
+}
+
 function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { api, can } = useSession();
   const { toast, confirm } = useFeedback();
   const { currency } = useCompany();
-  const journal = useResource<Journal>(`/api/v1/journals/${id}`);
+  const journal = useResource<JournalDetail>(`/api/v1/journals/${id}`);
+  const j = journal.data;
+  const open = j ? OPEN_STATUSES.includes(j.status) : false;
+  const requirement = useResource<ApprovalRequirement>(open ? `/api/v1/journals/${id}/approval-requirement` : null);
   const [busy, setBusy] = useState(false);
 
-  async function act(kind: "post" | "reverse", j: Journal) {
+  function refresh() {
+    journal.reload();
+    requirement.reload();
+    onChanged();
+  }
+
+  async function run(action: () => Promise<string>) {
+    setBusy(true);
+    try {
+      toast(await action());
+      refresh();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function act(kind: "post" | "reverse", j: JournalDetail) {
     const ok = await confirm(
       kind === "post"
         ? { title: `Post ${j.journalNumber}?`, body: "Posting updates account balances. Posted entries can only be corrected by reversing them.", confirmLabel: "Post entry" }
@@ -152,22 +186,46 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
           },
     );
     if (!ok) return;
-    setBusy(true);
-    try {
-      const result = await api<Journal>(`/api/v1/journals/${j.id}/${kind}`, { method: "POST", body: "{}" });
-      toast(kind === "post" ? `${j.journalNumber} posted` : `${j.journalNumber} reversed by ${result.journalNumber}`);
-      journal.reload();
-      onChanged();
-    } catch (e) {
-      toast((e as Error).message, { error: true });
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+      if (kind === "post") {
+        const posted = await api<Journal & { budgetWarnings?: Array<{ account: string; period: string; over: number }> }>(`/api/v1/journals/${j.id}/post`, {
+          method: "POST",
+          body: "{}",
+        });
+        const warnings = posted.budgetWarnings ?? [];
+        return warnings.length
+          ? `${j.journalNumber} posted. Budget warning: ${warnings.map((w) => `${w.account} over by ${amount(w.over)} in ${w.period}`).join("; ")}`
+          : `${j.journalNumber} posted`;
+      }
+      const result = await api<{ reversal: Journal }>(`/api/v1/journals/${j.id}/reverse`, { method: "POST", body: "{}" });
+      return `${j.journalNumber} reversed by ${result.reversal.journalNumber}`;
+    });
   }
 
-  const j = journal.data;
-  const canPost = j && ["DRAFT", "APPROVED"].includes(j.status) && can("journal:post");
+  async function submit(j: JournalDetail) {
+    await run(async () => {
+      const result = await api<{ journal: Journal; approval: ApprovalRequest | null }>(`/api/v1/journals/${j.id}/submit`, { method: "POST", body: "{}" });
+      return result.approval ? `${j.journalNumber} submitted for approval` : `${j.journalNumber} needs no approval and is ready to post`;
+    });
+  }
+
+  async function cancel(j: JournalDetail) {
+    const ok = await confirm({ title: `Cancel ${j.journalNumber}?`, body: "The draft will be kept for the record but can no longer be edited or posted.", confirmLabel: "Cancel draft", danger: true });
+    if (!ok) return;
+    await run(async () => {
+      await api(`/api/v1/journals/${j.id}/cancel`, { method: "POST", body: "{}" });
+      return `${j.journalNumber} cancelled`;
+    });
+  }
+
+  const req = requirement.data;
+  const isDraft = j?.status === "DRAFT";
+  const canEdit = isDraft && can("journal:create");
+  const canSubmit = canEdit && (!req || req.required || !can("journal:post"));
+  const canPost = j && can("journal:post") && (j.status === "APPROVED" || (isDraft && req && !req.required));
   const canReverse = j && j.status === "POSTED" && !j.reversedJournalId && can("journal:reverse");
+  const pendingApproval = j?.approval?.status === "PENDING" ? j.approval : null;
+  const hasActions = canEdit || canPost || canReverse || pendingApproval;
 
   return (
     <Drawer
@@ -176,11 +234,31 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
       onClose={onClose}
       wide
       footer={
-        (canPost || canReverse) && j ? (
+        hasActions && j ? (
           <>
+            {canEdit && (
+              <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => void cancel(j)}>
+                Cancel draft
+              </button>
+            )}
+            {canEdit && (
+              <Link to={`/journals/${j.id}/edit`} className="btn">
+                Edit
+              </Link>
+            )}
             {canReverse && (
               <button type="button" className="btn" disabled={busy} onClick={() => void act("reverse", j)}>
                 Reverse entry
+              </button>
+            )}
+            {pendingApproval && (
+              <Link to={`/approvals?id=${pendingApproval.id}`} className="btn">
+                Open approval
+              </Link>
+            )}
+            {canSubmit && (
+              <button type="button" className={`btn ${canPost ? "" : "btn-primary"}`} disabled={busy} onClick={() => void submit(j)}>
+                {j.approval?.status === "RETURNED" ? "Resubmit for approval" : "Submit for approval"}
               </button>
             )}
             {canPost && (
@@ -195,6 +273,21 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
       <Loadable resource={journal}>
         {(j) => (
           <>
+            {j.approval?.status === "RETURNED" && j.status === "DRAFT" && (
+              <div className="notice info" style={{ marginBottom: 16 }}>
+                <div className="grow">
+                  <strong>Returned for correction.</strong> {lastNote(j.approval, "RETURNED") ?? "Edit the entry and submit it again."}
+                </div>
+              </div>
+            )}
+            {j.approval?.status === "REJECTED" && (
+              <div className="notice error" style={{ marginBottom: 16 }}>
+                <div className="grow">
+                  <strong>Rejected.</strong> {lastNote(j.approval, "REJECTED") ?? ""}
+                </div>
+              </div>
+            )}
+
             <dl className="dl">
               <dt>Status</dt>
               <dd>
@@ -205,7 +298,10 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
               {j.postingDate && (
                 <>
                   <dt>Posted</dt>
-                  <dd>{dateTime(j.postingDate)}</dd>
+                  <dd>
+                    {dateTime(j.postingDate)}
+                    {j.postedByErpUserId ? ` · User #${j.postedByErpUserId}` : ""}
+                  </dd>
                 </>
               )}
               {j.description && (
@@ -220,6 +316,18 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
                   <dd>{j.referenceNumber}</dd>
                 </>
               )}
+              {j.createdByErpUserId && (
+                <>
+                  <dt>Prepared by</dt>
+                  <dd>User #{j.createdByErpUserId}</dd>
+                </>
+              )}
+              {j.approvedByErpUserId && (
+                <>
+                  <dt>Approved by</dt>
+                  <dd>User #{j.approvedByErpUserId}</dd>
+                </>
+              )}
               {(j.reversedJournalId || j.reversesJournalId) && (
                 <>
                   <dt>{j.reversesJournalId ? "Reverses" : "Reversed by"}</dt>
@@ -232,6 +340,42 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
               )}
             </dl>
 
+            {open && req && (
+              <div className={`notice ${req.required ? "" : "info"}`} style={{ marginTop: 16 }}>
+                <div className="grow">
+                  {req.required ? (
+                    <>
+                      <strong>Needs {plural(req.levels, "approval level")} before posting.</strong>
+                      {req.reasons.length > 0 && (
+                        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                          {req.reasons.map((r) => (
+                            <li key={r}>{r}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <strong>No approval needed for this entry.</strong>
+                  )}
+                  {req.requireDifferentPoster && <div className="small" style={{ marginTop: 4 }}>Someone other than the person who prepared it must post it.</div>}
+                  {req.supportingDocumentRequired && <div className="small" style={{ marginTop: 4 }}>A supporting document must be attached before posting.</div>}
+                </div>
+              </div>
+            )}
+
+            {j.approval && (
+              <>
+                <div className="form-section-title" style={{ marginTop: 22 }}>
+                  Approval{" "}
+                  <Badge tone={APPROVAL_TONE[j.approval.status]}>{APPROVAL_LABEL[j.approval.status] ?? j.approval.status}</Badge>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <ApprovalProgress approval={j.approval} />
+                </div>
+                <ApprovalHistory approval={j.approval} />
+              </>
+            )}
+
             <div className="table-wrap" style={{ marginTop: 20 }}>
               <table className="table">
                 <thead>
@@ -242,18 +386,22 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
                   </tr>
                 </thead>
                 <tbody>
-                  {j.lines.map((l) => (
-                    <tr key={l.id}>
-                      <td>
-                        <Link to={`/ledger?account=${l.account.id}`} style={{ color: "inherit" }}>
-                          <span className="mono muted">{l.account.code}</span> {l.account.name}
-                        </Link>
-                        {l.description && <span className="sub">{l.description}</span>}
-                      </td>
-                      <td className="num">{toNumber(l.debit) ? amount(l.debit) : ""}</td>
-                      <td className="num">{toNumber(l.credit) ? amount(l.credit) : ""}</td>
-                    </tr>
-                  ))}
+                  {j.lines.map((l) => {
+                    const tags = [l.costCentre && `Cost centre ${l.costCentre}`, l.project && `Project ${l.project}`].filter(Boolean).join(" · ");
+                    return (
+                      <tr key={l.id}>
+                        <td>
+                          <Link to={`/ledger?account=${l.account.id}`} style={{ color: "inherit" }}>
+                            <span className="mono muted">{l.account.code}</span> {l.account.name}
+                          </Link>
+                          {l.description && <span className="sub">{l.description}</span>}
+                          {tags && <span className="sub">{tags}</span>}
+                        </td>
+                        <td className="num">{toNumber(l.debit) ? amount(l.debit) : ""}</td>
+                        <td className="num">{toNumber(l.credit) ? amount(l.credit) : ""}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr>
@@ -264,6 +412,14 @@ function JournalDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
                 </tfoot>
               </table>
             </div>
+
+            <AttachmentsPanel
+              entityType="Journal"
+              entityId={j.id}
+              title="Supporting documents"
+              required={!!req?.supportingDocumentRequired}
+              locked={j.status === "DRAFT" ? null : `the journal is ${JOURNAL_STATUS_LABEL[j.status].toLowerCase()}`}
+            />
           </>
         )}
       </Loadable>

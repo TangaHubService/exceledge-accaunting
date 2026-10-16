@@ -5,6 +5,7 @@ import { readRememberedEmail, rememberEmail } from "./lib/session";
 
 type LoginResponse = {
   accessToken?: string;
+  refreshToken?: string;
   token?: string;
   user?: { name?: string; requirePasswordChange?: boolean };
   message?: string;
@@ -13,7 +14,13 @@ type LoginResponse = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string, remember: boolean) => void; notice?: string }) {
+export function SignIn({
+  onSignedIn,
+  notice,
+}: {
+  onSignedIn: (token: string, remember: boolean, refreshToken?: string) => void;
+  notice?: string;
+}) {
   const [email, setEmail] = useState(readRememberedEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -56,7 +63,7 @@ export function SignIn({ onSignedIn, notice }: { onSignedIn: (token: string, rem
         return;
       }
       rememberEmail(remember ? email.trim() : null);
-      onSignedIn(token, remember);
+      onSignedIn(token, remember, body.refreshToken);
     } catch {
       setError("Can't reach Excel Edge right now. Check your connection and try again.");
     } finally {

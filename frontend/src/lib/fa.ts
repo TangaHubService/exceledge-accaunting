@@ -1,5 +1,5 @@
 import type { Tone } from "../components/ui";
-import type { AssetStatus, DepreciationMethod, DisposalMethod } from "./types";
+import type { AssetStatus, DepreciationFrequency, DepreciationMethod, DisposalMethod } from "./types";
 
 export const ASSET_STATUS: Record<AssetStatus, { label: string; tone: Tone }> = {
   REGISTERED: { label: "Registered", tone: "neutral" },
@@ -11,6 +11,14 @@ export const ASSET_STATUS: Record<AssetStatus, { label: string; tone: Tone }> = 
 export const DEP_METHOD_LABELS: Record<DepreciationMethod, string> = {
   STRAIGHT_LINE: "Straight-line",
   REDUCING_BALANCE: "Reducing balance",
+  SUM_OF_YEARS_DIGITS: "Sum of years' digits",
+  UNITS_OF_PRODUCTION: "Units of production",
+};
+
+export const DEP_FREQUENCY_LABELS: Record<DepreciationFrequency, string> = {
+  MONTHLY: "Monthly",
+  QUARTERLY: "Quarterly",
+  ANNUAL: "Annually",
 };
 
 export const DISPOSAL_LABELS: Record<DisposalMethod, string> = {

@@ -1,13 +1,12 @@
 {
   "name": "exceledge-accounting",
   "private": true,
-  "description": "Accounting monorepo: deploy backend/ and frontend/ as separate Dokploy roots",
+  "description": "backend/ and frontend/ are separate Dokploy roots — each has its own package.json",
   "scripts": {
     "dev:api": "npm run dev --prefix backend",
     "dev:web": "npm run dev --prefix frontend",
     "build:api": "npm run build --prefix backend",
     "build:web": "npm run build --prefix frontend",
-    "test": "npm test --prefix backend && npm test --prefix backend/packages/domain",
     "sync:domain": "node scripts/sync-domain.js"
   },
   "engines": {

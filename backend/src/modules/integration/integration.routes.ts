@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { env } from "../../config/env";
@@ -12,9 +13,15 @@ import * as integration from "./integration.service";
 
 export const integrationRouter = Router();
 
+function sameSecret(presented: string, expected: string) {
+  const a = createHash("sha256").update(presented).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
+
 function requireIntegrationKey(req: AuthedRequest, res: import("express").Response, next: import("express").NextFunction) {
   const key = req.header("x-integration-key") || req.header("x-api-key");
-  if (!key || key !== env.integrationApiKey) {
+  if (!key || !env.integrationApiKey || !sameSecret(key, env.integrationApiKey)) {
     return res.status(401).json({ success: false, error: "Invalid integration API key" });
   }
   return next();

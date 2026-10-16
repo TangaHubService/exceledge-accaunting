@@ -3,16 +3,21 @@ import { z } from "zod";
 import { hasCapability } from "@exceledge/accounting-domain";
 import {
   AuthedRequest,
-  authenticateErpJwt,
+  authenticate,
   getRequestMeta,
   requireCapability,
   resolveCompany,
 } from "../../middleware/auth";
+import { inTransaction } from "../../lib/prisma";
+import { documentLines, notFoundStatus, periodQuery, sendPdf } from "../../lib/http-documents";
+import { exportFormat, sendReport } from "../../lib/report-export";
+import * as print from "../print/print.service";
+import { ageingDocument } from "../books/report-documents";
 import * as ar from "./ar.service";
 
 export const arRouter = Router();
 
-arRouter.use(authenticateErpJwt, requireCapability("ar:view"), resolveCompany);
+arRouter.use(authenticate, requireCapability("ar:view"), resolveCompany);
 
 function actor(req: AuthedRequest, creditOverride?: boolean) {
   const role = req.organizationRole ?? req.erpUser?.role;
@@ -43,7 +48,14 @@ arRouter.get("/dashboard", async (req: AuthedRequest, res) => {
 
 arRouter.get("/ageing", async (req: AuthedRequest, res) => {
   const asOf = typeof req.query.asOf === "string" ? req.query.asOf : undefined;
-  res.json({ success: true, data: await ar.ageingReport(req.companyId!, asOf) });
+  try {
+    const format = exportFormat(req.query.format);
+    const data = await ar.ageingReport(req.companyId!, asOf);
+    if (format) return await sendReport(res, await ageingDocument(req.companyId!, "ar", data), format);
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
 });
 
 arRouter.get("/customers", async (req: AuthedRequest, res) => {
@@ -72,7 +84,7 @@ arRouter.post("/customers", requireCapability("ar:manage"), async (req: AuthedRe
         physicalAddress: z.string().optional(),
       })
       .parse(req.body);
-    const data = await ar.createCustomer(req.companyId!, body, actor(req));
+    const data = await inTransaction(() => ar.createCustomer(req.companyId!, body, actor(req)));
     res.status(201).json({ success: true, data });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
@@ -103,7 +115,7 @@ arRouter.patch("/customers/:id", requireCapability("ar:manage"), async (req: Aut
         email: z.string().optional(),
       })
       .parse(req.body);
-    res.json({ success: true, data: await ar.updateCustomer(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ar.updateCustomer(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }
@@ -126,6 +138,67 @@ arRouter.get("/customers/:id/statement", async (req: AuthedRequest, res) => {
   }
 });
 
+arRouter.get("/customers/:id/period-statement", async (req: AuthedRequest, res) => {
+  try {
+    const { from, to } = periodQuery.parse(req.query);
+    res.json({ success: true, data: await ar.customerPeriodStatement(req.companyId!, req.params.id, from, to) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/customers/:id/statement.pdf", async (req: AuthedRequest, res) => {
+  try {
+    const { from, to } = periodQuery.parse(req.query);
+    sendPdf(res, await print.customerStatementPdf(req.companyId!, req.params.id, from, to));
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/customers/:id/deposits", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.listDeposits(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices", async (req: AuthedRequest, res) => {
+  try {
+    const query = z
+      .object({
+        status: z.enum(["OPEN", "OVERDUE", "PAID", "ALL"]).optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        q: z.string().max(100).optional(),
+        page: z.coerce.number().int().min(1).optional(),
+        pageSize: z.coerce.number().int().min(1).max(500).optional(),
+      })
+      .parse(req.query);
+    res.json({ success: true, data: await ar.listInvoices(req.companyId!, query) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices/:id", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.getInvoice(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices/:id/pdf", async (req: AuthedRequest, res) => {
+  try {
+    sendPdf(res, await print.invoicePdf(req.companyId!, req.params.id));
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
 arRouter.post("/invoices", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z
@@ -133,7 +206,8 @@ arRouter.post("/invoices", requireCapability("ar:manage"), async (req: AuthedReq
         customerId: z.string().min(1),
         invoiceDate: z.string(),
         dueDate: z.string().optional(),
-        net: z.number().positive(),
+        net: z.number().positive().optional(),
+        lines: documentLines.optional(),
         tax: z.number().min(0).optional(),
         discount: z.number().min(0).optional(),
         description: z.string().optional(),
@@ -141,7 +215,7 @@ arRouter.post("/invoices", requireCapability("ar:manage"), async (req: AuthedReq
         creditOverride: z.boolean().optional(),
       })
       .parse(req.body);
-    const data = await ar.createInvoice(req.companyId!, body, actor(req, body.creditOverride));
+    const data = await inTransaction(() => ar.createInvoice(req.companyId!, body, actor(req, body.creditOverride)));
     res.status(201).json({ success: true, data });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
@@ -163,7 +237,7 @@ arRouter.post("/receipts", requireCapability("ar:manage"), async (req: AuthedReq
         allocations: z.array(z.object({ invoiceId: z.string(), amount: z.number().positive() })).optional(),
       })
       .parse(req.body);
-    const data = await ar.createReceipt(req.companyId!, body, actor(req));
+    const data = await inTransaction(() => ar.createReceipt(req.companyId!, body, actor(req)));
     res.status(201).json({ success: true, data });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
@@ -172,7 +246,7 @@ arRouter.post("/receipts", requireCapability("ar:manage"), async (req: AuthedReq
 
 arRouter.post("/receipts/:id/reverse", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
-    res.json({ success: true, data: await ar.reverseReceipt(req.companyId!, req.params.id, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ar.reverseReceipt(req.companyId!, req.params.id, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }
@@ -191,7 +265,7 @@ arRouter.post("/credit-notes", requireCapability("ar:manage"), async (req: Authe
         description: z.string().optional(),
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ar.createCreditNote(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ar.createCreditNote(req.companyId!, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }
@@ -213,7 +287,7 @@ arRouter.post("/debit-notes", requireCapability("ar:manage"), async (req: Authed
       .parse(req.body);
     res.status(201).json({
       success: true,
-      data: await ar.createDebitNote(req.companyId!, body, actor(req, body.creditOverride)),
+      data: await inTransaction(() => ar.createDebitNote(req.companyId!, body, actor(req, body.creditOverride))),
     });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
@@ -232,7 +306,7 @@ arRouter.post("/deposits", requireCapability("ar:manage"), async (req: AuthedReq
         description: z.string().optional(),
       })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await ar.createDeposit(req.companyId!, body, actor(req)) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ar.createDeposit(req.companyId!, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }
@@ -241,7 +315,7 @@ arRouter.post("/deposits", requireCapability("ar:manage"), async (req: AuthedReq
 arRouter.post("/deposits/:id/allocate", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z.object({ invoiceId: z.string(), amount: z.number().positive() }).parse(req.body);
-    res.json({ success: true, data: await ar.allocateDeposit(req.companyId!, req.params.id, body, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ar.allocateDeposit(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }
@@ -249,7 +323,7 @@ arRouter.post("/deposits/:id/allocate", requireCapability("ar:manage"), async (r
 
 arRouter.post("/deposits/:id/refund", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
-    res.json({ success: true, data: await ar.refundDeposit(req.companyId!, req.params.id, actor(req)) });
+    res.json({ success: true, data: await inTransaction(() => ar.refundDeposit(req.companyId!, req.params.id, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }

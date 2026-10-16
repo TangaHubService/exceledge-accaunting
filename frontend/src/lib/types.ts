@@ -161,6 +161,93 @@ export type CustomerLedger = {
   }>;
 };
 
+/** Customer or supplier statement for a date range (customer totals are named charged/paid, supplier billed/paid). */
+export type PeriodStatement = {
+  from: string;
+  to: string;
+  openingBalance: number;
+  closingBalance: number;
+  entries: Array<{
+    id: string;
+    entryDate: string;
+    docType: string;
+    docNumber: string | null;
+    description: string | null;
+    debit: number;
+    credit: number;
+    balance: number;
+  }>;
+};
+
+export type ArInvoiceRow = {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  status: "POSTED" | "REVERSED";
+  customerId: string;
+  customerCode: string;
+  customerName: string;
+  net: number;
+  tax: number;
+  gross: number;
+  paid: number;
+  credited: number;
+  outstanding: number;
+  sourceModule: string | null;
+  description: string | null;
+};
+
+export type ArInvoiceList = {
+  rows: ArInvoiceRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totals: { gross: number; outstanding: number };
+};
+
+export type ArInvoiceDetail = {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  status: "POSTED" | "REVERSED";
+  currency: string;
+  net: Decimal;
+  tax: Decimal;
+  discount: Decimal;
+  gross: Decimal;
+  amountPaid: Decimal;
+  amountCredited: Decimal;
+  outstanding: number;
+  description: string | null;
+  customer: Customer;
+  lines: Array<{
+    id: string;
+    lineNumber: number;
+    description: string;
+    quantity: Decimal;
+    unitPrice: Decimal;
+    discount: Decimal;
+    net: Decimal;
+    taxCode: string | null;
+    taxRate: Decimal;
+    tax: Decimal;
+  }>;
+};
+
+export type ArDeposit = {
+  id: string;
+  depositNumber: string;
+  depositDate: string;
+  method: string;
+  amount: number;
+  remaining: number;
+  status: "POSTED" | "REVERSED";
+  reference: string | null;
+  description: string | null;
+};
+
 export type ApPaymentMethod = "CASH" | "BANK" | "MOBILE_MONEY" | "CHEQUE" | "EFT";
 
 export type Supplier = {
@@ -362,9 +449,19 @@ export type AccountLedger = {
     currentBalance: number;
     currency: string | null;
   };
+  from: string | null;
+  to: string | null;
+  openingBalance: number;
+  closingBalance: number;
+  pageOpeningBalance: number;
+  totals: { debit: number; credit: number };
+  page: number;
+  pageSize: number;
+  total: number;
   entries: Array<{
     id: string;
     postingDate: string;
+    transactionDate: string;
     journalNumber: string;
     journalId: string;
     referenceNumber: string | null;
@@ -624,6 +721,12 @@ export type BankTransaction = {
   chequeNumber: string | null;
   partyType: string | null;
   partyName: string | null;
+  customerId: string | null;
+  supplierId: string | null;
+  arReceiptId: string | null;
+  arReceiptNumber: string | null;
+  apPaymentId: string | null;
+  apPaymentNumber: string | null;
   description: string | null;
   countedAmount: number | null;
   bookAmount: number | null;
@@ -972,12 +1075,35 @@ export type TaxDashboard = {
   }>;
 };
 
+export type VatMemoLine = {
+  id: string;
+  date: string;
+  documentNumber: string;
+  description: string;
+  side: "SALE" | "PURCHASE";
+  taxCode: string;
+  taxType: "ZERO_RATED" | "EXEMPT";
+  taxName: string;
+  net: number;
+};
+
 export type VatReport = {
   from: string;
   to: string;
   outputAccount: { id: string; code: string; name: string } | null;
   inputAccount: { id: string; code: string; name: string } | null;
-  totals: { output: number; input: number; adjustments: number; paid: number; net: number; outstanding: number };
+  totals: {
+    output: number;
+    input: number;
+    adjustments: number;
+    paid: number;
+    net: number;
+    outstanding: number;
+    zeroRatedSales: number;
+    zeroRatedPurchases: number;
+    exemptSales: number;
+    exemptPurchases: number;
+  };
   outputLines: Array<{
     id: string;
     date: string;
@@ -1002,6 +1128,8 @@ export type VatReport = {
     credit: number;
     amount: number;
   }>;
+  zeroRated: VatMemoLine[];
+  exempt: VatMemoLine[];
   payments: Array<{ id: string; number: string; paymentDate: string; amount: number; isRefund: boolean; reference: string | null }>;
 };
 
@@ -1243,7 +1371,8 @@ export type ExpensesByCategoryReport = {
 
 /* ── Fixed assets (Phase 10) ───────────────────────────── */
 
-export type DepreciationMethod = "STRAIGHT_LINE" | "REDUCING_BALANCE";
+export type DepreciationMethod = "STRAIGHT_LINE" | "REDUCING_BALANCE" | "SUM_OF_YEARS_DIGITS" | "UNITS_OF_PRODUCTION";
+export type DepreciationFrequency = "MONTHLY" | "QUARTERLY" | "ANNUAL";
 export type AssetStatus = "REGISTERED" | "ACTIVE" | "FULLY_DEPRECIATED" | "DISPOSED";
 export type DisposalMethod = "SALE" | "SCRAP" | "DONATION" | "THEFT" | "DESTRUCTION" | "RETIREMENT";
 
@@ -1284,7 +1413,12 @@ export type FixedAsset = FixedAssetListItem & {
   residualValue: number;
   usefulLifeMonths: number;
   depreciationMethod: DepreciationMethod;
+  depreciationFrequency: DepreciationFrequency;
   ratePercent: number | null;
+  totalUnits: number | null;
+  unitsDepreciated: number;
+  revaluationSurplus: number;
+  revaluationLossInPl: number;
   department: string | null;
   costCentre: string | null;
   project: string | null;
@@ -1304,8 +1438,25 @@ export type FixedAsset = FixedAssetListItem & {
     nextMaintenanceDate: string | null;
   }>;
   transfers: Array<{ id: string; transferDate: string; toBranch: string | null; toLocation: string | null; toEmployee: string | null; notes: string | null }>;
-  revaluations: Array<{ id: string; effectiveDate: string; previousCarrying: number; fairValue: number; amount: number; increase: boolean }>;
-  impairments: Array<{ id: string; impairmentDate: string; recoverableAmount: number; lossAmount: number; reason: string | null }>;
+  revaluations: Array<{
+    id: string;
+    effectiveDate: string;
+    previousCarrying: number;
+    fairValue: number;
+    amount: number;
+    increase: boolean;
+    reserveAmount: number;
+    plAmount: number;
+  }>;
+  impairments: Array<{
+    id: string;
+    impairmentDate: string;
+    recoverableAmount: number;
+    lossAmount: number;
+    reason: string | null;
+    status: "POSTED" | "PENDING_APPROVAL" | "REJECTED";
+  }>;
+  usages: Array<{ id: string; period: string; units: number; notes: string | null; locked: boolean }>;
 };
 
 export type FaDashboard = {
@@ -1328,5 +1479,6 @@ export type DepPreview = {
   period: string;
   assetCount: number;
   totalAmount: number;
-  items: Array<{ assetId: string; number: string; name: string; amount: number; netBookValueAfter: number }>;
+  items: Array<{ assetId: string; number: string; name: string; amount: number; months: number; units: number; netBookValueAfter: number }>;
+  skipped: Array<{ assetId: string; number: string; name: string; reason: string }>;
 };
