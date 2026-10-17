@@ -1,66 +1,88 @@
-import type { AccountingCapability } from "@exceledge/accounting-domain";
 import {
-  ArrowLeftRight,
-  ArrowRightLeft,
-  Banknote,
   BarChart3,
   Bell,
+  Bookmark,
   BookOpen,
-  Boxes,
-  Building2,
-  Network,
-  Calculator,
-  CalendarClock,
-  ClipboardCheck,
-  Coins,
+  Briefcase,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
-  FileText,
-  GitCompareArrows,
-  HandCoins,
-  History,
-  Hourglass,
-  Landmark,
-  Layers,
-  LayoutDashboard,
-  Library,
-  ListChecks,
-  ListTree,
+  FolderKanban,
+  Grid3X3,
+  HelpCircle,
+  Home,
+  LayoutGrid,
   LogOut,
   type LucideIcon,
   Menu as MenuIcon,
-  Package,
-  PackageSearch,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Percent,
-  ReceiptText,
-  Repeat,
-  Scale,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  TriangleAlert,
+  MoreHorizontal,
+  Pencil,
+  PieChart,
+  Plus,
+  Receipt,
+  Search,
+  Settings,
+  SlidersHorizontal,
   Truck,
-  Upload,
   Users,
+  UserRound,
   Wallet,
   Warehouse,
   WifiOff,
   X,
+  Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
-import { type ApprovalRequest, NOTIFICATIONS_CHANGED } from "../lib/approvals";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { ALL_APPS, CREATE_MENU, DUMMY, PINNED, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { useCompany } from "../lib/company";
 import { erpLinks } from "../lib/config";
 import { humanize } from "../lib/format";
-import { Link, useLocation } from "../lib/router";
-import { useResource, useSession } from "../lib/session";
-import type { PostingException } from "../lib/types";
+import { Link, navigate, useLocation } from "../lib/router";
+import { useSession } from "../lib/session";
+import { CustomisePreferences } from "./CustomisePreferences";
+import { SearchWorkspace } from "./SearchWorkspace";
 import { Menu } from "./ui";
 
-type NavItem = { to: string; label: string; icon: LucideIcon; needs: AccountingCapability; count?: number };
+/** Thin stroke matching the mock line icons. */
+const SW = 1.5;
 
-const COLLAPSED_KEY = "accounting_nav_collapsed";
+type Panel = "create" | "bookmarks" | "reports" | "apps" | string | null;
+
+type PanelPos = { top: number; left: number; maxHeight: number };
+
+const CREATE_ICONS: Record<string, LucideIcon> = {
+  customers: UserRound,
+  suppliers: Truck,
+  team: Users,
+  projects: FolderKanban,
+  other: MoreHorizontal,
+};
+
+const PIN_ICONS: Record<string, LucideIcon> = {
+  accounting: BookOpen,
+  expenses: Wallet,
+  sales: BarChart3,
+};
+
+const APP_ICONS: Record<string, LucideIcon> = {
+  accounting: BookOpen,
+  expenses: Receipt,
+  sales: BarChart3,
+  customers: Users,
+  team: Users,
+  projects: FolderKanban,
+  inventory: Warehouse,
+  tax: PieChart,
+};
 
 function subscribeOnline(onChange: () => void) {
   window.addEventListener("online", onChange);
@@ -77,294 +99,485 @@ function initials(email: string | undefined) {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+/** Place panel beside the rail trigger, fully on-screen (never clipped by sidebar scroll). */
+function placeBeside(el: HTMLElement | null, opts?: { caretAlign?: boolean }): PanelPos | null {
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const pad = 12;
+  const left = Math.round(r.right + (opts?.caretAlign ? 10 : 8));
+  // Bookmarks mock: caret points at the active rail row center.
+  let top = opts?.caretAlign ? Math.round(r.top + r.height / 2 - 22) : Math.round(r.top);
+  top = Math.max(pad, Math.min(top, window.innerHeight - pad - 120));
+  const maxHeight = Math.max(160, window.innerHeight - top - pad);
+  return { top, left, maxHeight };
+}
+
 export function Shell({ children }: { children: ReactNode }) {
-  const { can, email, role, signOut } = useSession();
+  const { email, role, signOut } = useSession();
   const company = useCompany();
   const { path } = useLocation();
   const [navOpen, setNavOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSED_KEY) === "1");
+  const [panel, setPanel] = useState<Panel>(null);
+  const [panelPos, setPanelPos] = useState<PanelPos | null>(null);
+  const [customiseOpen, setCustomiseOpen] = useState(false);
+  const [customiseTab, setCustomiseTab] = useState<"navigation" | "bookmarks">("navigation");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Array<{ label: string; to: string }>>([]);
+  const createBtnRef = useRef<HTMLButtonElement>(null);
+  const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
+  const reportsBtnRef = useRef<HTMLButtonElement>(null);
+  const appsBtnRef = useRef<HTMLButtonElement>(null);
+  const pinBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const closeTimer = useRef<number | null>(null);
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine);
+  const companyLabel = company.name || DUMMY.companyName;
 
-  const openExceptions = useResource<PostingException[]>(can("exceptions:view") ? "/api/v1/exceptions?status=OPEN" : null);
+  function clearCloseTimer() {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
 
-  const approvalQueue = useResource<ApprovalRequest[]>(can("journal:view") ? "/api/v1/books/approvals/queue" : null);
-  const unread = useResource<{ count: number }>("/api/v1/books/notifications/unread-count");
-  const reloadUnread = unread.reload;
-  const reloadQueue = approvalQueue.reload;
+  function scheduleClose() {
+    clearCloseTimer();
+    closeTimer.current = window.setTimeout(() => setPanel(null), 160);
+  }
 
-  useEffect(() => setNavOpen(false), [path]);
+  function openPanel(next: Panel) {
+    clearCloseTimer();
+    setPanel((cur) => (cur === next ? null : next));
+  }
+
+  function showPin(key: string) {
+    clearCloseTimer();
+    setPanel(key);
+  }
 
   useEffect(() => {
-    reloadUnread();
-    reloadQueue();
-  }, [path, reloadUnread, reloadQueue]);
+    setNavOpen(false);
+    setPanel(null);
+    setSearchOpen(false);
+  }, [path]);
 
   useEffect(() => {
-    window.addEventListener(NOTIFICATIONS_CHANGED, reloadUnread);
-    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, reloadUnread);
-  }, [reloadUnread]);
-
-  useEffect(() => {
-    if (!navOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setNavOpen(false);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setPanel(null);
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [navOpen]);
+  }, []);
 
-  function toggleCollapsed() {
-    localStorage.setItem(COLLAPSED_KEY, collapsed ? "0" : "1");
-    setCollapsed(!collapsed);
+  useLayoutEffect(() => {
+    if (!panel) {
+      setPanelPos(null);
+      return;
+    }
+    const anchor =
+      panel === "create"
+        ? createBtnRef.current
+        : panel === "bookmarks"
+          ? bookmarksBtnRef.current
+          : panel === "reports"
+            ? reportsBtnRef.current
+            : panel === "apps"
+              ? appsBtnRef.current
+              : pinBtnRefs.current[panel] ?? null;
+
+    function update() {
+      setPanelPos(placeBeside(anchor, { caretAlign: panel === "bookmarks" }));
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [panel]);
+
+  useEffect(() => {
+    if (!panel) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPanel(null);
+    }
+    function onClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest(".ee-rail, .ee-panel-fixed")) return;
+      setPanel(null);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [panel]);
+
+  function go(to?: string) {
+    clearCloseTimer();
+    setPanel(null);
+    setNavOpen(false);
+    if (to) navigate(to);
   }
 
-  const groups: Array<{ label: string; items: NavItem[] }> = [
-    { label: "", items: [{ to: "/", label: "Overview", icon: LayoutDashboard, needs: "setup:view" }] },
-    {
-      label: "Sales",
-      items: [
-        { to: "/customers", label: "Customers", icon: Users, needs: "ar:view" },
-        { to: "/invoices", label: "Invoices", icon: FileText, needs: "ar:view" },
-      ],
-    },
-    {
-      label: "Purchases",
-      items: [
-        { to: "/suppliers", label: "Suppliers", icon: Truck, needs: "ap:view" },
-        { to: "/bills", label: "Bills", icon: ReceiptText, needs: "ap:view" },
-        { to: "/supplier-payments", label: "Supplier payments", icon: Banknote, needs: "ap:view" },
-      ],
-    },
-    {
-      label: "Inventory",
-      items: [
-        { to: "/inventory", label: "Stock value", icon: Package, needs: "inventory:view" },
-        { to: "/inventory/movements", label: "Stock movements", icon: ArrowLeftRight, needs: "inventory:view" },
-        { to: "/inventory/reconciliation", label: "Reconciliation", icon: GitCompareArrows, needs: "inventory:view" },
-      ],
-    },
-    {
-      label: "Banking",
-      items: [
-        { to: "/banking", label: "Bank & cash", icon: Landmark, needs: "bank:view" },
-        { to: "/banking/transactions", label: "Bank transactions", icon: ArrowRightLeft, needs: "bank:view" },
-        { to: "/banking/reconciliation", label: "Bank reconciliation", icon: ListChecks, needs: "bank:view" },
-      ],
-    },
-    {
-      label: "Tax",
-      items: [
-        { to: "/tax", label: "Tax overview", icon: Percent, needs: "tax:view" },
-        { to: "/tax/vat", label: "VAT return", icon: ReceiptText, needs: "tax:view" },
-        { to: "/tax/filings", label: "Filings", icon: FileText, needs: "tax:view" },
-        { to: "/tax/payments", label: "Tax payments", icon: Coins, needs: "tax:view" },
-      ],
-    },
-    {
-      label: "Expenses",
-      items: [
-        { to: "/expenses", label: "Expenses", icon: HandCoins, needs: "expense:view" },
-        { to: "/expenses/list", label: "Expense list", icon: ListChecks, needs: "expense:view" },
-        { to: "/expenses/recurring", label: "Recurring", icon: CalendarClock, needs: "expense:view" },
-      ],
-    },
-    {
-      label: "Fixed assets",
-      items: [
-        { to: "/fixed-assets", label: "Fixed assets", icon: Warehouse, needs: "fa:view" },
-        { to: "/fixed-assets/register", label: "Asset register", icon: ListChecks, needs: "fa:view" },
-        { to: "/fixed-assets/depreciation", label: "Depreciation", icon: Calculator, needs: "fa:view" },
-      ],
-    },
-    {
-      label: "Accounting",
-      items: [
-        { to: "/journals", label: "Journal entries", icon: BookOpen, needs: "journal:view" },
-        { to: "/approvals", label: "Approvals", icon: ClipboardCheck, needs: "journal:view", count: approvalQueue.data?.length },
-        { to: "/recurring-journals", label: "Recurring journals", icon: Repeat, needs: "journal:view" },
-        { to: "/journal-import", label: "Import journal", icon: Upload, needs: "journal:create" },
-        { to: "/ledger", label: "General ledger", icon: Library, needs: "gl:view" },
-        { to: "/accounts", label: "Chart of accounts", icon: ListTree, needs: "coa:view" },
-      ],
-    },
-    {
-      label: "Reports",
-      items: [
-        { to: "/reports/trial-balance", label: "Trial balance", icon: Scale, needs: "report:view" },
-        { to: "/dimensions", label: "Cost centres & projects", icon: Layers, needs: "report:view" },
-        { to: "/reports/statements", label: "Financial statements", icon: BarChart3, needs: "report:view" },
-        { to: "/close", label: "Period close", icon: ListChecks, needs: "close:view" },
-        { to: "/budgets", label: "Budgets", icon: Wallet, needs: "budget:view" },
-        { to: "/currencies", label: "Currencies", icon: Coins, needs: "report:view" },
-        { to: "/controls", label: "Controls", icon: ShieldCheck, needs: "control:view" },
-        { to: "/platform", label: "Platform", icon: Sparkles, needs: "platform:view" },
-        { to: "/assurance", label: "Assurance & automation", icon: ShieldAlert, needs: "platform:view" },
-        { to: "/reports/ageing", label: "Receivables ageing", icon: Hourglass, needs: "ar:view" },
-        { to: "/reports/payables-ageing", label: "Payables ageing", icon: CalendarClock, needs: "ap:view" },
-        { to: "/reports/purchases-by-supplier", label: "Purchases by supplier", icon: BarChart3, needs: "ap:view" },
-        { to: "/reports/withholding-tax", label: "Withholding tax", icon: Percent, needs: "ap:view" },
-        { to: "/reports/inventory-valuation", label: "Inventory valuation", icon: Boxes, needs: "inventory:view" },
-        { to: "/reports/cost-of-sales", label: "Cost of goods sold", icon: Coins, needs: "inventory:view" },
-        { to: "/reports/slow-moving", label: "Slow-moving stock", icon: PackageSearch, needs: "inventory:view" },
-        { to: "/reports/cash-position", label: "Cash position", icon: Wallet, needs: "bank:view" },
-      ],
-    },
-    {
-      label: "Administration",
-      items: [
-        { to: "/setup", label: "Company setup", icon: Building2, needs: "setup:view" },
-        { to: "/branches", label: "Branches", icon: Network, needs: "setup:view" },
-        { to: "/exceptions", label: "Posting exceptions", icon: TriangleAlert, needs: "exceptions:view", count: openExceptions.data?.length },
-        { to: "/audit", label: "Audit log", icon: History, needs: "audit:view" },
-      ],
-    },
-  ];
-
-  const matches = (to: string) => (to === "/" ? path === "/" : path === to || path.startsWith(`${to}/`));
-  const activeTo = groups
-    .flatMap((g) => g.items.map((i) => i.to))
-    .filter(matches)
-    .sort((a, b) => b.length - a.length)[0];
-  function isActive(to: string) {
-    return to === activeTo;
+  function bookmarkCurrent() {
+    const label =
+      path === "/"
+        ? "Home"
+        : path
+            .split("/")
+            .filter(Boolean)
+            .map((p) => p.replace(/-/g, " "))
+            .map((p) => p[0]!.toUpperCase() + p.slice(1))
+            .join(" · ") || "Home";
+    setBookmarks((prev) => (prev.some((b) => b.to === path) ? prev : [...prev, { label, to: path }]));
   }
 
-  const dash = company.dashboard;
+  const panelStyle: CSSProperties | undefined = panelPos
+    ? {
+        top: panelPos.top,
+        left: panelPos.left,
+        maxHeight: panelPos.maxHeight,
+      }
+    : undefined;
 
   return (
-    <div className={`app ${navOpen ? "nav-open" : ""} ${collapsed ? "collapsed" : ""}`}>
+    <div className={`ee-app ${navOpen ? "nav-open" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <aside className="sidebar" aria-label="Accounting navigation">
-        <div className="sidebar-brand">
-          <img src="/logo.jpeg" alt="" />
-          <div className="brand-text">
-            <div className="name">{company.name}</div>
-            <div className="product">Excel Edge Accounting</div>
+
+      <aside className="ee-rail" aria-label="Accounting navigation">
+        <div className="ee-rail-brand">
+          <span className="ee-rail-logo" aria-hidden="true">
+            <LayoutGrid size={18} strokeWidth={SW} />
+          </span>
+          <div className="ee-rail-brand-text">
+            <div className="ee-rail-name">Excel Edge ERP</div>
+            <div className="ee-rail-sub">Accounting</div>
           </div>
-          <button type="button" className="icon-button sidebar-close" onClick={() => setNavOpen(false)} aria-label="Close menu">
-            <X size={18} aria-hidden="true" />
+          <button type="button" className="ee-icon-btn ee-rail-close" onClick={() => setNavOpen(false)} aria-label="Close menu">
+            <X size={18} strokeWidth={SW} />
           </button>
         </div>
-        <nav aria-label="Main">
-          {groups.map((g) => {
-            const items = g.items.filter((i) => can(i.needs));
-            if (!items.length) return null;
+
+        <div className="ee-rail-create-wrap">
+          <button
+            ref={createBtnRef}
+            type="button"
+            className={`ee-create-btn ${panel === "create" ? "open" : ""}`}
+            onClick={() => openPanel("create")}
+            aria-expanded={panel === "create"}
+            aria-haspopup="dialog"
+          >
+            <Plus size={18} strokeWidth={2.25} />
+            <span>Create</span>
+          </button>
+        </div>
+
+        <nav className="ee-rail-nav" aria-label="Main">
+          <button
+            ref={bookmarksBtnRef}
+            type="button"
+            className={`ee-rail-item ${panel === "bookmarks" ? "active" : ""}`}
+            title="Bookmarks"
+            aria-expanded={panel === "bookmarks"}
+            onClick={() => openPanel("bookmarks")}
+          >
+            <Bookmark size={18} strokeWidth={SW} fill={panel === "bookmarks" ? "currentColor" : "none"} />
+            <span>Bookmarks</span>
+          </button>
+
+          <Link to="/" className={`ee-rail-item ${path === "/" && panel !== "bookmarks" ? "active" : ""}`} onClick={() => setNavOpen(false)}>
+            <Home size={18} strokeWidth={SW} />
+            <span>Home</span>
+          </Link>
+
+          <button
+            ref={reportsBtnRef}
+            type="button"
+            className={`ee-rail-item ${panel === "reports" ? "hot" : ""} ${path.startsWith("/reports") && panel !== "bookmarks" ? "active" : ""}`}
+            aria-expanded={panel === "reports"}
+            onClick={() => openPanel("reports")}
+          >
+            <BarChart3 size={18} strokeWidth={SW} />
+            <span>Reports</span>
+          </button>
+
+          <button
+            ref={appsBtnRef}
+            type="button"
+            className={`ee-rail-item ${panel === "apps" ? "hot" : ""}`}
+            aria-expanded={panel === "apps"}
+            onClick={() => openPanel("apps")}
+          >
+            <Grid3X3 size={18} strokeWidth={SW} />
+            <span>All apps</span>
+          </button>
+
+          <div className="ee-rail-section">Pinned</div>
+          {PINNED.map((pin) => {
+            const Icon = PIN_ICONS[pin.key] ?? BookOpen;
+            const open = panel === pin.key;
             return (
-              <div className="nav-group" key={g.label || "top"}>
-                {g.label && <div className="nav-group-label">{g.label}</div>}
-                {items.map((i) => (
-                  <Link
-                    key={i.to}
-                    to={i.to}
-                    className={`nav-link ${isActive(i.to) ? "active" : ""}`}
-                    aria-current={isActive(i.to) ? "page" : undefined}
-                    data-tip={i.count ? `${i.label} (${i.count})` : i.label}
-                  >
-                    <i.icon size={17} strokeWidth={1.75} aria-hidden="true" className="nav-icon" />
-                    <span className="nav-label">{i.label}</span>
-                    {i.count ? (
-                      <span className="nav-count" aria-label={`${i.count} open`}>
-                        {i.count}
-                      </span>
-                    ) : null}
-                  </Link>
-                ))}
-              </div>
+              <button
+                key={pin.key}
+                ref={(el) => {
+                  pinBtnRefs.current[pin.key] = el;
+                }}
+                type="button"
+                className={`ee-rail-item ${open ? "hot" : ""}`}
+                aria-expanded={open}
+                onMouseEnter={() => showPin(pin.key)}
+                onMouseLeave={scheduleClose}
+                onClick={() => showPin(pin.key)}
+              >
+                <Icon size={18} strokeWidth={SW} />
+                <span>{pin.label}</span>
+                <ChevronRight size={14} strokeWidth={SW} className="ee-rail-chevron" />
+              </button>
             );
           })}
         </nav>
-        <div className="sidebar-foot">
+
+        <div className="ee-rail-foot">
+          <Link to="/setup" className="ee-rail-item" onClick={() => setNavOpen(false)}>
+            <Settings size={18} strokeWidth={SW} />
+            <span>Settings</span>
+          </Link>
           <button
             type="button"
-            className="nav-link collapse-toggle"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            data-tip="Expand sidebar"
+            className={`ee-rail-item ${customiseOpen ? "active" : ""}`}
+            onClick={() => {
+              setPanel(null);
+              setCustomiseTab("navigation");
+              setCustomiseOpen(true);
+            }}
           >
-            {collapsed ? (
-              <PanelLeftOpen size={17} strokeWidth={1.75} aria-hidden="true" className="nav-icon" />
-            ) : (
-              <PanelLeftClose size={17} strokeWidth={1.75} aria-hidden="true" className="nav-icon" />
-            )}
-            <span className="nav-label">Collapse</span>
+            <SlidersHorizontal size={18} strokeWidth={SW} />
+            <span>Customise</span>
           </button>
         </div>
       </aside>
-      <div className="scrim" onClick={() => setNavOpen(false)} />
 
-      <div className="main">
-        <header className="topbar">
-          <button type="button" className="icon-button menu-button" onClick={() => setNavOpen(true)} aria-label="Open menu" aria-expanded={navOpen}>
-            <MenuIcon size={20} aria-hidden="true" />
-          </button>
-          <div className="context" aria-label="Financial context">
-            {dash?.currentFinancialYear ? (
-              <>
-                <strong>{dash.currentFinancialYear.name}</strong>
-                {dash.currentOpenPeriod && (
-                  <span className="hide-xs">
-                    {" "}· Open period <strong>{dash.currentOpenPeriod.name}</strong>
-                  </span>
-                )}
-                <span className="context-ccy" title={`Amounts in ${company.currency}`}>
-                  {" "}· {company.currency}
-                </span>
-              </>
-            ) : (
-              dash && "No financial year set up"
-            )}
+      {/* Fixed panels — outside overflow so they match the mock and stay fully visible */}
+      {panel === "create" && panelStyle && (
+        <div className="ee-create-menu ee-panel-fixed" style={panelStyle} role="dialog" aria-label="Create new">
+          <div className="ee-create-title">Create new</div>
+          <div className="ee-create-grid">
+            {CREATE_MENU.map((col) => {
+              const Icon = CREATE_ICONS[col.icon] ?? MoreHorizontal;
+              return (
+                <div className="ee-create-col" key={col.title}>
+                  <div className="ee-create-col-head">
+                    <Icon size={16} strokeWidth={SW} />
+                    <span>{col.title}</span>
+                  </div>
+                  <ul>
+                    {col.items.map((item) => (
+                      <li key={item.label}>
+                        <button type="button" className="ee-create-link" onClick={() => go(item.to)} disabled={!item.to}>
+                          {item.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
           </div>
-          <div className="spacer" />
-          {!online && (
-            <span className="badge warning" role="status">
-              <WifiOff size={13} aria-hidden="true" />
-              Offline
-            </span>
+        </div>
+      )}
+
+      {panel === "bookmarks" && panelStyle && (
+        <div className="ee-bookmarks ee-panel-fixed" style={panelStyle} role="dialog" aria-label="Bookmarks">
+          <span className="ee-bookmarks-caret" aria-hidden="true" />
+          <div className="ee-bookmarks-head">
+            <strong>Bookmarks</strong>
+            <button
+              type="button"
+              className="ee-bookmarks-edit"
+              aria-label="Edit bookmarks"
+              title="Edit"
+              onClick={() => {
+                setPanel(null);
+                setCustomiseTab("bookmarks");
+                setCustomiseOpen(true);
+              }}
+            >
+              <Pencil size={15} strokeWidth={SW} />
+            </button>
+          </div>
+          {bookmarks.length === 0 ? (
+            <p className="ee-bookmarks-empty">Add a bookmark to get started.</p>
+          ) : (
+            <ul className="ee-bookmarks-list">
+              {bookmarks.map((b) => (
+                <li key={b.to}>
+                  <button type="button" className="ee-bookmarks-link" onClick={() => go(b.to)}>
+                    {b.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-          <Link
-            to="/notifications"
-            className="icon-button notification-bell"
-            aria-label={unread.data?.count ? `Notifications, ${unread.data.count} unread` : "Notifications"}
-            title="Notifications"
-            style={{ position: "relative" }}
+          <button type="button" className="ee-bookmarks-add" onClick={bookmarkCurrent}>
+            <Plus size={15} strokeWidth={2.25} />
+            Bookmark current page
+          </button>
+        </div>
+      )}
+
+      {panel === "reports" && panelStyle && (
+        <div className="ee-flyout ee-flyout-list ee-panel-fixed" style={panelStyle} role="menu" aria-label="Reports">
+          {REPORTS_MENU.map((item) => (
+            <button
+              type="button"
+              key={item.label}
+              className="ee-flyout-text"
+              onClick={() => ("to" in item && item.to ? go(item.to) : undefined)}
+              disabled={!("to" in item && item.to)}
+            >
+              <span>{item.label}</span>
+              {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {panel === "apps" && panelStyle && (
+        <div className="ee-apps ee-panel-fixed" style={panelStyle} role="menu" aria-label="All apps">
+          <div className="ee-apps-title">All apps</div>
+          {ALL_APPS.map((app) => {
+            const Icon = APP_ICONS[app.icon] ?? LayoutGrid;
+            return (
+              <button type="button" key={app.key} className="ee-apps-item" onClick={() => go(app.to)}>
+                <span className="ee-apps-icon" style={{ background: app.color }}>
+                  <Icon size={15} strokeWidth={1.75} color="#fff" />
+                </span>
+                <span className="ee-apps-label">{app.label}</span>
+                <ChevronRight size={14} strokeWidth={SW} className="ee-apps-chevron" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {PINNED.map((pin) => {
+        if (panel !== pin.key || !panelStyle) return null;
+        return (
+          <div
+            key={pin.key}
+            className="ee-flyout ee-flyout-list ee-panel-fixed"
+            style={panelStyle}
+            role="menu"
+            aria-label={pin.label}
+            onMouseEnter={clearCloseTimer}
+            onMouseLeave={scheduleClose}
           >
-            <Bell size={18} aria-hidden="true" />
-            {unread.data?.count ? (
-              <span className="nav-count" aria-hidden="true" style={{ position: "absolute", top: -4, right: -6, minWidth: 18, fontSize: 10.5 }}>
-                {unread.data.count > 99 ? "99+" : unread.data.count}
+            <div className="ee-flyout-title">{pin.flyoutTitle}</div>
+            {pin.items.map((item) => (
+              <button type="button" key={item.to + item.label} className="ee-flyout-text" onClick={() => go(item.to)}>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+
+      <CustomisePreferences
+        open={customiseOpen}
+        initialTab={customiseTab}
+        onClose={() => setCustomiseOpen(false)}
+        onSaveBookmarks={(pages) => setBookmarks(pages)}
+      />
+
+      <SearchWorkspace open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      <div className="ee-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
+
+      <div className="ee-main">
+        <header className="ee-topbar">
+          <div className="ee-topbar-left">
+            <button type="button" className="ee-icon-btn ee-menu-btn" onClick={() => setNavOpen((v) => !v)} aria-label="Open menu" aria-expanded={navOpen}>
+              <MenuIcon size={20} strokeWidth={SW} />
+            </button>
+            <button type="button" className="ee-org-btn" title={companyLabel}>
+              <span>{companyLabel}</span>
+              <ChevronDown size={15} strokeWidth={SW} />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="ee-search"
+            onClick={() => {
+              setPanel(null);
+              setSearchOpen(true);
+            }}
+          >
+            <Search size={16} strokeWidth={SW} aria-hidden="true" />
+            <span className="ee-search-placeholder">Search transactions, contacts, reports...</span>
+          </button>
+
+          <div className="ee-topbar-actions">
+            {!online && (
+              <span className="ee-offline" role="status">
+                <WifiOff size={14} strokeWidth={SW} /> Offline
               </span>
-            ) : null}
-          </Link>
-          <a href={erpLinks.home} className="topbar-link hide-sm">
-            Excel Edge
-            <ExternalLink size={13} aria-hidden="true" />
-          </a>
-          <Menu
-            triggerClassName="user-button"
-            ariaLabel="Account"
-            label={
-              <>
-                <span className="avatar" aria-hidden="true">
+            )}
+            <button type="button" className="ee-icon-btn ee-hide-sm" title="Tasks" aria-label="Tasks">
+              <CheckSquare size={20} strokeWidth={SW} />
+            </button>
+            <button type="button" className="ee-icon-btn ee-hide-sm" title="Quick actions" aria-label="Quick actions">
+              <Zap size={20} strokeWidth={SW} />
+            </button>
+            <button type="button" className="ee-icon-btn ee-hide-sm" title="Apps" aria-label="Apps">
+              <Grid3X3 size={20} strokeWidth={SW} />
+            </button>
+            <button type="button" className="ee-icon-btn ee-hide-sm" title="Organisation" aria-label="Organisation">
+              <Briefcase size={20} strokeWidth={SW} />
+            </button>
+            <button type="button" className="ee-icon-btn" title="Help" aria-label="Help">
+              <HelpCircle size={20} strokeWidth={SW} />
+            </button>
+            <Link to="/notifications" className="ee-icon-btn ee-bell" aria-label={`Notifications, ${DUMMY.notificationCount} unread`}>
+              <Bell size={20} strokeWidth={SW} />
+              <span className="ee-badge">{DUMMY.notificationCount}</span>
+            </Link>
+            <Link to="/setup" className="ee-icon-btn" aria-label="Settings">
+              <Settings size={20} strokeWidth={SW} />
+            </Link>
+            <Menu
+              triggerClassName="ee-user-btn"
+              ariaLabel="Account"
+              label={
+                <span className="ee-avatar" aria-hidden="true">
                   {initials(email)}
                 </span>
-                <span className="user-name hide-sm">{email ?? "Signed in"}</span>
-              </>
-            }
-            header={
-              <>
-                <div className="strong">{email ?? "Signed in"}</div>
-                {role && <div className="muted small">{humanize(role)}</div>}
-              </>
-            }
-            items={[
-              { label: "Back to Excel Edge", icon: ExternalLink, onSelect: () => window.location.assign(erpLinks.home) },
-              { label: "Sign out", icon: LogOut, onSelect: signOut },
-            ]}
-          />
+              }
+              header={
+                <>
+                  <div className="strong">{email ?? "Signed in"}</div>
+                  {role && <div className="muted small">{humanize(role)}</div>}
+                </>
+              }
+              items={[
+                { label: "Back to Excel Edge", icon: ExternalLink, onSelect: () => window.location.assign(erpLinks.home) },
+                { label: "Sign out", icon: LogOut, onSelect: signOut },
+              ]}
+            />
+          </div>
         </header>
-        <main className="content" id="main-content" tabIndex={-1}>{children}</main>
+
+        <main className="ee-content" id="main-content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );
