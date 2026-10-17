@@ -1,25 +1,12 @@
-# Netlify deploy for the Accounting WEB frontend.
-# Repo is a monorepo (npm workspaces at the repo root), so the build MUST run
-# from the repository root — NOT from apps/web. A `base` pointing anywhere
-# else (e.g. a stale UI value or a wrong path) fails with:
-#   "Base directory does not exist: /opt/build"
-# In Netlify UI leave "Base directory" EMPTY so this file is honoured.
 [build]
-  base = "."
-  publish = "apps/web/dist"
-  command = "npm run build -w @exceledge/accounting-domain && npm run build -w @exceledge/accounting-web"
+  base = "frontend"
+  publish = "dist"
+  command = "npm ci && npm run build"
 
 [build.environment]
   NODE_VERSION = "24"
-  # VITE_ERP_URL / VITE_ERP_API_URL are PUBLIC frontend origins (they are
-  # inlined into the client bundle by design and visible to anyone in the
-  # browser). Netlify's Secrets Controller flags their values as "exposed
-  # secrets" (they appear in apps/web/.env.example and in the built JS) and
-  # fails the build. Exclude these keys from secret scanning.
-  # (UI equivalent: Site settings → Environment variables → add this same key.)
   SECRETS_SCAN_OMIT_KEYS = "VITE_ERP_URL,VITE_ERP_API_URL"
 
-# SPA fallback: serve index.html for client-side routes.
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -1,0 +1,16 @@
+# Dokploy: Build Type = Nixpacks, Root Directory = frontend
+# Publish Directory = dist
+# Note: Dokploy's Nixpacks nixpkgs pin does not ship nodejs_24 — use 20.
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-10_x"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]

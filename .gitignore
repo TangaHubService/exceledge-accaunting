@@ -16,3 +16,10 @@ apps/web/dist/
 node_modules/
 dist/
 .git.backup-local/
+
+backend/node_modules
+frontend/node_modules
+backend/dist
+frontend/dist
+backend/packages/domain/dist
+frontend/packages/domain/dist
