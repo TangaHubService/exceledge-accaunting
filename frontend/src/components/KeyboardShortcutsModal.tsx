@@ -36,7 +36,7 @@ export function KeyboardShortcutsModal({ open, onClose }: { open: boolean; onClo
   }
 
   return (
-    <div className="ee-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="ee-shortcuts-backdrop" role="presentation" onClick={onClose}>
       <div
         className="ee-shortcuts-modal"
         role="dialog"

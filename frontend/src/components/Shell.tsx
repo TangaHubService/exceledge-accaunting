@@ -376,7 +376,9 @@ export function Shell({ children }: { children: ReactNode }) {
           <button
             type="button"
             className={`ee-rail-item ${customiseOpen ? "active" : ""}`}
-            onClick={() => {
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
               setPanel(null);
               setCustomiseTab("navigation");
               setCustomiseOpen(true);

@@ -2253,6 +2253,7 @@ pre.json {
 .ee-search-ws {
   position: relative;
   z-index: 1;
+  pointer-events: auto;
   width: min(920px, 100%);
   max-height: min(720px, calc(100vh - 48px));
   display: flex;
@@ -2712,6 +2713,7 @@ pre.json {
 .ee-search-ws {
   position: relative;
   z-index: 1;
+  pointer-events: auto;
   width: min(920px, 100%);
   max-height: min(720px, calc(100vh - 48px));
   display: flex;
@@ -3171,6 +3173,7 @@ pre.json {
 .ee-search-ws {
   position: relative;
   z-index: 1;
+  pointer-events: auto;
   width: min(920px, 100%);
   max-height: min(720px, calc(100vh - 48px));
   display: flex;
@@ -3438,23 +3441,26 @@ pre.json {
   .ee-search-ws-side { border-left: 0; border-top: 1px solid #eef1f5; }
 }
 
-/* Customise preferences modal */
+/* Customise / Search modals — dialog must sit above the backdrop */
 .ee-modal-root {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 200;
   display: grid;
   place-items: center;
   padding: 24px 16px;
+  isolation: isolate;
 }
 .ee-modal-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   border: 0;
   padding: 0;
   margin: 0;
   background: rgba(8, 31, 56, 0.45);
   cursor: pointer;
+  pointer-events: auto;
 }
 .ee-customise {
   position: relative;
@@ -3468,6 +3474,7 @@ pre.json {
   box-shadow: 0 24px 64px rgba(8, 31, 56, 0.28);
   border: 1px solid #e8ecf1;
   overflow: hidden;
+  pointer-events: auto;
 }
 .ee-customise-head {
   display: flex;

@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SEARCH_EXPLORE, SEARCH_QUICK, SEARCH_RECENT, SEARCH_RECENT_QUERIES } from "../lib/dashboard-dummy";
 import { navigate } from "../lib/router";
 
@@ -58,10 +59,17 @@ export function SearchWorkspace({ open, onClose }: Props) {
     navigate(to);
   }
 
-  return (
+  return createPortal(
     <div className="ee-modal-root" role="presentation">
       <button type="button" className="ee-modal-backdrop" aria-label="Close search" onClick={onClose} />
-      <div className="ee-search-ws" role="dialog" aria-modal="true" aria-labelledby="ee-search-ws-title">
+      <div
+        className="ee-search-ws"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ee-search-ws-title"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="ee-search-ws-head">
           <div className="ee-search-ws-brand">
             <LayoutGrid size={18} strokeWidth={SW} />
@@ -202,6 +210,7 @@ export function SearchWorkspace({ open, onClose }: Props) {
           </span>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { CUSTOMISE_BOOKMARK_PAGES, CUSTOMISE_NAV_APPS } from "../lib/dashboard-dummy";
 
 const SW = 1.5;
@@ -113,10 +114,17 @@ export function CustomisePreferences({
     onClose();
   }
 
-  return (
+  return createPortal(
     <div className="ee-modal-root" role="presentation">
       <button type="button" className="ee-modal-backdrop" aria-label="Close" onClick={onClose} />
-      <div className="ee-customise" role="dialog" aria-modal="true" aria-labelledby="ee-customise-title">
+      <div
+        className="ee-customise"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ee-customise-title"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="ee-customise-head">
           <h2 id="ee-customise-title">Customise preferences</h2>
           <button type="button" className="ee-customise-close" onClick={onClose} aria-label="Close">
@@ -239,6 +247,7 @@ export function CustomisePreferences({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
