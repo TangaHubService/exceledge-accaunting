@@ -32,16 +32,32 @@ type Tab = "navigation" | "bookmarks";
 type Props = {
   open: boolean;
   initialTab?: Tab;
+  pinnedKeys?: string[];
+  showLabels?: boolean;
   onClose: () => void;
   onSaveBookmarks?: (pages: Array<{ label: string; to: string }>) => void;
+  onSaveNavigation?: (pinnedKeys: string[], showLabels: boolean) => void;
 };
 
 type NavApp = { key: string; label: string; color: string; icon: string; pinned: boolean };
 
-export function CustomisePreferences({ open, initialTab = "navigation", onClose, onSaveBookmarks }: Props) {
+export function CustomisePreferences({
+  open,
+  initialTab = "navigation",
+  pinnedKeys,
+  showLabels: showLabelsProp = true,
+  onClose,
+  onSaveBookmarks,
+  onSaveNavigation,
+}: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [showLabels, setShowLabels] = useState(true);
-  const [navApps, setNavApps] = useState<NavApp[]>(() => CUSTOMISE_NAV_APPS.map((a) => ({ ...a })));
+  const [showLabels, setShowLabels] = useState(showLabelsProp);
+  const [navApps, setNavApps] = useState<NavApp[]>(() =>
+    CUSTOMISE_NAV_APPS.map((a) => ({
+      ...a,
+      pinned: pinnedKeys ? pinnedKeys.includes(a.key) : a.pinned,
+    })),
+  );
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
 
@@ -49,6 +65,13 @@ export function CustomisePreferences({ open, initialTab = "navigation", onClose,
     if (!open) return;
     setTab(initialTab);
     setQuery("");
+    setShowLabels(showLabelsProp);
+    setNavApps(
+      CUSTOMISE_NAV_APPS.map((a) => ({
+        ...a,
+        pinned: pinnedKeys ? pinnedKeys.includes(a.key) : a.pinned,
+      })),
+    );
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
@@ -59,7 +82,7 @@ export function CustomisePreferences({ open, initialTab = "navigation", onClose,
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, initialTab, onClose]);
+  }, [open, initialTab, onClose, pinnedKeys, showLabelsProp]);
 
   const filteredPages = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -83,6 +106,10 @@ export function CustomisePreferences({ open, initialTab = "navigation", onClose,
       to: p.to,
     }));
     onSaveBookmarks?.(pages);
+    onSaveNavigation?.(
+      navApps.filter((a) => a.pinned).map((a) => a.key),
+      showLabels,
+    );
     onClose();
   }
 

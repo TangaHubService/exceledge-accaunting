@@ -62,11 +62,30 @@ import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
 import { SignIn } from "./SignIn";
+import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
+import { CompanySettings } from "./pages/settings/CompanySettings";
+import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
+import { InboxSettings } from "./pages/settings/InboxSettings";
+import { ReportsSettings } from "./pages/settings/ReportsSettings";
+import { SalesSettings } from "./pages/settings/SalesSettings";
+import { TimeSettings } from "./pages/settings/TimeSettings";
+import { UsageSettings } from "./pages/settings/UsageSettings";
+import { WalletSettings } from "./pages/settings/WalletSettings";
 
 type Route = { pattern: string; needs: AccountingCapability; render: (params: Record<string, string>) => ReactNode };
 
 const ROUTES: Route[] = [
   { pattern: "/", needs: "setup:view", render: () => <Overview /> },
+  { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
+  { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
+  { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
+  { pattern: "/settings/sales", needs: "setup:view", render: () => <SalesSettings /> },
+  { pattern: "/settings/expenses", needs: "setup:view", render: () => <ExpensesSettings /> },
+  { pattern: "/settings/time", needs: "setup:view", render: () => <TimeSettings /> },
+  { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
+  { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
+  { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
+  { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
   { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
@@ -185,11 +204,16 @@ function Gate() {
   }
   return (
     <CompanyProvider>
-      <Shell>
-        <Routes />
-      </Shell>
+      <RoutedShell />
     </CompanyProvider>
   );
+}
+
+function RoutedShell() {
+  const { path } = useLocation();
+  const page = <Routes />;
+  if (path.startsWith("/settings")) return page;
+  return <Shell>{page}</Shell>;
 }
 
 function Routes() {
