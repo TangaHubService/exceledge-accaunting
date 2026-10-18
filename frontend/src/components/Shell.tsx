@@ -48,6 +48,7 @@ import { erpLinks } from "../lib/config";
 import { humanize } from "../lib/format";
 import { Link, navigate, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
+import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { CustomisePreferences } from "./CustomisePreferences";
 import { SearchWorkspace } from "./SearchWorkspace";
 import { Menu } from "./ui";
@@ -131,6 +132,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const closeTimer = useRef<number | null>(null);
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine);
   const companyLabel = company.name || DUMMY.companyName;
+  const customerHub = path.startsWith("/customers");
 
   function clearCloseTimer() {
     if (closeTimer.current != null) {
@@ -247,7 +249,7 @@ export function Shell({ children }: { children: ReactNode }) {
     : undefined;
 
   return (
-    <div className={`ee-app ${navOpen ? "nav-open" : ""}`}>
+    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${customerHub ? "ee-hub-open" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -312,9 +314,16 @@ export function Shell({ children }: { children: ReactNode }) {
           <button
             ref={appsBtnRef}
             type="button"
-            className={`ee-rail-item ${panel === "apps" ? "hot" : ""}`}
-            aria-expanded={panel === "apps"}
-            onClick={() => openPanel("apps")}
+            className={`ee-rail-item ${panel === "apps" || customerHub ? "hot" : ""} ${customerHub ? "active" : ""}`}
+            aria-expanded={panel === "apps" || customerHub}
+            onClick={() => {
+              if (customerHub) {
+                setPanel(null);
+                navigate("/customers");
+                return;
+              }
+              openPanel("apps");
+            }}
           >
             <Grid3X3 size={18} strokeWidth={SW} />
             <span>All apps</span>
@@ -500,6 +509,8 @@ export function Shell({ children }: { children: ReactNode }) {
       <SearchWorkspace open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       <div className="ee-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
+
+      {customerHub && <AllAppsSidebar activeLeaf="customers-leads" />}
 
       <div className="ee-main">
         <header className="ee-topbar">

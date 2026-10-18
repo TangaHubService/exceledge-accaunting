@@ -1129,6 +1129,9 @@ pre.json {
   background: #f3f5f8;
   overflow: visible;
 }
+.ee-app.ee-hub-open {
+  grid-template-columns: var(--ee-rail-w) 248px minmax(0, 1fr);
+}
 
 .ee-rail {
   position: sticky;
