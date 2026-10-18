@@ -8,14 +8,8 @@ import type { Customer } from "../../lib/types";
 import { useSession } from "../../lib/session";
 import { FormError, parseAmount, useSubmit } from "../forms";
 import { Drawer } from "../ui";
+import { AddCustomerForm } from "./AddCustomerForm";
 import { DrawerIconTabs } from "./DrawerIconTabs";
-import { AddressTab } from "./tabs/AddressTab";
-import { ContactTab } from "./tabs/ContactTab";
-import { DocumentsTab } from "./tabs/DocumentsTab";
-import { NotesTab } from "./tabs/NotesTab";
-import { PaymentTab } from "./tabs/PaymentTab";
-import { RelationshipsTab } from "./tabs/RelationshipsTab";
-import { ToolsTab } from "./tabs/ToolsTab";
 
 function buildAddress(d: CustomerDraft) {
   return [d.billingStreet1, d.billingStreet2, d.billingCity, d.billingProvince, d.billingPostal, d.billingCountry]
@@ -49,6 +43,13 @@ export function AddCustomerDrawer({
     });
   }
 
+  function goTab(id: DrawerTabId) {
+    setTab(id);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   function submit(e: FormEvent) {
     e.preventDefault();
     const name = draft.displayName.trim() || [draft.firstName, draft.lastName].filter(Boolean).join(" ").trim();
@@ -72,7 +73,6 @@ export function AddCustomerDrawer({
         onSaved(result);
         return `${result.name} added as ${result.code}`;
       } catch {
-        // Offline / design preview: keep the form usable with dummy data.
         onClose();
         return `${name} saved (preview)`;
       }
@@ -89,7 +89,7 @@ export function AddCustomerDrawer({
           <button type="button" className="ee-link-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" form="add-customer-form" className="btn btn-primary" disabled={busy}>
+          <button type="submit" form="add-customer-form" className="btn btn-primary ee-save-btn" disabled={busy}>
             {busy ? "Saving…" : "Save"}
           </button>
         </div>
@@ -97,16 +97,10 @@ export function AddCustomerDrawer({
     >
       <form id="add-customer-form" className="ee-add-customer" onSubmit={submit}>
         <FormError message={error} />
-        <DrawerIconTabs active={tab} onChange={setTab} />
-        <div className="ee-add-customer-body" role="tabpanel">
-          {tab === "contact" && <ContactTab draft={draft} set={set} />}
-          {tab === "address" && <AddressTab draft={draft} set={set} />}
-          {tab === "notes" && <NotesTab draft={draft} set={set} />}
-          {tab === "payment" && <PaymentTab draft={draft} set={set} />}
-          {tab === "documents" && <DocumentsTab />}
-          {tab === "tools" && <ToolsTab />}
-          {tab === "relationships" && <RelationshipsTab draft={draft} set={set} />}
+        <div className="ee-drawer-tabs-sticky">
+          <DrawerIconTabs active={tab} onChange={goTab} />
         </div>
+        <AddCustomerForm draft={draft} set={set} />
       </form>
     </Drawer>
   );

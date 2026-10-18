@@ -1130,7 +1130,7 @@ pre.json {
   overflow: visible;
 }
 .ee-app.ee-hub-open {
-  grid-template-columns: var(--ee-rail-w) 248px minmax(0, 1fr);
+  grid-template-columns: var(--ee-rail-w) var(--ee-apps-dock-w, 248px) minmax(0, 1fr);
 }
 
 .ee-rail {

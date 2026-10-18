@@ -1,6 +1,5 @@
 /**
- * Hero illustration from the Customers & leads mock.
- * Uses the cropped mock artwork as-is (woman with glasses + plant).
+ * Hero illustration from the Customers & leads mock — used as-is.
  */
 export function CustomersIllustration() {
   return (
@@ -9,7 +8,7 @@ export function CustomersIllustration() {
         className="ee-cust-illu-person"
         src="/illustrations/customers-hero.png"
         alt=""
-        width={349}
+        width={338}
         height={199}
         decoding="async"
       />

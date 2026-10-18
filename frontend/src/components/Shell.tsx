@@ -249,24 +249,31 @@ export function Shell({ children }: { children: ReactNode }) {
     : undefined;
 
   return (
-    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${customerHub ? "ee-hub-open" : ""}`}>
+    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${customerHub ? "ee-hub-open ee-hub-mock" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
 
       <aside className="ee-rail" aria-label="Accounting navigation">
-        <div className="ee-rail-brand">
-          <span className="ee-rail-logo" aria-hidden="true">
-            <LayoutGrid size={18} strokeWidth={SW} />
-          </span>
-          <div className="ee-rail-brand-text">
-            <div className="ee-rail-name">Excel Edge ERP</div>
-            <div className="ee-rail-sub">Accounting</div>
+        {!customerHub && (
+          <div className="ee-rail-brand">
+            <span className="ee-rail-logo" aria-hidden="true">
+              <LayoutGrid size={18} strokeWidth={SW} />
+            </span>
+            <div className="ee-rail-brand-text">
+              <div className="ee-rail-name">Excel Edge ERP</div>
+              <div className="ee-rail-sub">Accounting</div>
+            </div>
+            <button type="button" className="ee-icon-btn ee-rail-close" onClick={() => setNavOpen(false)} aria-label="Close menu">
+              <X size={18} strokeWidth={SW} />
+            </button>
           </div>
+        )}
+        {customerHub && (
           <button type="button" className="ee-icon-btn ee-rail-close" onClick={() => setNavOpen(false)} aria-label="Close menu">
             <X size={18} strokeWidth={SW} />
           </button>
-        </div>
+        )}
 
         <div className="ee-rail-create-wrap">
           <button
@@ -329,36 +336,42 @@ export function Shell({ children }: { children: ReactNode }) {
             <span>All apps</span>
           </button>
 
-          <div className="ee-rail-section">Pinned</div>
-          {PINNED.map((pin) => {
-            const Icon = PIN_ICONS[pin.key] ?? BookOpen;
-            const open = panel === pin.key;
-            return (
-              <button
-                key={pin.key}
-                ref={(el) => {
-                  pinBtnRefs.current[pin.key] = el;
-                }}
-                type="button"
-                className={`ee-rail-item ${open ? "hot" : ""}`}
-                aria-expanded={open}
-                onMouseEnter={() => showPin(pin.key)}
-                onMouseLeave={scheduleClose}
-                onClick={() => showPin(pin.key)}
-              >
-                <Icon size={18} strokeWidth={SW} />
-                <span>{pin.label}</span>
-                <ChevronRight size={14} strokeWidth={SW} className="ee-rail-chevron" />
-              </button>
-            );
-          })}
+          {!customerHub && (
+            <>
+              <div className="ee-rail-section">Pinned</div>
+              {PINNED.map((pin) => {
+                const Icon = PIN_ICONS[pin.key] ?? BookOpen;
+                const open = panel === pin.key;
+                return (
+                  <button
+                    key={pin.key}
+                    ref={(el) => {
+                      pinBtnRefs.current[pin.key] = el;
+                    }}
+                    type="button"
+                    className={`ee-rail-item ${open ? "hot" : ""}`}
+                    aria-expanded={open}
+                    onMouseEnter={() => showPin(pin.key)}
+                    onMouseLeave={scheduleClose}
+                    onClick={() => showPin(pin.key)}
+                  >
+                    <Icon size={18} strokeWidth={SW} />
+                    <span>{pin.label}</span>
+                    <ChevronRight size={14} strokeWidth={SW} className="ee-rail-chevron" />
+                  </button>
+                );
+              })}
+            </>
+          )}
         </nav>
 
         <div className="ee-rail-foot">
-          <Link to="/setup" className="ee-rail-item" onClick={() => setNavOpen(false)}>
-            <Settings size={18} strokeWidth={SW} />
-            <span>Settings</span>
-          </Link>
+          {!customerHub && (
+            <Link to="/setup" className="ee-rail-item" onClick={() => setNavOpen(false)}>
+              <Settings size={18} strokeWidth={SW} />
+              <span>Settings</span>
+            </Link>
+          )}
           <button
             type="button"
             className={`ee-rail-item ${customiseOpen ? "active" : ""}`}
@@ -518,8 +531,14 @@ export function Shell({ children }: { children: ReactNode }) {
             <button type="button" className="ee-icon-btn ee-menu-btn" onClick={() => setNavOpen((v) => !v)} aria-label="Open menu" aria-expanded={navOpen}>
               <MenuIcon size={20} strokeWidth={SW} />
             </button>
+            {customerHub && (
+              <div className="ee-topbar-brand" aria-hidden="true">
+                <img src="/logo.jpeg" alt="" className="ee-topbar-crest" width={28} height={28} />
+                <span>Excel Edge ERP</span>
+              </div>
+            )}
             <button type="button" className="ee-org-btn" title={companyLabel}>
-              <span>{companyLabel}</span>
+              <span>{companyLabel.toUpperCase()}</span>
               <ChevronDown size={15} strokeWidth={SW} />
             </button>
           </div>
@@ -533,7 +552,7 @@ export function Shell({ children }: { children: ReactNode }) {
             }}
           >
             <Search size={16} strokeWidth={SW} aria-hidden="true" />
-            <span className="ee-search-placeholder">Search transactions, contacts, reports...</span>
+            <span className="ee-search-placeholder">Search transactions, contacts, reports and more</span>
           </button>
 
           <div className="ee-topbar-actions">

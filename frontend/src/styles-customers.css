@@ -1,6 +1,121 @@
-/* Customer Hub — Customers & leads + Add customer drawer (design mocks) */
+/* Customer Hub — pixel match to Customers & leads / Add customer mocks */
 
-.drawer.wide { width: min(720px, 100vw); }
+.ee-app.ee-hub-mock {
+  --ee-rail-w: 72px;
+  --ee-apps-dock-w: 248px;
+  --ee-blue: #2f6fed;
+  --ee-blue-soft: #e8f0fe;
+  --ee-navy: #0a1f3d;
+  --accent: #2f6fed;
+  --accent-hover: #245dd9;
+  grid-template-columns: var(--ee-rail-w) var(--ee-apps-dock-w) minmax(0, 1fr);
+  background: #f4f6f9;
+}
+.ee-hub-mock .ee-rail {
+  background: var(--ee-navy);
+}
+.ee-hub-mock .ee-rail-create-wrap {
+  padding: 10px 8px 6px;
+}
+.ee-hub-mock .ee-create-btn {
+  flex-direction: column;
+  height: auto;
+  min-height: 52px;
+  padding: 8px 4px 6px;
+  gap: 3px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.ee-hub-mock .ee-rail-nav {
+  padding: 4px 6px 8px;
+  gap: 4px;
+  overflow-y: auto;
+}
+.ee-hub-mock .ee-rail-item {
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-height: 54px;
+  padding: 8px 2px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0;
+}
+.ee-hub-mock .ee-rail-item.active,
+.ee-hub-mock .ee-rail-item.hot {
+  background: var(--ee-blue);
+  color: #fff;
+}
+.ee-hub-mock .ee-rail-foot {
+  padding: 8px 6px 12px;
+  border-top: 0;
+}
+.ee-hub-mock .ee-rail-close {
+  display: none;
+}
+.ee-hub-mock .ee-topbar {
+  height: 56px;
+  padding: 0 16px 0 12px;
+  border-bottom: 1px solid #e6ebf2;
+}
+.ee-hub-mock .ee-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: #0b2a4a;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.ee-hub-mock .ee-topbar-crest {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+}
+.ee-hub-mock .ee-org-btn {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: #0b2a4a;
+}
+.ee-hub-mock .ee-search {
+  max-width: 520px;
+  background: #e8f0fe;
+  border-color: transparent;
+}
+.ee-hub-mock .ee-content {
+  max-width: none;
+  padding: 20px 28px 48px;
+  background: #fff;
+  min-height: calc(100vh - 56px);
+}
+.ee-hub-mock .ee-apps-dock {
+  background: #f3f6fa;
+  border-right: 1px solid #e4e9f0;
+}
+.ee-hub-mock .btn-primary,
+.ee-hub-mock .ee-save-btn {
+  background: var(--ee-blue);
+  border-color: var(--ee-blue);
+}
+.ee-hub-mock .btn-primary:hover,
+.ee-hub-mock .ee-save-btn:hover {
+  background: #245dd9;
+  border-color: #245dd9;
+}
+
+.drawer.wide { width: min(560px, 100vw); }
+@media (min-width: 1100px) {
+  .drawer.wide { width: min(640px, 46vw); }
+}
 .drawer-foot:has(.ee-drawer-foot-spread) {
   display: block;
   padding: 0;
@@ -145,13 +260,13 @@
 
 .ee-cust-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);
+  gap: 20px 28px;
   align-items: center;
-  padding: 28px 32px;
+  padding: 28px 32px 24px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #eef4fc 0%, #f5f8fc 55%, #eaf1fa 100%);
-  border: 1px solid #e0e8f3;
+  background: #eef4fc;
+  border: 1px solid #dfe8f5;
 }
 .ee-cust-hero-copy h2 {
   font-size: 26px;
@@ -322,13 +437,24 @@
 }
 
 .ee-add-customer { display: flex; flex-direction: column; gap: 0; }
+.ee-drawer-tabs-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  margin: -4px -4px 0;
+  padding: 0 4px;
+}
 .ee-drawer-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   overflow-x: auto;
-  padding-bottom: 14px;
-  margin: 0 -4px 8px;
+  padding: 4px 0 12px;
+  margin: 0;
   border-bottom: 1px solid var(--line);
+}
+.ee-add-customer-body [id^="section-"] {
+  scroll-margin-top: 8px;
 }
 .ee-drawer-tab {
   flex: none;
@@ -474,10 +600,12 @@
 .ee-label-with-tip svg { color: #98a2b3; }
 
 @media (max-width: 960px) {
-  .ee-app.ee-hub-open {
+  .ee-app.ee-hub-open,
+  .ee-app.ee-hub-mock {
     grid-template-columns: var(--ee-rail-w) minmax(0, 1fr);
   }
   .ee-apps-dock { display: none; }
+  .ee-hub-mock .ee-topbar-brand { display: none; }
   .ee-cust-hero { grid-template-columns: 1fr; }
   .ee-cust-hero-art { order: -1; min-height: 180px; }
   .ee-cust-grid-name { grid-template-columns: 1fr 1fr; }
