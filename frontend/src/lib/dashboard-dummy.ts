@@ -159,6 +159,7 @@ export const ALL_APPS = [
   { key: "projects", label: "Projects", to: "/dimensions", color: "#1d4ed8", icon: "projects" as const },
   { key: "inventory", label: "Inventory", to: "/inventory", color: "#312e81", icon: "inventory" as const },
   { key: "tax", label: "Tax", to: "/tax", color: "#e11d48", icon: "tax" as const },
+  { key: "marketing", label: "Marketing", to: "/customers", color: "#7c3aed", icon: "sales" as const },
 ] as const;
 
 export const PINNED = [

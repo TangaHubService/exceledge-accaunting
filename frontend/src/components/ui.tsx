@@ -119,7 +119,7 @@ export function Field({
   className,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   required?: boolean;
   hint?: ReactNode;
   error?: string | null;

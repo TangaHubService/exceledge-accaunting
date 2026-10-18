@@ -42,7 +42,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ALL_APPS, CREATE_MENU, DUMMY, PINNED, REPORTS_MENU } from "../lib/dashboard-dummy";
+import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
+import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
 import { erpLinks } from "../lib/config";
 import { humanize } from "../lib/format";
@@ -71,7 +72,14 @@ const PIN_ICONS: Record<string, LucideIcon> = {
   accounting: BookOpen,
   expenses: Wallet,
   sales: BarChart3,
+  customers: Users,
+  team: Users,
+  projects: FolderKanban,
+  inventory: Warehouse,
+  tax: PieChart,
 };
+
+const DEFAULT_PINNED_KEYS = CUSTOMISE_NAV_APPS.filter((a) => a.pinned).map((a) => a.key);
 
 const APP_ICONS: Record<string, LucideIcon> = {
   accounting: BookOpen,
@@ -123,6 +131,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [customiseTab, setCustomiseTab] = useState<"navigation" | "bookmarks">("navigation");
   const [searchOpen, setSearchOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<Array<{ label: string; to: string }>>([]);
+  const [pinnedKeys, setPinnedKeys] = useState<string[]>(() => [...DEFAULT_PINNED_KEYS]);
+  const [showNavLabels, setShowNavLabels] = useState(true);
   const createBtnRef = useRef<HTMLButtonElement>(null);
   const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
   const reportsBtnRef = useRef<HTMLButtonElement>(null);
@@ -149,7 +159,8 @@ export function Shell({ children }: { children: ReactNode }) {
     setPanel((cur) => (cur === next ? null : next));
   }
 
-  function showPin(key: string) {
+  /** Open flyout on hover (same behaviour as Pinned). */
+  function showPanel(key: Panel) {
     clearCloseTimer();
     setPanel(key);
   }
@@ -271,12 +282,14 @@ export function Shell({ children }: { children: ReactNode }) {
             ref={createBtnRef}
             type="button"
             className={`ee-create-btn ${panel === "create" ? "open" : ""}`}
+            onMouseEnter={() => showPanel("create")}
+            onMouseLeave={scheduleClose}
             onClick={() => openPanel("create")}
             aria-expanded={panel === "create"}
             aria-haspopup="dialog"
           >
             <Plus size={18} strokeWidth={2.25} />
-            <span>Create</span>
+            {showNavLabels && <span>Create</span>}
           </button>
         </div>
 
@@ -287,15 +300,17 @@ export function Shell({ children }: { children: ReactNode }) {
             className={`ee-rail-item ${panel === "bookmarks" ? "active" : ""}`}
             title="Bookmarks"
             aria-expanded={panel === "bookmarks"}
+            onMouseEnter={() => showPanel("bookmarks")}
+            onMouseLeave={scheduleClose}
             onClick={() => openPanel("bookmarks")}
           >
             <Bookmark size={18} strokeWidth={SW} fill={panel === "bookmarks" ? "currentColor" : "none"} />
-            <span>Bookmarks</span>
+            {showNavLabels && <span>Bookmarks</span>}
           </button>
 
           <Link to="/" className={`ee-rail-item ${path === "/" && panel !== "bookmarks" ? "active" : ""}`} onClick={() => setNavOpen(false)}>
             <Home size={18} strokeWidth={SW} />
-            <span>Home</span>
+            {showNavLabels && <span>Home</span>}
           </Link>
 
           <button
@@ -303,10 +318,12 @@ export function Shell({ children }: { children: ReactNode }) {
             type="button"
             className={`ee-rail-item ${panel === "reports" ? "hot" : ""} ${path.startsWith("/reports") && panel !== "bookmarks" ? "active" : ""}`}
             aria-expanded={panel === "reports"}
+            onMouseEnter={() => showPanel("reports")}
+            onMouseLeave={scheduleClose}
             onClick={() => openPanel("reports")}
           >
             <BarChart3 size={18} strokeWidth={SW} />
-            <span>Reports</span>
+            {showNavLabels && <span>Reports</span>}
           </button>
 
           <button
@@ -314,31 +331,35 @@ export function Shell({ children }: { children: ReactNode }) {
             type="button"
             className={`ee-rail-item ${panel === "apps" ? "hot" : ""}`}
             aria-expanded={panel === "apps"}
+            onMouseEnter={() => showPanel("apps")}
+            onMouseLeave={scheduleClose}
             onClick={() => openPanel("apps")}
           >
             <Grid3X3 size={18} strokeWidth={SW} />
-            <span>All apps</span>
+            {showNavLabels && <span>All apps</span>}
           </button>
 
           <div className="ee-rail-section">Pinned</div>
-          {PINNED.map((pin) => {
-            const Icon = PIN_ICONS[pin.key] ?? BookOpen;
-            const open = panel === pin.key;
+          {pinnedKeys.map((key) => {
+            const meta = CUSTOMISE_NAV_APPS.find((a) => a.key === key);
+            const Icon = PIN_ICONS[key] ?? BookOpen;
+            const open = panel === key;
+            const label = meta?.label ?? key;
             return (
               <button
-                key={pin.key}
+                key={key}
                 ref={(el) => {
-                  pinBtnRefs.current[pin.key] = el;
+                  pinBtnRefs.current[key] = el;
                 }}
                 type="button"
                 className={`ee-rail-item ${open ? "hot" : ""}`}
                 aria-expanded={open}
-                onMouseEnter={() => showPin(pin.key)}
+                onMouseEnter={() => showPanel(key)}
                 onMouseLeave={scheduleClose}
-                onClick={() => showPin(pin.key)}
+                onClick={() => showPanel(key)}
               >
                 <Icon size={18} strokeWidth={SW} />
-                <span>{pin.label}</span>
+                {showNavLabels && <span>{label.replace(/ & .*$/, "").replace(" Management", "")}</span>}
                 <ChevronRight size={14} strokeWidth={SW} className="ee-rail-chevron" />
               </button>
             );
@@ -346,9 +367,9 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="ee-rail-foot">
-          <Link to="/setup" className="ee-rail-item" onClick={() => setNavOpen(false)}>
+          <Link to="/settings/company" className="ee-rail-item" onClick={() => setNavOpen(false)}>
             <Settings size={18} strokeWidth={SW} />
-            <span>Settings</span>
+            {showNavLabels && <span>Settings</span>}
           </Link>
           <button
             type="button"
@@ -360,14 +381,21 @@ export function Shell({ children }: { children: ReactNode }) {
             }}
           >
             <SlidersHorizontal size={18} strokeWidth={SW} />
-            <span>Customise</span>
+            {showNavLabels && <span>Customise</span>}
           </button>
         </div>
       </aside>
 
       {/* Fixed panels — outside overflow so they match the mock and stay fully visible */}
       {panel === "create" && panelStyle && (
-        <div className="ee-create-menu ee-panel-fixed" style={panelStyle} role="dialog" aria-label="Create new">
+        <div
+          className="ee-create-menu ee-panel-fixed"
+          style={panelStyle}
+          role="dialog"
+          aria-label="Create new"
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
           <div className="ee-create-title">Create new</div>
           <div className="ee-create-grid">
             {CREATE_MENU.map((col) => {
@@ -395,7 +423,14 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
 
       {panel === "bookmarks" && panelStyle && (
-        <div className="ee-bookmarks ee-panel-fixed" style={panelStyle} role="dialog" aria-label="Bookmarks">
+        <div
+          className="ee-bookmarks ee-panel-fixed"
+          style={panelStyle}
+          role="dialog"
+          aria-label="Bookmarks"
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
           <span className="ee-bookmarks-caret" aria-hidden="true" />
           <div className="ee-bookmarks-head">
             <strong>Bookmarks</strong>
@@ -434,7 +469,14 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
 
       {panel === "reports" && panelStyle && (
-        <div className="ee-flyout ee-flyout-list ee-panel-fixed" style={panelStyle} role="menu" aria-label="Reports">
+        <div
+          className="ee-flyout ee-flyout-list ee-panel-fixed"
+          style={panelStyle}
+          role="menu"
+          aria-label="Reports"
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
           {REPORTS_MENU.map((item) => (
             <button
               type="button"
@@ -451,7 +493,14 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
 
       {panel === "apps" && panelStyle && (
-        <div className="ee-apps ee-panel-fixed" style={panelStyle} role="menu" aria-label="All apps">
+        <div
+          className="ee-apps ee-panel-fixed"
+          style={panelStyle}
+          role="menu"
+          aria-label="All apps"
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
           <div className="ee-apps-title">All apps</div>
           {ALL_APPS.map((app) => {
             const Icon = APP_ICONS[app.icon] ?? LayoutGrid;
@@ -468,20 +517,23 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {PINNED.map((pin) => {
-        if (panel !== pin.key || !panelStyle) return null;
+      {pinnedKeys.map((key) => {
+        if (panel !== key || !panelStyle) return null;
+        const flyout = APP_FLYOUTS[key];
+        const meta = CUSTOMISE_NAV_APPS.find((a) => a.key === key);
+        if (!flyout) return null;
         return (
           <div
-            key={pin.key}
+            key={key}
             className="ee-flyout ee-flyout-list ee-panel-fixed"
             style={panelStyle}
             role="menu"
-            aria-label={pin.label}
+            aria-label={meta?.label ?? key}
             onMouseEnter={clearCloseTimer}
             onMouseLeave={scheduleClose}
           >
-            <div className="ee-flyout-title">{pin.flyoutTitle}</div>
-            {pin.items.map((item) => (
+            <div className="ee-flyout-title">{flyout.flyoutTitle}</div>
+            {flyout.items.map((item) => (
               <button type="button" key={item.to + item.label} className="ee-flyout-text" onClick={() => go(item.to)}>
                 <span>{item.label}</span>
               </button>
@@ -493,8 +545,14 @@ export function Shell({ children }: { children: ReactNode }) {
       <CustomisePreferences
         open={customiseOpen}
         initialTab={customiseTab}
+        pinnedKeys={pinnedKeys}
+        showLabels={showNavLabels}
         onClose={() => setCustomiseOpen(false)}
         onSaveBookmarks={(pages) => setBookmarks(pages)}
+        onSaveNavigation={(keys, labels) => {
+          setPinnedKeys(keys);
+          setShowNavLabels(labels);
+        }}
       />
 
       <SearchWorkspace open={searchOpen} onClose={() => setSearchOpen(false)} />

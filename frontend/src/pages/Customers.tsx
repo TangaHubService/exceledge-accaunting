@@ -1,8 +1,10 @@
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CustomerForm } from "../components/ArForms";
+import { AddCustomerDrawer } from "../components/customers/AddCustomerDrawer";
+import { CustomersHero } from "../components/customers/CustomersHero";
+import { CustomersTips } from "../components/customers/CustomersTips";
 import { type Column, DataTable } from "../components/DataTable";
-import { Badge, EmptyState, Loadable, PageHeader } from "../components/ui";
+import { Badge, EmptyState, Loadable } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, humanize, money, plural, toNumber } from "../lib/format";
 import { navigate, setQueryParam, useLocation } from "../lib/router";
@@ -10,6 +12,7 @@ import { useResource, useSession } from "../lib/session";
 import type { Customer } from "../lib/types";
 
 type Show = "all" | "owing" | "over-limit" | "inactive";
+type HubTab = "customers" | "leads";
 
 function isOverLimit(c: Customer) {
   return toNumber(c.creditLimit) > 0 && toNumber(c.balance) > toNumber(c.creditLimit);
@@ -29,9 +32,10 @@ export function Customers() {
   const { currency } = useCompany();
   const { query } = useLocation();
   const show = (query.get("show") as Show) || "all";
+  const hubTab = (query.get("tab") as HubTab) || "customers";
   const [search, setSearch] = useState(query.get("q") ?? "");
   const [debounced, setDebounced] = useState(search);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(query.get("new") === "1");
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(search.trim()), 250);
@@ -40,6 +44,8 @@ export function Customers() {
 
   const list = useResource<Customer[]>(`/api/v1/ar/customers${debounced ? `?q=${encodeURIComponent(debounced)}` : ""}`);
   const all = useMemo(() => list.data ?? [], [list.data]);
+  /** Empty-state mock (hero) when there are no customers, or API is unavailable. */
+  const showHero = all.length === 0 && !debounced;
 
   const counts = useMemo(
     () => ({
@@ -117,86 +123,119 @@ export function Customers() {
     ["inactive", "Inactive"],
   ];
 
-  return (
-    <>
-      <PageHeader
-        title="Customers"
-        description="Who you sell to on account, and what each of them owes."
-        actions={
-          can("ar:manage") && (
-            <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Plus size={16} aria-hidden="true" />
-              New customer
-            </button>
-          )
-        }
-      />
+  function openCreate() {
+    setCreating(true);
+  }
 
-      <div className="filter-bar">
-        <input
-          className="input search"
-          type="search"
-          placeholder="Search name, code or TIN"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search customers"
-        />
-        <div className="segmented" role="group" aria-label="Filter customers">
-          {filters.map(([key, label]) => (
-            <button key={key} type="button" className={show === key ? "on" : ""} onClick={() => setQueryParam("show", key === "all" ? null : key)}>
-              {label}
-              {key !== "all" && list.data && <span className="count">{counts[key]}</span>}
-            </button>
-          ))}
-        </div>
+  function closeCreate() {
+    setCreating(false);
+    setQueryParam("new", null);
+  }
+
+  return (
+    <div className="ee-cust-page">
+      <nav className="ee-cust-crumbs" aria-label="Breadcrumb">
+        <span>Customer Hub</span>
+        <span className="ee-cust-crumbs-sep">/</span>
+        <span>Customers &amp; leads</span>
+      </nav>
+
+      <header className="ee-cust-page-head">
+        <h1>Customers &amp; leads</h1>
+        {!showHero && hubTab === "customers" && can("ar:manage") && (
+          <button type="button" className="btn btn-primary" onClick={openCreate}>
+            <Plus size={16} aria-hidden="true" />
+            Add customer
+          </button>
+        )}
+      </header>
+
+      <div className="ee-cust-tabs" role="tablist" aria-label="Customers or leads">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={hubTab === "customers"}
+          className={`ee-cust-tab ${hubTab === "customers" ? "on" : ""}`}
+          onClick={() => setQueryParam("tab", null)}
+        >
+          Customers
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={hubTab === "leads"}
+          className={`ee-cust-tab ${hubTab === "leads" ? "on" : ""}`}
+          onClick={() => setQueryParam("tab", "leads")}
+        >
+          Leads
+        </button>
       </div>
 
-      <Loadable resource={list}>
-        {() => (
-          <>
-            <DataTable
-              columns={columns}
-              rows={rows}
-              rowKey={(c) => c.id}
-              onRowClick={(c) => navigate(`/customers/${c.id}`)}
-              initialSort={{ key: "name", dir: "asc" }}
-              empty={
-                all.length === 0 && !debounced ? (
-                  <EmptyState
-                    title="No customers yet"
-                    body="Add the customers you sell to on credit so you can invoice them and track what they owe. Customers from Excel Edge sales appear here automatically."
-                    action={
-                      can("ar:manage") && (
-                        <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-                          Add your first customer
-                        </button>
-                      )
-                    }
-                  />
-                ) : (
-                  <EmptyState title="No matching customers" body="Try a different search or filter." />
-                )
-              }
-            />
-            {rows.length > 0 && (
-              <p className="table-caption">
-                {plural(rows.length, "customer")} · {money(totalOwed, currency)} owed
-                {all.length >= 200 && " · Showing the first 200 — search to narrow down"}
-              </p>
-            )}
-          </>
-        )}
-      </Loadable>
+      {hubTab === "leads" || showHero ? (
+        <>
+          <CustomersHero
+            mode={hubTab === "leads" ? "leads" : "customers"}
+            onAdd={openCreate}
+            onImport={openCreate}
+          />
+          <CustomersTips mode={hubTab === "leads" ? "leads" : "customers"} />
+        </>
+      ) : (
+        <Loadable resource={list}>
+          {() => (
+            <>
+              <div className="filter-bar">
+                <input
+                  className="input search"
+                  type="search"
+                  placeholder="Search name, code or TIN"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search customers"
+                />
+                <div className="segmented" role="group" aria-label="Filter customers">
+                  {filters.map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={show === key ? "on" : ""}
+                      onClick={() => setQueryParam("show", key === "all" ? null : key)}
+                    >
+                      {label}
+                      {key !== "all" && list.data && <span className="count">{counts[key]}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(c) => c.id}
+                onRowClick={(c) => navigate(`/customers/${c.id}`)}
+                initialSort={{ key: "name", dir: "asc" }}
+                empty={<EmptyState title="No matching customers" body="Try a different search or filter." />}
+              />
+              {rows.length > 0 && (
+                <p className="table-caption">
+                  {plural(rows.length, "customer")} · {money(totalOwed, currency)} owed
+                  {all.length >= 200 && " · Showing the first 200 — search to narrow down"}
+                </p>
+              )}
+            </>
+          )}
+        </Loadable>
+      )}
 
       {creating && (
-        <CustomerForm
-          onClose={() => setCreating(false)}
+        <AddCustomerDrawer
+          onClose={closeCreate}
           onSaved={(c) => {
-            setCreating(false);
+            closeCreate();
             navigate(`/customers/${c.id}`);
           }}
         />
       )}
-    </>
+    </div>
   );
 }
