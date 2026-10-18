@@ -1,5 +1,6 @@
 import { BookOpen, ChevronDown, MoreVertical, Plus, Search, Users } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useFeedback } from "../components/feedback";
 import { Link, navigate, useLocation } from "../lib/router";
 import { MANAGE_ROLES, MANAGE_USERS, SUGGESTED_ROLES } from "../lib/users-dummy";
 
@@ -13,6 +14,7 @@ function tabFromPath(path: string, queryTab: string | null): Tab {
 
 export function ManageUsers() {
   const { path, query } = useLocation();
+  const { toast } = useFeedback();
   const tab = tabFromPath(path, query.get("tab"));
   const [q, setQ] = useState("");
 
@@ -122,10 +124,23 @@ export function ManageUsers() {
                     <td>{u.billable}</td>
                     <td>
                       <span className="ee-manage-action-split">
-                        <button type="button" className="btn ee-btn-outline-blue btn-sm">
+                        <button
+                          type="button"
+                          className="btn ee-btn-outline-blue btn-sm"
+                          onClick={() =>
+                            u.action === "Edit"
+                              ? navigate(`/users/new?edit=${encodeURIComponent(u.id)}`)
+                              : toast(`Opened “${u.action}” for ${u.name}.`)
+                          }
+                        >
                           {u.action}
                         </button>
-                        <button type="button" className="btn ee-btn-outline-blue btn-sm ee-manage-split-caret" aria-label="More">
+                        <button
+                          type="button"
+                          className="btn ee-btn-outline-blue btn-sm ee-manage-split-caret"
+                          aria-label="More"
+                          onClick={() => toast(`More actions for ${u.name}`)}
+                        >
                           <ChevronDown size={14} strokeWidth={1.75} />
                         </button>
                       </span>
@@ -150,7 +165,7 @@ export function ManageUsers() {
               <button type="button" className="ee-link-btn">
                 <BookOpen size={14} strokeWidth={1.5} aria-hidden="true" /> Learn about custom roles
               </button>
-              <button type="button" className="btn btn-primary">
+              <button type="button" className="btn btn-primary" onClick={() => toast("Add role — custom role editor coming next.")}>
                 <Plus size={16} strokeWidth={1.75} aria-hidden="true" /> Add role
               </button>
             </div>
@@ -178,10 +193,19 @@ export function ManageUsers() {
                     <td>{r.updated}</td>
                     <td>
                       <span className="ee-manage-role-action">
-                        <button type="button" className="ee-link-btn">
+                        <button
+                          type="button"
+                          className="ee-link-btn"
+                          onClick={() => toast(`${r.action} role “${r.name}”`)}
+                        >
                           {r.action}
                         </button>
-                        <button type="button" className="ee-icon-btn" aria-label="More actions">
+                        <button
+                          type="button"
+                          className="ee-icon-btn"
+                          aria-label="More actions"
+                          onClick={() => toast(`More actions for ${r.name}`)}
+                        >
                           <MoreVertical size={16} strokeWidth={1.5} />
                         </button>
                       </span>

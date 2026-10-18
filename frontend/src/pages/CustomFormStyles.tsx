@@ -1,11 +1,13 @@
 import { ChevronDown, Info, Plus } from "lucide-react";
 import { useState } from "react";
+import { useFeedback } from "../components/feedback";
 import { Link, navigate } from "../lib/router";
 import { FORM_STYLES } from "../lib/users-dummy";
 
 const NEW_STYLE_TYPES = ["Invoice", "Estimate", "Sales receipt", "Sales order"] as const;
 
 export function CustomFormStyles() {
+  const { toast } = useFeedback();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -85,7 +87,12 @@ export function CustomFormStyles() {
                     <button type="button" className="btn ee-btn-outline-blue btn-sm" onClick={() => navigate("/settings/form-styles/edit")}>
                       Edit
                     </button>
-                    <button type="button" className="btn ee-btn-outline-blue btn-sm ee-manage-split-caret" aria-label="More">
+                    <button
+                      type="button"
+                      className="btn ee-btn-outline-blue btn-sm ee-manage-split-caret"
+                      aria-label="More"
+                      onClick={() => toast(s.isDefault ? "Default style options" : `More actions for ${s.name}`)}
+                    >
                       <ChevronDown size={14} strokeWidth={1.75} />
                     </button>
                   </span>

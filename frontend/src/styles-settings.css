@@ -209,7 +209,11 @@
   color: #2f6fed;
   display: grid;
   place-items: center;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
 }
+.ee-settings-profile-avatar:hover { background: #dce8fc; }
 .ee-settings-profile-edit {
   position: absolute;
   right: 0;

@@ -1,10 +1,13 @@
-import { CalendarDays, Pencil } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { useState } from "react";
+import { useFeedback } from "../../components/feedback";
+import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { INBOX_SETTINGS } from "../../lib/settings-dummy";
 
 export function InboxSettings() {
+  const { toast } = useFeedback();
   const [alerts, setAlerts] = useState(INBOX_SETTINGS.companyAlerts);
   const [ai, setAi] = useState(INBOX_SETTINGS.aiFollowUp);
 
@@ -22,7 +25,7 @@ export function InboxSettings() {
               Connect an email account to send and receive messages
             </div>
           </div>
-          <button type="button" className="btn btn-primary">
+          <button type="button" className="btn btn-primary" onClick={() => toast("Connect email account")}>
             Connect email account
           </button>
         </div>
@@ -34,9 +37,7 @@ export function InboxSettings() {
             <h2>Messages</h2>
             <p>Control team alerts and automatic follow-up.</p>
           </div>
-          <button type="button" className="ee-link-btn">
-            <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-          </button>
+          <SettingsEditButton section="Messages" />
         </header>
 
         <div className="ee-settings-row ee-settings-row-top">

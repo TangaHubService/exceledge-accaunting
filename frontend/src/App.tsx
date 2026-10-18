@@ -38,6 +38,7 @@ import { Inventory } from "./pages/Inventory";
 import { InventoryMovements } from "./pages/InventoryMovements";
 import { InventoryReconciliation } from "./pages/InventoryReconciliation";
 import { CostOfSalesReport, InventoryValuationReport, SlowMovingReport } from "./pages/InventoryReports";
+import { ImportSuppliers } from "./pages/ImportSuppliers";
 import { Invoices } from "./pages/Invoices";
 import { JournalNew } from "./pages/JournalNew";
 import { Journals } from "./pages/Journals";
@@ -101,6 +102,7 @@ const ROUTES: Route[] = [
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
   { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
+  { pattern: "/suppliers/import", needs: "ap:manage", render: () => <ImportSuppliers /> },
   { pattern: "/suppliers", needs: "ap:view", render: () => <Suppliers /> },
   { pattern: "/suppliers/:id", needs: "ap:view", render: (p) => <SupplierDetail id={p.id} /> },
   { pattern: "/bills", needs: "ap:view", render: () => <Bills /> },
@@ -224,10 +226,10 @@ function Gate() {
 function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
-  // Settings chrome (and invoice style editor) are full-page — not the main app Shell.
-  // Custom form styles list keeps the main Shell like the mocks.
+  // Full-page chrome (not the main app Shell).
   if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
+  if (path.startsWith("/suppliers/import")) return page;
   return <Shell>{page}</Shell>;
 }
 

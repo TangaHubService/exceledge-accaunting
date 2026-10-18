@@ -5,6 +5,7 @@ import "./styles.css";
 import "./styles-customers.css";
 import "./styles-settings.css";
 import "./styles-manage.css";
+import "./styles-suppliers.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

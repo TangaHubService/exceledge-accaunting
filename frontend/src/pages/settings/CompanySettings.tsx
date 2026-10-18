@@ -1,15 +1,17 @@
 import { Pencil, Store } from "lucide-react";
+import { useFeedback } from "../../components/feedback";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { COMPANY_INFO } from "../../lib/settings-dummy";
 
 function Row({ label, value }: { label: string; value: string }) {
+  const { toast } = useFeedback();
   return (
     <div className="ee-settings-row">
       <div>
         <div className="ee-settings-row-label">{label}</div>
         <div className="ee-settings-row-value">{value}</div>
       </div>
-      <button type="button" className="ee-link-btn">
+      <button type="button" className="ee-link-btn" onClick={() => toast(`Edit ${label}`)}>
         Edit
       </button>
     </div>
@@ -17,15 +19,21 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export function CompanySettings() {
+  const { toast } = useFeedback();
   return (
     <SettingsLayout title="Company" subtitle="Manage your business profile and legal information.">
       <div className="ee-settings-profile">
-        <div className="ee-settings-profile-avatar" aria-hidden="true">
+        <button
+          type="button"
+          className="ee-settings-profile-avatar"
+          aria-label="Edit company profile"
+          onClick={() => toast("Edit company profile")}
+        >
           <Store size={28} strokeWidth={1.5} />
           <span className="ee-settings-profile-edit">
             <Pencil size={12} strokeWidth={2} />
           </span>
-        </div>
+        </button>
         <div className="ee-settings-profile-label">Company profile</div>
       </div>
 
@@ -35,7 +43,7 @@ export function CompanySettings() {
             <div className="ee-settings-row-label">Industry</div>
             <div className="ee-settings-row-value">{COMPANY_INFO.industry}</div>
           </div>
-          <button type="button" className="ee-link-btn">
+          <button type="button" className="ee-link-btn" onClick={() => toast("Edit Industry")}>
             Edit
           </button>
         </div>

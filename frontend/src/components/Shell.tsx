@@ -411,7 +411,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   <ul>
                     {col.items.map((item) => (
                       <li key={item.label}>
-                        <button type="button" className="ee-create-link" onClick={() => go(item.to)} disabled={!item.to}>
+                        <button type="button" className="ee-create-link" onClick={() => go(item.to ?? "/")}>
                           {item.label}
                         </button>
                       </li>
@@ -484,8 +484,7 @@ export function Shell({ children }: { children: ReactNode }) {
               type="button"
               key={item.label}
               className="ee-flyout-text"
-              onClick={() => ("to" in item && item.to ? go(item.to) : undefined)}
-              disabled={!("to" in item && item.to)}
+              onClick={() => go("to" in item && item.to ? item.to : "/reports/statements")}
             >
               <span>{item.label}</span>
               {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
