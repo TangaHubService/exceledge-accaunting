@@ -32,6 +32,10 @@ const ICONS: Record<string, LucideIcon> = {
   advanced: Settings2,
 };
 
+/**
+ * Settings chrome matches the mocks: brand header + fixed left nav.
+ * Only the main pane scrolls — the sidebar stays put.
+ */
 export function SettingsLayout({
   title,
   subtitle,
@@ -52,17 +56,25 @@ export function SettingsLayout({
           <img src="/logo.jpeg" alt="" width={28} height={28} />
           <span>Excel Edge ERP</span>
         </div>
-        <div className="ee-settings-top-actions">
-          <button type="button" className="ee-settings-top-link">
-            <MessageSquarePlus size={16} strokeWidth={SW} />
-            Give feedback
-          </button>
-          <button type="button" className="ee-icon-btn" aria-label="Help" title="Help">
-            <HelpCircle size={20} strokeWidth={SW} />
-          </button>
-          <button type="button" className="ee-icon-btn" aria-label="Close settings" title="Close" onClick={() => navigate("/")}>
-            <X size={18} strokeWidth={SW} />
-          </button>
+        <div className="ee-settings-top-bar">
+          <div className="ee-settings-top-actions">
+            <button type="button" className="ee-settings-top-link">
+              <MessageSquarePlus size={16} strokeWidth={SW} />
+              Give feedback
+            </button>
+            <button type="button" className="ee-icon-btn" aria-label="Help" title="Help">
+              <HelpCircle size={20} strokeWidth={SW} />
+            </button>
+            <button
+              type="button"
+              className="ee-icon-btn"
+              aria-label="Close settings"
+              title="Close"
+              onClick={() => navigate("/")}
+            >
+              <X size={18} strokeWidth={SW} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -84,34 +96,36 @@ export function SettingsLayout({
         </aside>
 
         <div className="ee-settings-main">
-          <div className="ee-settings-page-head">
-            <div>
-              <h1>{title}</h1>
-              {subtitle && <p>{subtitle}</p>}
+          <div className="ee-settings-scroll">
+            <div className="ee-settings-page-head">
+              <div>
+                <h1>{title}</h1>
+                {subtitle && <p>{subtitle}</p>}
+              </div>
+              <button type="button" className="btn ee-btn-outline-blue" onClick={() => navigate("/")}>
+                <ArrowLeft size={16} strokeWidth={SW} aria-hidden="true" />
+                Back to Home
+              </button>
             </div>
-            <button type="button" className="btn ee-btn-outline-blue" onClick={() => navigate("/")}>
-              <ArrowLeft size={16} strokeWidth={SW} aria-hidden="true" />
-              Back to Home
-            </button>
+
+            <div className="ee-settings-content">{children}</div>
+
+            {footer ?? (
+              <footer className="ee-settings-legal">
+                <a href="#privacy" onClick={(e) => e.preventDefault()}>
+                  Privacy
+                </a>
+                <span>|</span>
+                <a href="#security" onClick={(e) => e.preventDefault()}>
+                  Security
+                </a>
+                <span>|</span>
+                <a href="#terms" onClick={(e) => e.preventDefault()}>
+                  Terms of Service
+                </a>
+              </footer>
+            )}
           </div>
-
-          <div className="ee-settings-content">{children}</div>
-
-          {footer ?? (
-            <footer className="ee-settings-legal">
-              <a href="#privacy" onClick={(e) => e.preventDefault()}>
-                Privacy
-              </a>
-              <span>|</span>
-              <a href="#security" onClick={(e) => e.preventDefault()}>
-                Security
-              </a>
-              <span>|</span>
-              <a href="#terms" onClick={(e) => e.preventDefault()}>
-                Terms of Service
-              </a>
-            </footer>
-          )}
         </div>
       </div>
     </div>

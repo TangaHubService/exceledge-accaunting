@@ -62,6 +62,11 @@ import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
 import { SignIn } from "./SignIn";
+import { AddUser } from "./pages/AddUser";
+import { CustomFormStyles } from "./pages/CustomFormStyles";
+import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
+import { InviteFirm } from "./pages/InviteFirm";
+import { ManageUsers } from "./pages/ManageUsers";
 import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
 import { CompanySettings } from "./pages/settings/CompanySettings";
 import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
@@ -85,7 +90,14 @@ const ROUTES: Route[] = [
   { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
   { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
   { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
+  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <EditInvoiceStyle /> },
+  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <CustomFormStyles /> },
   { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
+  { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
+  { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
+  { pattern: "/users/accounting-firms", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users/roles", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
   { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
@@ -212,7 +224,10 @@ function Gate() {
 function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
-  if (path.startsWith("/settings")) return page;
+  // Settings chrome (and invoice style editor) are full-page — not the main app Shell.
+  // Custom form styles list keeps the main Shell like the mocks.
+  if (path.startsWith("/settings/form-styles/edit")) return page;
+  if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
   return <Shell>{page}</Shell>;
 }
 

@@ -73,15 +73,19 @@ export function Accounts() {
 
   return (
     <>
+      <div className="ee-manage-crumb" style={{ marginBottom: 8 }}>
+        <span>Accounting</span>
+        <span>/</span>
+        <span>Chart of accounts</span>
+      </div>
       <PageHeader
         title="Chart of accounts"
         description={dash.data ? `${dash.data.active} active accounts${dash.data.inactive ? ` · ${dash.data.inactive} inactive` : ""}` : "The accounts your transactions are posted to."}
         actions={
           <>
             {can("coa:export") && (
-              <button type="button" className="btn" onClick={() => void exportCsv()}>
-                <Download size={16} aria-hidden="true" />
-                Export CSV
+              <button type="button" className="btn ee-btn-outline-blue" onClick={() => void exportCsv()}>
+                Run report
               </button>
             )}
             {can("coa:create") && (
@@ -95,19 +99,26 @@ export function Accounts() {
       />
 
       <div className="filter-bar">
-        <input className="input search" type="search" placeholder="Search code or name" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search accounts" />
+        <input className="input search" type="search" placeholder="Filter by name or number" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search accounts" />
         <Select
           style={{ width: 210 }}
           value={type}
           onChange={(v) => setType(v as AccountType | "")}
           aria-label="Account type"
           searchable={false}
-          options={[{ value: "", label: "All account types" }, ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t] }))]}
+          options={[{ value: "", label: "All" }, ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t] }))]}
         />
         <label className="check">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+          {can("coa:export") && (
+            <button type="button" className="ee-link-btn" onClick={() => void exportCsv()}>
+              <Download size={14} aria-hidden="true" /> Export
+            </button>
+          )}
+        </div>
       </div>
 
       <Loadable resource={tree} skeleton={<SkeletonRows rows={10} cols={3} />}>

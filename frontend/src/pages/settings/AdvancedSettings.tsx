@@ -1,4 +1,4 @@
-import { ChevronDown, Pencil } from "lucide-react";
+import { AlertTriangle, ChevronDown, Pencil } from "lucide-react";
 import { useState } from "react";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
@@ -38,6 +38,7 @@ export function AdvancedSettings() {
   const [warnCheque, setWarnCheque] = useState(d.warnDuplicateCheque);
   const [warnBill, setWarnBill] = useState(d.warnDuplicateBill);
   const [warnJournal, setWarnJournal] = useState(d.warnDuplicateJournal);
+  const [backups, setBackups] = useState(true);
   const [coaOpen, setCoaOpen] = useState(true);
 
   return (
@@ -207,6 +208,44 @@ export function AdvancedSettings() {
           <SettingsToggle label="Warn duplicate journal" on={warnJournal} onChange={setWarnJournal} />
         </div>
         <TextRow label="Notify me if inactive for" value={d.notifyInactive} />
+      </section>
+
+      <section className="ee-settings-card">
+        <header className="ee-settings-card-head ee-settings-card-head-row">
+          <h2>Backup</h2>
+          <EditBtn />
+        </header>
+        <div className="ee-settings-row ee-settings-row-top">
+          <div>
+            <div className="ee-settings-row-label">Turn on backups</div>
+            <div className="ee-settings-hint" style={{ marginTop: 4 }}>
+              Turn off to stop backing up your data.
+            </div>
+          </div>
+          <SettingsToggle label="Turn on backups" on={backups} onChange={setBackups} />
+        </div>
+      </section>
+
+      <section className="ee-settings-card">
+        <header className="ee-settings-card-head">
+          <h2>Personal cloud backup</h2>
+        </header>
+        <div className="ee-settings-row ee-settings-row-stack">
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <p className="ee-settings-hint" style={{ margin: 0 }}>
+              Back up company data to your personal cloud storage and export CSVs when you need an offline copy.
+            </p>
+          </div>
+          <div className="ee-settings-cloud-actions">
+            <button type="button" className="btn ee-btn-outline-blue btn-sm">
+              Link Google Drive
+            </button>
+            <div className="ee-settings-warn">
+              <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
+              Google Drive disconnected. Please link again.
+            </div>
+          </div>
+        </div>
       </section>
     </SettingsLayout>
   );

@@ -1125,15 +1125,16 @@ pre.json {
 .ee-app {
   display: grid;
   grid-template-columns: var(--ee-rail-w) minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   background: #f3f5f8;
-  overflow: visible;
+  overflow: hidden;
 }
 .ee-rail {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 40;
-  height: 100vh;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, var(--ee-navy) 0%, #081f38 100%);
@@ -1496,11 +1497,17 @@ pre.json {
 .ee-apps-chevron { color: #9ca3af; flex: none; }
 
 .ee-scrim { display: none; }
-.ee-main { min-width: 0; display: flex; flex-direction: column; }
+.ee-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .ee-topbar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 30;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1653,6 +1660,9 @@ pre.json {
   max-width: 1280px;
   margin: 0 auto;
   padding: 22px 28px 48px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* Dashboard home */

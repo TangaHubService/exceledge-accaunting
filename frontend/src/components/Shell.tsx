@@ -50,6 +50,7 @@ import { humanize } from "../lib/format";
 import { Link, navigate, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
 import { CustomisePreferences } from "./CustomisePreferences";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { SearchWorkspace } from "./SearchWorkspace";
 import { Menu } from "./ui";
 
@@ -130,6 +131,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [customiseOpen, setCustomiseOpen] = useState(false);
   const [customiseTab, setCustomiseTab] = useState<"navigation" | "bookmarks">("navigation");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<Array<{ label: string; to: string }>>([]);
   const [pinnedKeys, setPinnedKeys] = useState<string[]>(() => [...DEFAULT_PINNED_KEYS]);
   const [showNavLabels, setShowNavLabels] = useState(true);
@@ -601,14 +603,20 @@ export function Shell({ children }: { children: ReactNode }) {
             <button type="button" className="ee-icon-btn ee-hide-sm" title="Organisation" aria-label="Organisation">
               <Briefcase size={20} strokeWidth={SW} />
             </button>
-            <button type="button" className="ee-icon-btn" title="Help" aria-label="Help">
+            <button
+              type="button"
+              className="ee-icon-btn"
+              title="Help"
+              aria-label="Help"
+              onClick={() => setShortcutsOpen(true)}
+            >
               <HelpCircle size={20} strokeWidth={SW} />
             </button>
             <Link to="/notifications" className="ee-icon-btn ee-bell" aria-label={`Notifications, ${DUMMY.notificationCount} unread`}>
               <Bell size={20} strokeWidth={SW} />
               <span className="ee-badge">{DUMMY.notificationCount}</span>
             </Link>
-            <Link to="/setup" className="ee-icon-btn" aria-label="Settings">
+            <Link to="/settings/company" className="ee-icon-btn" aria-label="Settings">
               <Settings size={20} strokeWidth={SW} />
             </Link>
             <Menu
@@ -626,6 +634,8 @@ export function Shell({ children }: { children: ReactNode }) {
                 </>
               }
               items={[
+                { label: "Manage users", icon: Users, onSelect: () => navigate("/users") },
+                { label: "Keyboard shortcuts", icon: HelpCircle, onSelect: () => setShortcutsOpen(true) },
                 { label: "Back to Excel Edge", icon: ExternalLink, onSelect: () => window.location.assign(erpLinks.home) },
                 { label: "Sign out", icon: LogOut, onSelect: signOut },
               ]}
@@ -637,6 +647,8 @@ export function Shell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

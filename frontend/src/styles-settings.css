@@ -1,44 +1,57 @@
-/* Settings screens (Company, Usage, Reports, Sales, …) */
+/* Settings shell — fixed header + fixed sidebar; only main content scrolls. */
 
 .ee-settings {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #f3f5f8;
   color: var(--ink);
+  overflow: hidden;
 }
+
 .ee-settings-top {
   display: flex;
   align-items: stretch;
   height: 52px;
+  flex: none;
   background: #fff;
   border-bottom: 1px solid #e6ebf2;
-  flex: none;
+  z-index: 5;
 }
 .ee-settings-brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
+  width: 220px;
+  flex: none;
+  padding: 0 16px;
   background: #0a1f3d;
   color: #fff;
   font-weight: 700;
   font-size: 14px;
   letter-spacing: -0.02em;
-  flex: none;
 }
 .ee-settings-brand img {
   width: 28px;
   height: 28px;
   border-radius: 6px;
   object-fit: cover;
+  flex: none;
 }
-.ee-settings-top-actions {
-  margin-left: auto;
+.ee-settings-top-bar {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 12px;
+  justify-content: flex-end;
+  min-width: 0;
+  padding: 0 10px 0 16px;
+  background: #fff;
+}
+.ee-settings-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 .ee-settings-top-link {
   display: inline-flex;
@@ -53,24 +66,30 @@
   padding: 8px 10px;
   border-radius: 8px;
 }
-.ee-settings-top-link:hover { background: #f3f5f8; }
+.ee-settings-top-link:hover { background: #f3f5f8; color: #0b2a4a; }
 
 .ee-settings-body {
   flex: 1;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
 }
+
+/* Sidebar stays fixed — does not scroll with page content. */
 .ee-settings-rail {
   background: #0a1f3d;
   color: #d7e3f2;
   padding: 18px 12px 24px;
+  overflow: hidden;
+  height: 100%;
 }
 .ee-settings-rail-title {
   color: #fff;
   font-weight: 700;
   font-size: 16px;
   padding: 4px 10px 16px;
+  flex: none;
 }
 .ee-settings-rail-nav {
   display: flex;
@@ -96,10 +115,20 @@
 }
 
 .ee-settings-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #f3f5f8;
+}
+.ee-settings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 22px 28px 32px;
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 .ee-settings-page-head {
   display: flex;
@@ -563,7 +592,24 @@
 }
 .ee-settings-section-toggle svg.open { transform: rotate(180deg); }
 
+.ee-settings-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #b45309;
+  font-size: 12.5px;
+}
+.ee-settings-cloud-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
 @media (max-width: 960px) {
+  .ee-settings-brand { width: auto; min-width: 0; }
+  .ee-settings-brand span { display: none; }
   .ee-settings-body { grid-template-columns: 1fr; }
   .ee-settings-rail { display: none; }
   .ee-settings-grid-2,

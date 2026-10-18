@@ -134,6 +134,7 @@ export const ADVANCED_SETTINGS = {
   warnDuplicateBill: false,
   warnDuplicateJournal: false,
   notifyInactive: "1 hour",
+  backups: true,
 };
 
 export const REPORT_VISUAL = [
