@@ -5,17 +5,24 @@ import {
   FolderKanban,
   LayoutGrid,
   type LucideIcon,
+  Megaphone,
   PieChart,
   Receipt,
+  Settings2,
   SlidersHorizontal,
   Users,
+  UsersRound,
   Warehouse,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  defaultOpenHubs,
+  hubForApp,
+  isAppActive,
+  resolveActiveLeaf,
+} from "../../lib/app-hub-nav";
 import { ALL_APPS } from "../../lib/dashboard-dummy";
-import { CUSTOMER_HUB_ITEMS } from "../../lib/customer-hub-dummy";
-import { TEAM_HUB_ITEMS } from "../../lib/team-dummy";
-import { Link, useLocation } from "../../lib/router";
+import { Link, navigate, useLocation } from "../../lib/router";
 
 const SW = 1.5;
 
@@ -24,25 +31,32 @@ const APP_ICONS: Record<string, LucideIcon> = {
   expenses: Receipt,
   sales: BarChart3,
   customers: Users,
-  team: Users,
+  team: UsersRound,
   projects: FolderKanban,
   inventory: Warehouse,
   tax: PieChart,
+  marketing: Megaphone,
 };
 
-const EXPANDABLE = new Set(["customers", "accounting", "expenses", "sales", "team", "projects"]);
-
-function defaultOpen(path: string, activeLeaf: string): Record<string, boolean> {
-  if (path.startsWith("/employees") || path.startsWith("/time") || activeLeaf === "employees" || activeLeaf === "time-tracking" || activeLeaf === "payroll") {
-    return { team: true };
-  }
-  return { customers: true };
-}
-
-/** Docked All apps nav matching the Customer Hub / Team mock (secondary sidebar). */
-export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?: string }) {
+/** Docked All apps nav matching the Customer Hub / Team / CoA mocks. */
+export function AllAppsSidebar({ activeLeaf }: { activeLeaf?: string } = {}) {
   const { path } = useLocation();
-  const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpen(path, activeLeaf));
+  const leaf = resolveActiveLeaf(path, activeLeaf);
+  const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenHubs(path));
+
+  useEffect(() => {
+    const next = defaultOpenHubs(path);
+    setOpen((prev) => {
+      const key = Object.keys(next)[0];
+      if (!key || prev[key]) return prev;
+      return { ...prev, [key]: true };
+    });
+  }, [path]);
+
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(".ee-apps-dock-link.on");
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [path, leaf]);
 
   function toggle(key: string) {
     setOpen((s) => ({ ...s, [key]: !s[key] }));
@@ -56,25 +70,20 @@ export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?
       </div>
       <nav className="ee-apps-dock-nav">
         {ALL_APPS.map((app) => {
-          const Icon = APP_ICONS[app.icon] ?? LayoutGrid;
+          const Icon = APP_ICONS[app.key] ?? APP_ICONS[app.icon] ?? LayoutGrid;
+          const hub = hubForApp(app.key);
+          const canExpand = Boolean(hub?.items.length);
           const expanded = Boolean(open[app.key]);
-          const canExpand = EXPANDABLE.has(app.key);
-          const isCustomers = app.key === "customers";
-          const isTeam = app.key === "team";
-          const activeApp =
-            (isCustomers && path.startsWith("/customers")) ||
-            (isTeam && (path.startsWith("/employees") || path.startsWith("/time")));
+          const activeApp = isAppActive(app.key, path);
 
           return (
-            <div key={app.key} className="ee-apps-dock-group">
+            <div key={app.key} className={`ee-apps-dock-group ${activeApp ? "is-current" : ""}`}>
               <button
                 type="button"
                 className={`ee-apps-dock-item ${activeApp ? "active-app" : ""}`}
                 onClick={() => {
                   if (canExpand) toggle(app.key);
-                  else if (app.to) {
-                    /* leaf apps navigate via label click elsewhere */
-                  }
+                  else if (app.to) navigate(app.to);
                 }}
                 aria-expanded={canExpand ? expanded : undefined}
               >
@@ -82,49 +91,41 @@ export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?
                   <Icon size={14} strokeWidth={1.75} color="#fff" />
                 </span>
                 <span className="ee-apps-label">{app.label}</span>
-                {canExpand && (
+                {canExpand ? (
                   <ChevronDown
                     size={14}
                     strokeWidth={SW}
                     className={`ee-apps-dock-chevron ${expanded ? "open" : ""}`}
                     aria-hidden="true"
                   />
-                )}
+                ) : null}
               </button>
 
-              {isCustomers && expanded && (
+              {canExpand && expanded && hub ? (
                 <ul className="ee-apps-dock-sub">
-                  {CUSTOMER_HUB_ITEMS.map((item) => (
+                  {hub.items.map((item) => (
                     <li key={item.id}>
                       <Link
                         to={item.to}
-                        className={`ee-apps-dock-link ${activeLeaf === item.id ? "on" : ""}`}
+                        className={`ee-apps-dock-link ${leaf === item.id ? "on" : ""}`}
+                        aria-current={leaf === item.id ? "page" : undefined}
                       >
                         {item.label}
                       </Link>
                     </li>
                   ))}
                 </ul>
-              )}
-
-              {isTeam && expanded && (
-                <ul className="ee-apps-dock-sub">
-                  {TEAM_HUB_ITEMS.map((item) => (
-                    <li key={item.id}>
-                      <Link
-                        to={item.to}
-                        className={`ee-apps-dock-link ${activeLeaf === item.id ? "on" : ""}`}
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              ) : null}
             </div>
           );
         })}
       </nav>
+      <div className="ee-apps-dock-foot">
+        <button type="button" className="ee-apps-dock-customise" onClick={() => navigate("/")}>
+          <Settings2 size={14} strokeWidth={SW} aria-hidden="true" />
+          Customise
+        </button>
+      </div>
     </aside>
   );
 }

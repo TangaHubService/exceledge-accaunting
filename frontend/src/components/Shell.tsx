@@ -40,11 +40,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { APP_HUBS, isAppActive } from "../lib/app-hub-nav";
 import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
 import { Link, navigate, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
+import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { CustomisePreferences } from "./CustomisePreferences";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { HelpDrawer } from "./ribbon/HelpDrawer";
@@ -278,7 +280,7 @@ export function Shell({ children }: { children: ReactNode }) {
       }
     : undefined;
 
-  const hubOpen = path.startsWith("/employees");
+  const hubOpen = APP_HUBS.some((hub) => isAppActive(hub.key, path));
 
   return (
     <div className={`ee-app ${navOpen ? "nav-open" : ""} ${hubOpen ? "ee-hub-open" : ""}`}>
@@ -706,9 +708,12 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="ee-content" id="main-content" tabIndex={-1}>
-          {children}
-        </main>
+        <div className={`ee-workspace ${hubOpen ? "has-dock" : ""}`}>
+          {hubOpen ? <AllAppsSidebar /> : null}
+          <main className="ee-content" id="main-content" tabIndex={-1}>
+            {children}
+          </main>
+        </div>
       </div>
 
       <TasksDrawer open={overlay === "tasks"} onClose={closeOverlay} />

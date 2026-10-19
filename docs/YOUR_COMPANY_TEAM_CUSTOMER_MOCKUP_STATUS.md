@@ -29,7 +29,7 @@
 | 49–50 | Invite parts | Invite accounting firm | DONE | `InviteFirm.tsx` |
 | 51–52 | Styles | Custom form styles | DONE | `CustomFormStyles.tsx` |
 | 53–54 | Invoice style | Edit invoice style | DONE | `EditInvoiceStyle.tsx` |
-| 55 | `55. Chat of Accounts.png` | Chart of accounts | DONE | `Accounts.tsx` (+ settings link) |
+| 55 | `55. Chat of Accounts.png` + CoA redesign assets | Chart of accounts + New account drawer | DONE | `Accounts.tsx`, `NewAccountDrawer`, `coa-taxonomy.ts` (predefined categories) |
 | 56 | `56. Additional.png` | Company ID + shortcuts | DONE | `KeyboardShortcutsModal.tsx` |
 
 ---

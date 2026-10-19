@@ -23,6 +23,10 @@ export type Account = {
   type: AccountType;
   parentId: string | null;
   description: string | null;
+  /** Encodes UI account type + detail type (see coa-taxonomy). */
+  reportingGroup: string | null;
+  currency: string | null;
+  taxMapping: string | null;
   isActive: boolean;
   systemProtected: boolean;
   allowManualPost: boolean;

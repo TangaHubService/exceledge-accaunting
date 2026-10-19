@@ -1,11 +1,5 @@
-/** Dummy data and nav for TEAM hub screens (matches design mocks). */
-
-export const TEAM_HUB_ITEMS = [
-  { id: "overview", label: "Overview", to: "/employees" },
-  { id: "employees", label: "Employees", to: "/employees" },
-  { id: "time-tracking", label: "Time tracking", to: "/time/weekly" },
-  { id: "payroll", label: "Payroll", to: "/employees" },
-] as const;
+/** Dummy data for TEAM hub screens (matches design mocks). */
+export { TEAM_HUB_ITEMS } from "./app-hub-nav";
 
 export const EMPLOYEE_HERO = {
   title: "Build your team in one place",

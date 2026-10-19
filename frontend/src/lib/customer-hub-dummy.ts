@@ -1,14 +1,5 @@
-/** Dummy data and nav for the Customer Hub screens (matches design mocks). */
-
-export const CUSTOMER_HUB_ITEMS = [
-  { id: "overview", label: "Overview", to: "/customers" },
-  { id: "customers-leads", label: "Customers & leads", to: "/customers" },
-  { id: "opportunities", label: "Opportunities", to: "/customers" },
-  { id: "estimates", label: "Estimates", to: "/invoices" },
-  { id: "proposals", label: "Proposals", to: "/invoices" },
-  { id: "contracts", label: "Contracts", to: "/customers" },
-  { id: "reviews", label: "Reviews", to: "/customers" },
-] as const;
+/** Dummy data for the Customer Hub screens (matches design mocks). */
+export { CUSTOMER_HUB_ITEMS } from "./app-hub-nav";
 
 export const CUSTOMER_HERO = {
   title: "Keep track of who needs to pay you",
