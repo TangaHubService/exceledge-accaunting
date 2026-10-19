@@ -22,7 +22,10 @@ import { Budgets } from "./pages/Budgets";
 import { CashPosition } from "./pages/CashPosition";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
+import { Employees } from "./pages/Employees";
 import { Dimensions } from "./pages/Dimensions";
+import { SingleTimeActivity } from "./components/team/SingleTimeActivity";
+import { WeeklyTimesheet } from "./components/team/WeeklyTimesheet";
 import { Exceptions } from "./pages/Exceptions";
 import { ExpenseCategories } from "./pages/ExpenseCategories";
 import { Expenses } from "./pages/Expenses";
@@ -62,6 +65,7 @@ import { TaxSettingsPage } from "./pages/TaxSettings";
 import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
+import { Workflows } from "./pages/Workflows";
 import { SignIn } from "./SignIn";
 import { AddUser } from "./pages/AddUser";
 import { CustomFormStyles } from "./pages/CustomFormStyles";
@@ -82,6 +86,7 @@ type Route = { pattern: string; needs: AccountingCapability; render: (params: Re
 
 const ROUTES: Route[] = [
   { pattern: "/", needs: "setup:view", render: () => <Overview /> },
+  { pattern: "/workflows", needs: "setup:view", render: () => <Workflows /> },
   { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
   { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
@@ -101,6 +106,9 @@ const ROUTES: Route[] = [
   { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
+  { pattern: "/employees", needs: "setup:view", render: () => <Employees /> },
+  { pattern: "/time/single", needs: "setup:view", render: () => <SingleTimeActivity /> },
+  { pattern: "/time/weekly", needs: "setup:view", render: () => <WeeklyTimesheet /> },
   { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
   { pattern: "/suppliers/import", needs: "ap:manage", render: () => <ImportSuppliers /> },
   { pattern: "/suppliers", needs: "ap:view", render: () => <Suppliers /> },
@@ -230,6 +238,7 @@ function RoutedShell() {
   if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
   if (path.startsWith("/suppliers/import")) return page;
+  if (path.startsWith("/time/")) return page;
   return <Shell>{page}</Shell>;
 }
 

@@ -223,7 +223,13 @@ export const APP_FLYOUTS: Record<string, { flyoutTitle: string; items: Array<{ l
   },
   team: {
     flyoutTitle: "TEAM",
-    items: [{ label: "Employees", to: "/settings/company" }],
+    items: [
+      { label: "Overview", to: "/employees" },
+      { label: "Employees", to: "/employees" },
+      { label: "Time tracking", to: "/time/weekly" },
+      { label: "Single time activity", to: "/time/single" },
+      { label: "Payroll", to: "/employees" },
+    ],
   },
   projects: {
     flyoutTitle: "PROJECTS",

@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { ALL_APPS } from "../../lib/dashboard-dummy";
 import { CUSTOMER_HUB_ITEMS } from "../../lib/customer-hub-dummy";
+import { TEAM_HUB_ITEMS } from "../../lib/team-dummy";
 import { Link, useLocation } from "../../lib/router";
 
 const SW = 1.5;
@@ -31,10 +32,17 @@ const APP_ICONS: Record<string, LucideIcon> = {
 
 const EXPANDABLE = new Set(["customers", "accounting", "expenses", "sales", "team", "projects"]);
 
-/** Docked All apps nav matching the Customer Hub mock (secondary sidebar). */
+function defaultOpen(path: string, activeLeaf: string): Record<string, boolean> {
+  if (path.startsWith("/employees") || path.startsWith("/time") || activeLeaf === "employees" || activeLeaf === "time-tracking" || activeLeaf === "payroll") {
+    return { team: true };
+  }
+  return { customers: true };
+}
+
+/** Docked All apps nav matching the Customer Hub / Team mock (secondary sidebar). */
 export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?: string }) {
   const { path } = useLocation();
-  const [open, setOpen] = useState<Record<string, boolean>>({ customers: true });
+  const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpen(path, activeLeaf));
 
   function toggle(key: string) {
     setOpen((s) => ({ ...s, [key]: !s[key] }));
@@ -52,13 +60,22 @@ export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?
           const expanded = Boolean(open[app.key]);
           const canExpand = EXPANDABLE.has(app.key);
           const isCustomers = app.key === "customers";
+          const isTeam = app.key === "team";
+          const activeApp =
+            (isCustomers && path.startsWith("/customers")) ||
+            (isTeam && (path.startsWith("/employees") || path.startsWith("/time")));
 
           return (
             <div key={app.key} className="ee-apps-dock-group">
               <button
                 type="button"
-                className={`ee-apps-dock-item ${isCustomers && path.startsWith("/customers") ? "active-app" : ""}`}
-                onClick={() => (canExpand ? toggle(app.key) : undefined)}
+                className={`ee-apps-dock-item ${activeApp ? "active-app" : ""}`}
+                onClick={() => {
+                  if (canExpand) toggle(app.key);
+                  else if (app.to) {
+                    /* leaf apps navigate via label click elsewhere */
+                  }
+                }}
                 aria-expanded={canExpand ? expanded : undefined}
               >
                 <span className="ee-apps-icon" style={{ background: app.color }}>
@@ -78,6 +95,21 @@ export function AllAppsSidebar({ activeLeaf = "customers-leads" }: { activeLeaf?
               {isCustomers && expanded && (
                 <ul className="ee-apps-dock-sub">
                   {CUSTOMER_HUB_ITEMS.map((item) => (
+                    <li key={item.id}>
+                      <Link
+                        to={item.to}
+                        className={`ee-apps-dock-link ${activeLeaf === item.id ? "on" : ""}`}
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {isTeam && expanded && (
+                <ul className="ee-apps-dock-sub">
+                  {TEAM_HUB_ITEMS.map((item) => (
                     <li key={item.id}>
                       <Link
                         to={item.to}
