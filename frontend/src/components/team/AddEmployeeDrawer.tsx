@@ -11,7 +11,7 @@ import {
   saveEmployeeDraft,
   type StoredEmployee,
 } from "../../lib/team-dummy";
-import { employeeEmploymentSchema, employeePersonalSchema, validateYup } from "../../lib/validation";
+import { type FieldErrors, employeeEmploymentSchema, employeePersonalSchema, validateYup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { Drawer } from "../ui";
 import { EmployeeDocumentsStep } from "./EmployeeDocumentsStep";
@@ -29,8 +29,8 @@ export function AddEmployeeDrawer({
   const { toast } = useFeedback();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<EmployeeDraft>(() => loadEmployeeDraft() ?? emptyEmployeeDraft());
-  const [personalErrors, setPersonalErrors] = useState<Record<string, string>>({});
-  const [employmentErrors, setEmploymentErrors] = useState<Record<string, string>>({});
+  const [personalErrors, setPersonalErrors] = useState<FieldErrors>({});
+  const [employmentErrors, setEmploymentErrors] = useState<FieldErrors>({});
 
   function set<K extends keyof EmployeeDraft>(key: K, value: EmployeeDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -143,7 +143,10 @@ export function AddEmployeeDrawer({
             }}
             onBlurField={async (key) => {
               const result = await validateYup(employeePersonalSchema, draft);
-              setPersonalErrors((prev) => ({ ...prev, [key]: result.ok ? undefined : result.errors[key] }) as Record<string, string>);
+              setPersonalErrors((prev) => ({
+                ...prev,
+                [key]: result.ok ? undefined : result.errors[key],
+              }));
             }}
           />
         )}
@@ -154,7 +157,10 @@ export function AddEmployeeDrawer({
             errors={{ joiningDate: employmentErrors.joiningDate }}
             onBlurField={async (key) => {
               const result = await validateYup(employeeEmploymentSchema, draft);
-              setEmploymentErrors((prev) => ({ ...prev, [key]: result.ok ? undefined : result.errors[key] }) as Record<string, string>);
+              setEmploymentErrors((prev) => ({
+                ...prev,
+                [key]: result.ok ? undefined : result.errors[key],
+              }));
             }}
           />
         )}
