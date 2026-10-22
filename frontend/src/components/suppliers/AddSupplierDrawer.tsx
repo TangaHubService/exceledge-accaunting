@@ -6,6 +6,7 @@ import {
 } from "../../lib/supplier-hub-dummy";
 import type { Supplier } from "../../lib/types";
 import { useSession } from "../../lib/session";
+import { supplierSchema, useYupForm } from "../../lib/validation";
 import { FormError, parseAmount, useSubmit } from "../forms";
 import { Drawer } from "../ui";
 import { AddSupplierForm } from "./AddSupplierForm";
@@ -29,6 +30,7 @@ export function AddSupplierDrawer({
   const [tab, setTab] = useState<SupplierDrawerTabId>("contact");
   const [draft, setDraft] = useState<SupplierDraft>(() => emptySupplierDraft());
   const { busy, error, run } = useSubmit();
+  const { showError, blurField, validate } = useYupForm(supplierSchema, draft, setDraft);
 
   function set<K extends keyof SupplierDraft>(key: K, value: SupplierDraft[K]) {
     setDraft((d) => {
@@ -50,8 +52,13 @@ export function AddSupplierDrawer({
     });
   }
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    const ok = await validate();
+    if (!ok) {
+      setTab("contact");
+      return;
+    }
     const name = draft.displayName.trim() || [draft.firstName, draft.lastName].filter(Boolean).join(" ").trim() || draft.companyName.trim();
     if (!name) return;
     const opening = parseAmount(draft.openingBalance);
@@ -95,12 +102,21 @@ export function AddSupplierDrawer({
         </div>
       }
     >
-      <form id="add-supplier-form" className="ee-add-customer" onSubmit={submit}>
+      <form id="add-supplier-form" className="ee-add-customer" onSubmit={(e) => void submit(e)} noValidate>
         <FormError message={error} />
         <div className="ee-drawer-tabs-sticky">
           <SupplierDrawerTabs active={tab} onChange={goTab} />
         </div>
-        <AddSupplierForm draft={draft} set={set} />
+        <AddSupplierForm
+          draft={draft}
+          set={set}
+          errors={{
+            displayName: showError("displayName"),
+            email: showError("email"),
+            website: showError("website"),
+          }}
+          onBlurField={(key) => blurField(key)}
+        />
       </form>
     </Drawer>
   );

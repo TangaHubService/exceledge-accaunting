@@ -14,7 +14,8 @@
     "@exceledge/accounting-domain": "file:./packages/domain",
     "lucide-react": "0.445.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "yup": "^1.7.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.10",

@@ -14,10 +14,66 @@
 
 .ee-coa-head h1 {
   margin: 0;
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 30px;
+  font-weight: 800;
   letter-spacing: -0.02em;
   color: #0b2a4a;
+}
+
+/* New account drawer — match PRIMARY RIBBONS mock */
+.drawer:has(.ee-coa-form) {
+  width: min(720px, 100vw);
+}
+
+.drawer:has(.ee-coa-form) .drawer-head {
+  padding: 22px 28px 16px;
+  border-bottom: 1px solid #e8edf3;
+}
+
+.drawer:has(.ee-coa-form) .drawer-head h2 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0b2a4a;
+}
+
+.drawer:has(.ee-coa-form) .drawer-body {
+  padding: 22px 28px 28px;
+}
+
+.drawer:has(.ee-coa-form) .drawer-foot {
+  padding: 14px 28px;
+  background: #fff;
+  border-top: 1px solid #e8edf3;
+}
+
+.drawer:has(.ee-coa-form) .field-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0b2a4a;
+}
+
+.drawer:has(.ee-coa-form) .field-label .req {
+  color: #dc2626;
+  margin-left: 1px;
+}
+
+.drawer:has(.ee-coa-form) .input,
+.drawer:has(.ee-coa-form) .select-trigger {
+  height: 40px;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.drawer:has(.ee-coa-form) textarea.input {
+  height: auto;
+  min-height: 88px;
+}
+
+.drawer:has(.ee-coa-form) .select {
+  width: 100%;
 }
 
 .ee-coa-head-actions {
@@ -113,15 +169,13 @@
   color: #111827;
 }
 
-.ee-coa-filter {
+.ee-coa-filter-select {
+  min-width: 180px;
+}
+
+.ee-coa-filter-select .select-trigger {
   height: 38px;
-  min-width: 140px;
-  padding: 0 12px;
-  border: 1px solid #d7dee8;
   border-radius: 8px;
-  background: #fff;
-  font-size: 13.5px;
-  color: #111827;
 }
 
 .ee-coa-inactive {
@@ -175,8 +229,8 @@
 .ee-coa-table th {
   text-align: left;
   padding: 12px 12px;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   color: #0f172a;
   background: #f8fafc;
@@ -196,7 +250,7 @@
 .ee-coa-table td {
   padding: 12px;
   border-bottom: 1px solid #eef1f5;
-  color: #334155;
+  color: #111827;
   vertical-align: middle;
 }
 
@@ -235,8 +289,9 @@
   border: 0;
   background: transparent;
   padding: 0;
-  color: #0b2a4a;
+  color: #111827;
   font-weight: 500;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -251,6 +306,8 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  color: #000;
+  font-weight: 400;
 }
 
 .ee-coa-bal-badge {
@@ -258,8 +315,8 @@
   align-items: center;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
+  background: #16a34a;
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -268,8 +325,31 @@
 .ee-coa-row-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   white-space: nowrap;
+}
+
+.ee-coa-row-actions .ee-link-btn {
+  font-weight: 500;
+  padding: 0;
+}
+
+.ee-coa-action-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--ee-blue, #2f6fed);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.ee-coa-action-more:hover {
+  background: #eef4ff;
 }
 
 .ee-coa-caption {
@@ -278,11 +358,45 @@
   color: #6b7280;
 }
 
-/* New account drawer */
+/* New account drawer form */
 .ee-coa-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
+}
+
+.ee-coa-form-error {
+  margin: 0;
+}
+
+.ee-coa-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+}
+
+.ee-coa-label-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ee-coa-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ee-blue, #2f6fed);
+  cursor: pointer;
+}
+
+.ee-coa-info:hover {
+  background: #eef4ff;
 }
 
 .ee-coa-type-wrap {
@@ -297,8 +411,8 @@
   gap: 8px;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid #d7dee8;
-  border-radius: 8px;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
   background: #fff;
   font-size: 14px;
   color: #111827;
@@ -334,7 +448,8 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #6b8fd4;
+  text-transform: uppercase;
+  color: #9ca3af;
 }
 
 .ee-coa-type-option {
@@ -345,21 +460,54 @@
   background: transparent;
   padding: 8px 14px 8px 22px;
   font-size: 13.5px;
-  color: var(--ee-blue, #2f6fed);
+  color: #000;
+  font-weight: 400;
   cursor: pointer;
 }
 
 .ee-coa-type-option:hover,
 .ee-coa-type-option.on {
   background: #eef4ff;
+  color: #000;
+}
+
+.ee-coa-select-wrap {
+  position: relative;
+}
+
+.ee-coa-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 36px !important;
+}
+
+.ee-coa-select-caret {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6b7280;
+  pointer-events: none;
 }
 
 .ee-coa-check {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
+  gap: 10px;
+  font-size: 14px;
   color: #111827;
+  cursor: pointer;
+}
+
+.ee-coa-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ee-blue, #2f6fed);
+}
+
+.ee-coa-desc {
+  resize: vertical;
 }
 
 .ee-coa-lock {
@@ -367,13 +515,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .ee-coa-lock-toggle {
   display: inline-flex;
-  border: 1px solid #d7dee8;
-  border-radius: 8px;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -381,16 +529,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  width: 42px;
   height: 34px;
   border: 0;
   background: #fff;
-  color: #6b7280;
+  color: #9ca3af;
   cursor: pointer;
 }
 
 .ee-coa-lock-btn + .ee-coa-lock-btn {
-  border-left: 1px solid #d7dee8;
+  border-left: 1px solid #cfd8e6;
 }
 
 .ee-coa-lock-btn.on {
@@ -399,8 +547,8 @@
 }
 
 .ee-coa-lock-btn.on.locked {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: #e8f0fe;
+  color: var(--ee-blue, #2f6fed);
 }
 
 .ee-coa-drawer-foot {
@@ -417,7 +565,7 @@
   align-items: center;
   gap: 6px;
   color: var(--ee-blue, #2f6fed);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   text-decoration: none;
 }
@@ -429,7 +577,7 @@
 .ee-coa-drawer-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
 }
 
@@ -448,6 +596,12 @@
   border-left: 1px solid rgba(255, 255, 255, 0.35) !important;
   padding-inline: 8px !important;
   min-width: 34px;
+}
+
+@media (max-width: 640px) {
+  .ee-coa-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 900px) {

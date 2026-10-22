@@ -239,7 +239,7 @@ export const SETTINGS_MEGA_MENU: SettingsMenuColumn[] = [
       { label: "Manage users", to: "/users" },
       { label: "Custom form styles", to: "/settings/form-styles" },
       { label: "Default report settings", to: "/settings/reports" },
-      { label: "Chart of accounts", to: "/accounts" },
+      { label: "Chart of accounts", to: "/accounting/chart-of-accounts" },
       { label: "Get the mobile app" },
       { label: "Additional info", accent: true },
     ],

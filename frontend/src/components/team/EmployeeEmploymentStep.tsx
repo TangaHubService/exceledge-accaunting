@@ -8,115 +8,128 @@ import {
   WORK_LOCATION_OPTIONS,
   WORK_SCHEDULE_OPTIONS,
 } from "../../lib/team-dummy";
+import { Select } from "../Select";
+import { Field } from "../ui";
+
+type FormErrors = {
+  joiningDate?: string;
+};
 
 export function EmployeeEmploymentStep({
   draft,
   set,
+  errors = {},
+  onBlurField,
 }: {
   draft: EmployeeDraft;
   set: <K extends keyof EmployeeDraft>(key: K, value: EmployeeDraft[K]) => void;
+  errors?: FormErrors;
+  onBlurField?: (key: keyof FormErrors) => void;
 }) {
   return (
     <div className="ee-team-step">
       <h3 className="ee-team-step-title">Employment details</h3>
       <div className="ee-cust-grid ee-cust-grid-2">
-        <label className="field">
-          <span>Employee ID</span>
+        <Field label="Employee ID">
           <input className="input" value={draft.employeeId} readOnly />
-        </label>
-        <label className="field">
-          <span>Job title</span>
+        </Field>
+        <Field label="Job title">
           <input className="input" value={draft.jobTitle} onChange={(e) => set("jobTitle", e.target.value)} placeholder="Enter job title" />
-        </label>
-        <label className="field">
-          <span>Department</span>
-          <select className="input" value={draft.department} onChange={(e) => set("department", e.target.value)}>
-            {DEPARTMENT_OPTIONS.map((o) => (
-              <option key={o.value || "d"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Employment type</span>
-          <select className="input" value={draft.employmentType} onChange={(e) => set("employmentType", e.target.value)}>
-            {EMPLOYMENT_TYPE_OPTIONS.map((o) => (
-              <option key={o.value || "t"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field span-2">
-          <span>
-            Joining date <span className="req">*</span>
-          </span>
-          <input className="input" type="date" value={draft.joiningDate} onChange={(e) => set("joiningDate", e.target.value)} required />
-          <span className="ee-field-hint">The date the employee starts working with your organisation.</span>
-        </label>
-        <label className="field">
-          <span>Work location</span>
-          <select className="input" value={draft.workLocation} onChange={(e) => set("workLocation", e.target.value)}>
-            {WORK_LOCATION_OPTIONS.map((o) => (
-              <option key={o.value || "l"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Reporting manager</span>
-          <select className="input" value={draft.reportingManager} onChange={(e) => set("reportingManager", e.target.value)}>
-            {MANAGER_OPTIONS.map((o) => (
-              <option key={o.value || "m"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field span-2">
-          <span>Employment status</span>
-          <select className="input" value={draft.employmentStatus} onChange={(e) => set("employmentStatus", e.target.value)}>
-            {EMPLOYMENT_STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        </Field>
+        <Field label="Department">
+          <Select
+            value={draft.department}
+            onChange={(v) => set("department", v)}
+            searchable={false}
+            options={DEPARTMENT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select department"
+            aria-label="Department"
+          />
+        </Field>
+        <Field label="Employment type">
+          <Select
+            value={draft.employmentType}
+            onChange={(v) => set("employmentType", v)}
+            searchable={false}
+            options={EMPLOYMENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select type"
+            aria-label="Employment type"
+          />
+        </Field>
+        <Field
+          label="Joining date"
+          required
+          className="span-2"
+          error={errors.joiningDate}
+          hint={!errors.joiningDate ? "The date the employee starts working with your organisation." : undefined}
+        >
+          <input
+            className="input"
+            type="date"
+            value={draft.joiningDate}
+            onChange={(e) => set("joiningDate", e.target.value)}
+            onBlur={() => onBlurField?.("joiningDate")}
+          />
+        </Field>
+        <Field label="Work location">
+          <Select
+            value={draft.workLocation}
+            onChange={(v) => set("workLocation", v)}
+            searchable={false}
+            options={WORK_LOCATION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select location"
+            aria-label="Work location"
+          />
+        </Field>
+        <Field label="Reporting manager">
+          <Select
+            value={draft.reportingManager}
+            onChange={(v) => set("reportingManager", v)}
+            searchable
+            options={MANAGER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select manager"
+            aria-label="Reporting manager"
+          />
+        </Field>
+        <Field label="Employment status" className="span-2">
+          <Select
+            value={draft.employmentStatus}
+            onChange={(v) => set("employmentStatus", v)}
+            searchable={false}
+            options={EMPLOYMENT_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            aria-label="Employment status"
+          />
+        </Field>
       </div>
 
       <h3 className="ee-team-step-title ee-team-step-title-spaced">Contract details</h3>
       <div className="ee-cust-grid ee-cust-grid-2">
-        <label className="field">
-          <span>Contract start date</span>
+        <Field label="Contract start date">
           <input className="input" type="date" value={draft.contractStart} onChange={(e) => set("contractStart", e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Contract end date (optional)</span>
+        </Field>
+        <Field label="Contract end date (optional)">
           <input className="input" type="date" value={draft.contractEnd} onChange={(e) => set("contractEnd", e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Probation period</span>
-          <select className="input" value={draft.probation} onChange={(e) => set("probation", e.target.value)}>
-            {PROBATION_OPTIONS.map((o) => (
-              <option key={o.value || "p"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Work schedule</span>
-          <select className="input" value={draft.workSchedule} onChange={(e) => set("workSchedule", e.target.value)}>
-            {WORK_SCHEDULE_OPTIONS.map((o) => (
-              <option key={o.value || "s"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        </Field>
+        <Field label="Probation period">
+          <Select
+            value={draft.probation}
+            onChange={(v) => set("probation", v)}
+            searchable={false}
+            options={PROBATION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select period"
+            aria-label="Probation period"
+          />
+        </Field>
+        <Field label="Work schedule">
+          <Select
+            value={draft.workSchedule}
+            onChange={(v) => set("workSchedule", v)}
+            searchable={false}
+            options={WORK_SCHEDULE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select schedule"
+            aria-label="Work schedule"
+          />
+        </Field>
       </div>
     </div>
   );

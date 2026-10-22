@@ -44,7 +44,7 @@ import { APP_HUBS, isAppActive } from "../lib/app-hub-nav";
 import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
-import { Link, navigate, useLocation } from "../lib/router";
+import { isPathActive, Link, navigate, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
 import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { CustomisePreferences } from "./CustomisePreferences";
@@ -369,6 +369,7 @@ export function Shell({ children }: { children: ReactNode }) {
             const meta = CUSTOMISE_NAV_APPS.find((a) => a.key === key);
             const Icon = PIN_ICONS[key] ?? BookOpen;
             const open = panel === key;
+            const sectionOn = isAppActive(key, path);
             const label = meta?.label ?? key;
             return (
               <button
@@ -377,8 +378,9 @@ export function Shell({ children }: { children: ReactNode }) {
                   pinBtnRefs.current[key] = el;
                 }}
                 type="button"
-                className={`ee-rail-item ${open ? "hot" : ""}`}
+                className={`ee-rail-item ${open ? "hot" : ""} ${sectionOn && !open ? "active" : ""}`}
                 aria-expanded={open}
+                aria-current={sectionOn ? "page" : undefined}
                 onMouseEnter={() => showPanel(key)}
                 onMouseLeave={scheduleClose}
                 onClick={() => showPanel(key)}
@@ -392,7 +394,11 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="ee-rail-foot">
-          <Link to="/settings/company" className="ee-rail-item" onClick={() => setNavOpen(false)}>
+          <Link
+            to="/settings/company"
+            className={`ee-rail-item ${path.startsWith("/settings") || path.startsWith("/users") ? "active" : ""}`}
+            onClick={() => setNavOpen(false)}
+          >
             <Settings size={18} strokeWidth={SW} />
             {showNavLabels && <span>Settings</span>}
           </Link>
@@ -480,13 +486,21 @@ export function Shell({ children }: { children: ReactNode }) {
             <p className="ee-bookmarks-empty">Add a bookmark to get started.</p>
           ) : (
             <ul className="ee-bookmarks-list">
-              {bookmarks.map((b) => (
-                <li key={b.to}>
-                  <button type="button" className="ee-bookmarks-link" onClick={() => go(b.to)}>
-                    {b.label}
-                  </button>
-                </li>
-              ))}
+              {bookmarks.map((b) => {
+                const on = isPathActive(path, b.to);
+                return (
+                  <li key={b.to}>
+                    <button
+                      type="button"
+                      className={`ee-bookmarks-link ${on ? "on" : ""}`}
+                      aria-current={on ? "page" : undefined}
+                      onClick={() => go(b.to)}
+                    >
+                      {b.label}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <button type="button" className="ee-bookmarks-add" onClick={bookmarkCurrent}>
@@ -505,17 +519,22 @@ export function Shell({ children }: { children: ReactNode }) {
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleClose}
         >
-          {REPORTS_MENU.map((item) => (
-            <button
-              type="button"
-              key={item.label}
-              className="ee-flyout-text"
-              onClick={() => go("to" in item && item.to ? item.to : "/reports/statements")}
-            >
-              <span>{item.label}</span>
-              {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
-            </button>
-          ))}
+          {REPORTS_MENU.map((item) => {
+            const to = "to" in item && item.to ? item.to : "/reports/statements";
+            const on = isPathActive(path, to);
+            return (
+              <button
+                type="button"
+                key={item.label}
+                className={`ee-flyout-text ${on ? "on" : ""}`}
+                aria-current={on ? "page" : undefined}
+                onClick={() => go(to)}
+              >
+                <span>{item.label}</span>
+                {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -531,8 +550,15 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="ee-apps-title">All apps</div>
           {ALL_APPS.map((app) => {
             const Icon = APP_ICONS[app.icon] ?? LayoutGrid;
+            const on = isAppActive(app.key, path) || isPathActive(path, app.to);
             return (
-              <button type="button" key={app.key} className="ee-apps-item" onClick={() => go(app.to)}>
+              <button
+                type="button"
+                key={app.key}
+                className={`ee-apps-item ${on ? "on" : ""}`}
+                aria-current={on ? "page" : undefined}
+                onClick={() => go(app.to)}
+              >
                 <span className="ee-apps-icon" style={{ background: app.color }}>
                   <Icon size={15} strokeWidth={1.75} color="#fff" />
                 </span>
@@ -560,11 +586,20 @@ export function Shell({ children }: { children: ReactNode }) {
             onMouseLeave={scheduleClose}
           >
             <div className="ee-flyout-title">{flyout.flyoutTitle}</div>
-            {flyout.items.map((item) => (
-              <button type="button" key={item.to + item.label} className="ee-flyout-text" onClick={() => go(item.to)}>
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {flyout.items.map((item) => {
+              const on = isPathActive(path, item.to);
+              return (
+                <button
+                  type="button"
+                  key={item.to + item.label}
+                  className={`ee-flyout-text ${on ? "on" : ""}`}
+                  aria-current={on ? "page" : undefined}
+                  onClick={() => go(item.to)}
+                >
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         );
       })}

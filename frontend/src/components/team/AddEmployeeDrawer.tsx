@@ -11,6 +11,7 @@ import {
   saveEmployeeDraft,
   type StoredEmployee,
 } from "../../lib/team-dummy";
+import { employeeEmploymentSchema, employeePersonalSchema, validateYup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { Drawer } from "../ui";
 import { EmployeeDocumentsStep } from "./EmployeeDocumentsStep";
@@ -28,6 +29,8 @@ export function AddEmployeeDrawer({
   const { toast } = useFeedback();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<EmployeeDraft>(() => loadEmployeeDraft() ?? emptyEmployeeDraft());
+  const [personalErrors, setPersonalErrors] = useState<Record<string, string>>({});
+  const [employmentErrors, setEmploymentErrors] = useState<Record<string, string>>({});
 
   function set<K extends keyof EmployeeDraft>(key: K, value: EmployeeDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -42,15 +45,23 @@ export function AddEmployeeDrawer({
     setStep((s) => Math.max(0, s - 1));
   }
 
-  function goNext(e?: FormEvent) {
+  async function goNext(e?: FormEvent) {
     e?.preventDefault();
-    if (step === 0 && (!draft.firstName.trim() || !draft.lastName.trim())) {
-      toast("First name and last name are required");
-      return;
+    if (step === 0) {
+      const result = await validateYup(employeePersonalSchema, draft);
+      if (!result.ok) {
+        setPersonalErrors(result.errors);
+        return;
+      }
+      setPersonalErrors({});
     }
-    if (step === 1 && !draft.joiningDate) {
-      toast("Joining date is required");
-      return;
+    if (step === 1) {
+      const result = await validateYup(employeeEmploymentSchema, draft);
+      if (!result.ok) {
+        setEmploymentErrors(result.errors);
+        return;
+      }
+      setEmploymentErrors({});
     }
     if (step < EMPLOYEE_STEPS.length - 1) {
       setStep((s) => s + 1);
@@ -105,7 +116,7 @@ export function AddEmployeeDrawer({
         </div>
       }
     >
-      <form id="add-employee-form" className="ee-add-employee" onSubmit={goNext}>
+      <form id="add-employee-form" className="ee-add-employee" onSubmit={(e) => void goNext(e)} noValidate>
         <ol className="ee-team-stepper" aria-label="Employee steps">
           {EMPLOYEE_STEPS.map((s, i) => {
             const done = i < step;
@@ -121,8 +132,32 @@ export function AddEmployeeDrawer({
           })}
         </ol>
 
-        {meta.id === ("personal" satisfies EmployeeStepId) && <EmployeePersonalStep draft={draft} set={set} />}
-        {meta.id === "employment" && <EmployeeEmploymentStep draft={draft} set={set} />}
+        {meta.id === ("personal" satisfies EmployeeStepId) && (
+          <EmployeePersonalStep
+            draft={draft}
+            set={set}
+            errors={{
+              firstName: personalErrors.firstName,
+              lastName: personalErrors.lastName,
+              email: personalErrors.email,
+            }}
+            onBlurField={async (key) => {
+              const result = await validateYup(employeePersonalSchema, draft);
+              setPersonalErrors((prev) => ({ ...prev, [key]: result.ok ? undefined : result.errors[key] }) as Record<string, string>);
+            }}
+          />
+        )}
+        {meta.id === "employment" && (
+          <EmployeeEmploymentStep
+            draft={draft}
+            set={set}
+            errors={{ joiningDate: employmentErrors.joiningDate }}
+            onBlurField={async (key) => {
+              const result = await validateYup(employeeEmploymentSchema, draft);
+              setEmploymentErrors((prev) => ({ ...prev, [key]: result.ok ? undefined : result.errors[key] }) as Record<string, string>);
+            }}
+          />
+        )}
         {meta.id === "payroll" && <EmployeePayrollStep draft={draft} set={set} />}
         {meta.id === "documents" && <EmployeeDocumentsStep />}
       </form>

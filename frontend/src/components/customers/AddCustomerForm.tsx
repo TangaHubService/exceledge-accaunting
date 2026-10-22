@@ -28,8 +28,24 @@ import { FormSection } from "./FormSection";
 
 type SetDraft = <K extends keyof CustomerDraft>(key: K, value: CustomerDraft[K]) => void;
 
+type FormErrors = {
+  displayName?: string;
+  email?: string;
+  website?: string;
+};
+
 /** Full Add customer form — all mock sections in scroll order. */
-export function AddCustomerForm({ draft, set }: { draft: CustomerDraft; set: SetDraft }) {
+export function AddCustomerForm({
+  draft,
+  set,
+  errors = {},
+  onBlurField,
+}: {
+  draft: CustomerDraft;
+  set: SetDraft;
+  errors?: FormErrors;
+  onBlurField?: (key: keyof FormErrors) => void;
+}) {
   return (
     <div className="ee-add-customer-body">
       <div id="section-contact">
@@ -58,19 +74,25 @@ export function AddCustomerForm({ draft, set }: { draft: CustomerDraft; set: Set
           </div>
 
           <div className="ee-cust-grid ee-cust-grid-2" style={{ marginTop: 12 }}>
-            <Field label="Customer display name" required>
+            <Field label="Customer display name" required error={errors.displayName}>
               <input
                 className="input"
                 value={draft.displayName}
                 onChange={(e) => set("displayName", e.target.value)}
-                required
+                onBlur={() => onBlurField?.("displayName")}
               />
             </Field>
             <Field label="Company name">
               <input className="input" value={draft.companyName} onChange={(e) => set("companyName", e.target.value)} />
             </Field>
-            <Field label="Email">
-              <input className="input" type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} />
+            <Field label="Email" error={errors.email}>
+              <input
+                className="input"
+                type="email"
+                value={draft.email}
+                onChange={(e) => set("email", e.target.value)}
+                onBlur={() => onBlurField?.("email")}
+              />
             </Field>
             <Field label="Phone number">
               <input className="input" type="tel" value={draft.phone} onChange={(e) => set("phone", e.target.value)} />
@@ -90,8 +112,15 @@ export function AddCustomerForm({ draft, set }: { draft: CustomerDraft; set: Set
             <Field label="Other">
               <input className="input" value={draft.other} onChange={(e) => set("other", e.target.value)} />
             </Field>
-            <Field label="Website">
-              <input className="input" type="url" value={draft.website} onChange={(e) => set("website", e.target.value)} />
+            <Field label="Website" error={errors.website}>
+              <input
+                className="input"
+                type="url"
+                value={draft.website}
+                onChange={(e) => set("website", e.target.value)}
+                onBlur={() => onBlurField?.("website")}
+                placeholder="https://"
+              />
             </Field>
           </div>
         </FormSection>

@@ -5,7 +5,7 @@ import { Shell } from "./components/Shell";
 import { erpLinks } from "./lib/config";
 import { EmptyState } from "./components/ui";
 import { CompanyProvider } from "./lib/company";
-import { Link, match, useLocation } from "./lib/router";
+import { Link, match, Redirect, useLocation } from "./lib/router";
 import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
 import { Accounts } from "./pages/Accounts";
 import { AgeingReportPage } from "./pages/Ageing";
@@ -121,6 +121,8 @@ const ROUTES: Route[] = [
   { pattern: "/banking", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/accounts/:id", needs: "bank:view", render: (p) => <BankAccount key={p.id} id={p.id} /> },
   { pattern: "/banking/transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/integration-transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/rules", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/reconciliation", needs: "bank:view", render: () => <BankReconciliations /> },
   { pattern: "/banking/reconciliation/:id", needs: "bank:view", render: (p) => <BankReconciliationDetail key={p.id} id={p.id} /> },
   { pattern: "/tax", needs: "tax:view", render: () => <Tax /> },
@@ -144,11 +146,16 @@ const ROUTES: Route[] = [
   { pattern: "/journals", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/journals/new", needs: "journal:create", render: () => <JournalNew /> },
   { pattern: "/journals/:id/edit", needs: "journal:create", render: (p) => <JournalNew key={p.id} id={p.id} /> },
+  { pattern: "/accounting/revenue-recognition", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/approvals", needs: "journal:view", render: () => <Approvals /> },
   { pattern: "/notifications", needs: "setup:view", render: () => <Notifications /> },
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
-  { pattern: "/accounts", needs: "coa:view", render: () => <Accounts /> },
-  { pattern: "/recurring-journals", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/accounting/chart-of-accounts", needs: "coa:view", render: () => <Accounts /> },
+  { pattern: "/accounts", needs: "coa:view", render: () => <Redirect to="/accounting/chart-of-accounts" /> },
+  { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/recurring-journals", needs: "journal:view", render: () => <Redirect to="/accounting/recurring-transactions" /> },
+  { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
+  { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
   { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
   { pattern: "/reports/trial-balance", needs: "report:view", render: () => <TrialBalance /> },
   { pattern: "/dimensions", needs: "report:view", render: () => <Dimensions /> },

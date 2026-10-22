@@ -39,7 +39,7 @@ export function UsageSettings() {
             <span className="ee-settings-pill">Unlimited</span>
           </div>
         </header>
-        <Link to="/accounts" className="ee-link-btn">
+        <Link to="/accounting/chart-of-accounts" className="ee-link-btn">
           View chart of accounts
         </Link>
         <p className="ee-settings-hint">Your plan includes unlimited accounts.</p>

@@ -1,7 +1,6 @@
-import { ChevronDown, Lock, LockOpen, Play } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Info, Lock, LockOpen, Play } from "lucide-react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
-  ALL_ACCOUNT_TYPE_LABELS,
   backendTypeFor,
   COA_TAXONOMY,
   detailTypesFor,
@@ -11,7 +10,13 @@ import {
 import type { Account, AccountType, CoaDashboard } from "../../lib/types";
 import { useCompany } from "../../lib/company";
 import { useSession } from "../../lib/session";
+import {
+  newAccountSchema,
+  type NewAccountValues,
+  useYupForm,
+} from "../../lib/validation";
 import { useFeedback } from "../feedback";
+import { Select } from "../Select";
 import { Drawer, Field } from "../ui";
 
 type Props = {
@@ -19,6 +24,17 @@ type Props = {
   accounts: Account[];
   onClose: () => void;
   onSaved: () => void;
+};
+
+const EMPTY: NewAccountValues = {
+  name: "",
+  code: "",
+  accountTypeLabel: "",
+  detailType: "",
+  isSubaccount: false,
+  parentId: "",
+  description: "",
+  locked: false,
 };
 
 function suggestCode(accounts: Account[], type: AccountType, ranges: Array<{ type: AccountType; min: number; max: number }>) {
@@ -35,19 +51,9 @@ export function NewAccountDrawer({ categories, accounts, onClose, onSaved }: Pro
   const { api } = useSession();
   const { toast } = useFeedback();
   const { currency, reload: reloadCompany } = useCompany();
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [accountTypeLabel, setAccountTypeLabel] = useState("");
-  const [detailType, setDetailType] = useState("");
-  const [isSubaccount, setIsSubaccount] = useState(false);
-  const [parentId, setParentId] = useState("");
-  const [description, setDescription] = useState("");
-  const [locked, setLocked] = useState(false);
-  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [values, setValues] = useState<NewAccountValues>(EMPTY);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const typeBtnRef = useRef<HTMLButtonElement>(null);
-  const typeMenuRef = useRef<HTMLDivElement>(null);
+  const [formError, setFormError] = useState("");
 
   const ranges = useMemo(
     () =>
@@ -58,82 +64,97 @@ export function NewAccountDrawer({ categories, accounts, onClose, onSaved }: Pro
     [categories],
   );
 
-  const backendType = accountTypeLabel ? backendTypeFor(accountTypeLabel) : undefined;
-  const detailOptions = accountTypeLabel ? detailTypesFor(accountTypeLabel) : [];
-  const parents = accounts.filter((a) => a.isActive && (!backendType || a.type === backendType));
-  const duplicate = code !== "" && accounts.some((a) => a.code === code);
-  const codeNumber = Number(code);
+  const backendType = values.accountTypeLabel ? backendTypeFor(values.accountTypeLabel) : undefined;
   const range = backendType ? ranges.find((r) => r.type === backendType) : undefined;
-  const outOfRange =
-    code !== "" && range != null && (!Number.isFinite(codeNumber) || codeNumber < range.min || codeNumber > range.max);
+  const existingCodes = useMemo(() => new Set(accounts.map((a) => a.code)), [accounts]);
 
-  useEffect(() => {
-    if (!typeMenuOpen) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (typeMenuRef.current?.contains(t) || typeBtnRef.current?.contains(t)) return;
-      setTypeMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [typeMenuOpen]);
+  const schema = useMemo(
+    () => newAccountSchema({ existingCodes, range: range ? { min: range.min, max: range.max } : undefined }),
+    [existingCodes, range?.min, range?.max],
+  );
+
+  const { showError, setField, blurField, validate, resetValidation, setErrors } = useYupForm(schema, values, setValues);
+
+  const accountTypeOptions = useMemo(
+    () =>
+      COA_TAXONOMY.flatMap((block) =>
+        block.accountTypes.map((opt) => ({
+          value: opt.label,
+          label: opt.label,
+          group: block.label,
+        })),
+      ),
+    [],
+  );
+
+  const detailOptions = useMemo(
+    () =>
+      (values.accountTypeLabel ? detailTypesFor(values.accountTypeLabel) : []).map((d) => ({
+        value: d,
+        label: d,
+      })),
+    [values.accountTypeLabel],
+  );
+
+  const parentOptions = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.isActive && (!backendType || a.type === backendType))
+        .map((a) => ({ value: a.id, label: a.name, prefix: a.code })),
+    [accounts, backendType],
+  );
 
   function pickAccountType(label: string) {
-    setAccountTypeLabel(label);
     const details = detailTypesFor(label);
-    setDetailType(details[0] ?? "");
-    setTypeMenuOpen(false);
-    setParentId("");
     const bt = backendTypeFor(label);
-    if (bt && !code) setCode(suggestCode(accounts, bt, ranges));
+    setValues((prev) => ({
+      ...prev,
+      accountTypeLabel: label,
+      detailType: details[0] ?? "",
+      parentId: "",
+      code: prev.code || (bt ? suggestCode(accounts, bt, ranges) : ""),
+    }));
+    setErrors((e) => ({ ...e, accountTypeLabel: undefined, detailType: undefined }));
   }
 
   async function submit(e: FormEvent, andNew = false) {
     e.preventDefault();
-    if (!name.trim() || !accountTypeLabel || !detailType || !backendType) {
-      setError("Account name, account type and detail type are required.");
-      return;
-    }
-    if (!code.trim()) {
-      setError("Account number is required for posting.");
-      return;
-    }
-    if (outOfRange || duplicate) return;
-    if (isSubaccount && !parentId) {
-      setError("Select a parent account for the subaccount.");
-      return;
-    }
+    setFormError("");
+    const ok = await validate();
+    if (!ok || !backendType) return;
+
     setBusy(true);
-    setError("");
     try {
-      const flags = flagsForDetailType(detailType);
+      const flags = flagsForDetailType(values.detailType);
       await api("/api/v1/coa", {
         method: "POST",
         body: JSON.stringify({
-          code: code.trim(),
-          name: name.trim(),
+          code: values.code.trim(),
+          name: values.name.trim(),
           type: backendType,
-          parentId: isSubaccount ? parentId || undefined : undefined,
-          description: description.trim() || undefined,
-          reportingGroup: encodeReportingGroup(accountTypeLabel, detailType),
+          parentId: values.isSubaccount ? values.parentId || undefined : undefined,
+          description: values.description.trim() || undefined,
+          reportingGroup: encodeReportingGroup(values.accountTypeLabel, values.detailType),
           currency: currency || "RWF",
-          allowManualPost: !locked,
+          allowManualPost: !values.locked,
           ...flags,
         }),
       });
-      toast(`Account ${code} ${name.trim()} created`);
+      toast(`Account ${values.code} ${values.name.trim()} created`);
       reloadCompany();
       if (andNew) {
-        setName("");
-        setDescription("");
-        setCode(suggestCode([...accounts, { code, type: backendType } as Account], backendType, ranges));
-        setIsSubaccount(false);
-        setParentId("");
+        setValues({
+          ...EMPTY,
+          accountTypeLabel: values.accountTypeLabel,
+          detailType: values.detailType,
+          code: suggestCode([...accounts, { code: values.code, type: backendType } as Account], backendType, ranges),
+        });
+        resetValidation();
       } else {
         onSaved();
       }
     } catch (err) {
-      setError((err as Error).message);
+      setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -173,101 +194,119 @@ export function NewAccountDrawer({ categories, accounts, onClose, onSaved }: Pro
         </div>
       }
     >
-      <form id="new-account-form" className="ee-coa-form" onSubmit={(e) => void submit(e)}>
-        {error && (
-          <div className="notice error" role="alert">
-            {error}
+      <form id="new-account-form" className="ee-coa-form" onSubmit={(e) => void submit(e)} noValidate>
+        {formError && (
+          <div className="notice error ee-coa-form-error" role="alert">
+            {formError}
           </div>
         )}
 
-        <Field label="Account name" required>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
-        </Field>
+        <div className="ee-coa-form-grid">
+          <Field label="Account name" required error={showError("name")}>
+            <input
+              className="input"
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
+              onBlur={() => blurField("name")}
+              autoFocus
+            />
+          </Field>
 
-        <Field label="Account number" hint={range ? `Suggested range ${range.min}–${range.max}` : undefined} error={duplicate ? "Code already exists" : outOfRange ? `Use codes ${range!.min}–${range!.max}` : null}>
-          <input
-            className={`input mono ${outOfRange || duplicate ? "invalid" : ""}`}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            inputMode="numeric"
-            placeholder="e.g. 1100"
-          />
-        </Field>
-
-        <Field label="Account type" required>
-          <div className="ee-coa-type-wrap">
-            <button
-              ref={typeBtnRef}
-              type="button"
-              className={`ee-coa-type-btn ${!accountTypeLabel ? "placeholder" : ""}`}
-              aria-haspopup="listbox"
-              aria-expanded={typeMenuOpen}
-              onClick={() => setTypeMenuOpen((v) => !v)}
-            >
-              <span>{accountTypeLabel || "Select account type"}</span>
-              <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
-            </button>
-            {typeMenuOpen && (
-              <div ref={typeMenuRef} className="ee-coa-type-menu" role="listbox" aria-label="Account types">
-                {COA_TAXONOMY.map((block) => (
-                  <div key={block.group} className="ee-coa-type-group">
-                    <div className="ee-coa-type-group-label">{block.label}</div>
-                    {block.accountTypes.map((opt) => (
-                      <button
-                        key={opt.label}
-                        type="button"
-                        role="option"
-                        aria-selected={accountTypeLabel === opt.label}
-                        className={`ee-coa-type-option ${accountTypeLabel === opt.label ? "on" : ""}`}
-                        onClick={() => pickAccountType(opt.label)}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Detail type" required>
-          <select
-            className="input"
-            value={detailType}
-            disabled={!accountTypeLabel}
-            onChange={(e) => setDetailType(e.target.value)}
+          <Field
+            label="Account number"
             required
+            hint={!showError("code") && range ? `Suggested range ${range.min}–${range.max}` : undefined}
+            error={showError("code")}
           >
-            <option value="">{accountTypeLabel ? "Select detail type" : "Select account type first"}</option>
-            {detailOptions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <input
+              className="input mono"
+              value={values.code}
+              onChange={(e) => setField("code", e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onBlur={() => blurField("code")}
+              inputMode="numeric"
+              placeholder="e.g. 1100"
+            />
+          </Field>
+
+          <Field
+            label={
+              <span className="ee-coa-label-with-info">
+                Account type
+                <button
+                  type="button"
+                  className="ee-coa-info"
+                  title="Choose the reporting category for this account"
+                  aria-label="About account type"
+                  onClick={() => toast("Account type controls how this account appears on financial reports.")}
+                >
+                  <Info size={14} strokeWidth={2} aria-hidden="true" />
+                </button>
+              </span>
+            }
+            required
+            error={showError("accountTypeLabel")}
+          >
+            <Select
+              value={values.accountTypeLabel}
+              onChange={pickAccountType}
+              options={accountTypeOptions}
+              placeholder="Select account type"
+              searchable
+              invalid={Boolean(showError("accountTypeLabel"))}
+              aria-label="Account type"
+            />
+          </Field>
+
+          <Field label="Detail type" required error={showError("detailType")}>
+            <Select
+              value={values.detailType}
+              onChange={(v) => setField("detailType", v)}
+              options={detailOptions}
+              placeholder={values.accountTypeLabel ? "Select detail type" : "Select account type first"}
+              disabled={!values.accountTypeLabel}
+              searchable={detailOptions.length > 8}
+              invalid={Boolean(showError("detailType"))}
+              emptyText="Select an account type first"
+              aria-label="Detail type"
+            />
+          </Field>
+        </div>
 
         <label className="ee-coa-check">
-          <input type="checkbox" checked={isSubaccount} onChange={(e) => setIsSubaccount(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={values.isSubaccount}
+            onChange={(e) => {
+              setField("isSubaccount", e.target.checked);
+              if (!e.target.checked) setField("parentId", "");
+            }}
+          />
           Make this a subaccount
         </label>
 
-        {isSubaccount && (
-          <Field label="Parent account" required>
-            <select className="input" value={parentId} onChange={(e) => setParentId(e.target.value)} required>
-              <option value="">Select parent account</option>
-              {parents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} · {a.name}
-                </option>
-              ))}
-            </select>
+        {values.isSubaccount && (
+          <Field label="Parent account" required error={showError("parentId")}>
+            <Select
+              value={values.parentId}
+              onChange={(v) => setField("parentId", v)}
+              options={parentOptions}
+              placeholder="Select parent account"
+              searchable
+              invalid={Boolean(showError("parentId"))}
+              emptyText="No matching parent accounts"
+              aria-label="Parent account"
+            />
           </Field>
         )}
 
-        <Field label="Description">
-          <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Field label="Description" error={showError("description")}>
+          <textarea
+            className="input ee-coa-desc"
+            rows={4}
+            value={values.description}
+            onChange={(e) => setField("description", e.target.value)}
+            onBlur={() => blurField("description")}
+          />
         </Field>
 
         <div className="ee-coa-lock">
@@ -275,31 +314,24 @@ export function NewAccountDrawer({ categories, accounts, onClose, onSaved }: Pro
           <div className="ee-coa-lock-toggle" role="group" aria-label="Lock account">
             <button
               type="button"
-              className={`ee-coa-lock-btn ${!locked ? "on" : ""}`}
-              aria-pressed={!locked}
+              className={`ee-coa-lock-btn ${!values.locked ? "on" : ""}`}
+              aria-pressed={!values.locked}
               title="Unlocked — allow manual posting"
-              onClick={() => setLocked(false)}
+              onClick={() => setField("locked", false)}
             >
               <LockOpen size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
               type="button"
-              className={`ee-coa-lock-btn ${locked ? "on locked" : ""}`}
-              aria-pressed={locked}
+              className={`ee-coa-lock-btn ${values.locked ? "on locked" : ""}`}
+              aria-pressed={values.locked}
               title="Locked — block manual posting"
-              onClick={() => setLocked(true)}
+              onClick={() => setField("locked", true)}
             >
               <Lock size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           </div>
         </div>
-
-        {/* Keep taxonomy list discoverable for filters */}
-        <datalist id="coa-account-types">
-          {ALL_ACCOUNT_TYPE_LABELS.map((l) => (
-            <option key={l} value={l} />
-          ))}
-        </datalist>
       </form>
     </Drawer>
   );

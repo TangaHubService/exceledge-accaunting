@@ -1,7 +1,5 @@
 import {
   ChevronDown,
-  Download,
-  MoreHorizontal,
   Pencil,
   Plus,
   Printer,
@@ -12,6 +10,7 @@ import {
 import { Fragment, useMemo, useRef, useState } from "react";
 import { NewAccountDrawer } from "../components/coa/NewAccountDrawer";
 import { useFeedback } from "../components/feedback";
+import { Select } from "../components/Select";
 import { Badge, EmptyState, Loadable, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { ALL_ACCOUNT_TYPE_LABELS, decodeReportingGroup } from "../lib/coa-taxonomy";
@@ -197,26 +196,18 @@ export function Accounts() {
               aria-label="Filter by name or number"
             />
           </label>
-          <select
-            className="ee-coa-filter"
+          <Select
+            className="ee-coa-filter-select"
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            onChange={setTypeFilter}
             aria-label="Filter by account type"
-          >
-            <option value="">All</option>
-            {ALL_ACCOUNT_TYPE_LABELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-            <optgroup label="Backend type">
-              {TYPE_ORDER.map((t) => (
-                <option key={t} value={t}>
-                  {TYPE_LABELS[t]}
-                </option>
-              ))}
-            </optgroup>
-          </select>
+            searchable
+            options={[
+              { value: "", label: "All" },
+              ...ALL_ACCOUNT_TYPE_LABELS.map((l) => ({ value: l, label: l, group: "Account type" })),
+              ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t], group: "Backend type" })),
+            ]}
+          />
           <label className="ee-coa-inactive">
             <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
             Show inactive
@@ -318,8 +309,8 @@ export function Accounts() {
                               <button type="button" className="ee-link-btn" onClick={() => navigate(`/ledger?account=${a.id}`)}>
                                 Account history
                               </button>
-                              <button type="button" className="ee-icon-btn" aria-label="More actions" onClick={() => toast(`Actions for ${a.code}`)}>
-                                <MoreHorizontal size={16} strokeWidth={1.75} />
+                              <button type="button" className="ee-coa-action-more" aria-label="More actions" onClick={() => toast(`Actions for ${a.code}`)}>
+                                <ChevronDown size={15} strokeWidth={2} aria-hidden="true" />
                               </button>
                             </div>
                           </td>

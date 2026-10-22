@@ -7,6 +7,8 @@ import {
   PAY_FREQUENCY_OPTIONS,
   PAY_METHOD_OPTIONS,
 } from "../../lib/team-dummy";
+import { Select } from "../Select";
+import { Field } from "../ui";
 
 export function EmployeePayrollStep({
   draft,
@@ -21,79 +23,71 @@ export function EmployeePayrollStep({
     <div className="ee-team-step">
       <h3 className="ee-team-step-title">Payroll details</h3>
       <div className="ee-cust-grid ee-cust-grid-2">
-        <label className="field">
-          <span>Pay frequency</span>
-          <select className="input" value={draft.payFrequency} onChange={(e) => set("payFrequency", e.target.value)}>
-            {PAY_FREQUENCY_OPTIONS.map((o) => (
-              <option key={o.value || "f"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Currency</span>
-          <select className="input" value={draft.currency} onChange={(e) => set("currency", e.target.value)}>
-            {CURRENCY_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field span-2">
-          <span>Basic salary (gross)</span>
+        <Field label="Pay frequency">
+          <Select
+            value={draft.payFrequency}
+            onChange={(v) => set("payFrequency", v)}
+            searchable={false}
+            options={PAY_FREQUENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select frequency"
+            aria-label="Pay frequency"
+          />
+        </Field>
+        <Field label="Currency">
+          <Select
+            value={draft.currency}
+            onChange={(v) => set("currency", v)}
+            searchable={false}
+            options={CURRENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            aria-label="Currency"
+          />
+        </Field>
+        <Field label="Basic salary (gross)" className="span-2" hint="Enter the gross salary before deductions.">
           <input className="input" value={draft.basicSalary} onChange={(e) => set("basicSalary", e.target.value)} placeholder="0.00" inputMode="decimal" />
-          <span className="ee-field-hint">Enter the gross salary before deductions.</span>
-        </label>
-        <label className="field span-2">
-          <span>Effective from</span>
+        </Field>
+        <Field label="Effective from" className="span-2">
           <input className="input" type="date" value={draft.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} />
-        </label>
+        </Field>
       </div>
 
       <h3 className="ee-team-step-title ee-team-step-title-spaced">Payment details</h3>
       <div className="ee-cust-grid ee-cust-grid-2">
-        <label className="field">
-          <span>Payment method</span>
-          <select className="input" value={draft.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
-            {PAY_METHOD_OPTIONS.map((o) => (
-              <option key={o.value || "pm"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Bank name</span>
-          <select className="input" value={draft.bankName} onChange={(e) => set("bankName", e.target.value)}>
-            {BANK_OPTIONS.map((o) => (
-              <option key={o.value || "b"} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Account holder name</span>
+        <Field label="Payment method">
+          <Select
+            value={draft.paymentMethod}
+            onChange={(v) => set("paymentMethod", v)}
+            searchable={false}
+            options={PAY_METHOD_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select method"
+            aria-label="Payment method"
+          />
+        </Field>
+        <Field label="Bank name">
+          <Select
+            value={draft.bankName}
+            onChange={(v) => set("bankName", v)}
+            searchable
+            options={BANK_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            placeholder="Select bank"
+            aria-label="Bank name"
+          />
+        </Field>
+        <Field label="Account holder name">
           <input className="input" value={draft.accountHolder} onChange={(e) => set("accountHolder", e.target.value)} placeholder="Account holder name" />
-        </label>
-        <label className="field">
-          <span>Account number</span>
+        </Field>
+        <Field label="Account number">
           <input className="input" value={draft.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="Account number" />
-        </label>
+        </Field>
       </div>
 
       <h3 className="ee-team-step-title ee-team-step-title-spaced">Statutory details</h3>
       <div className="ee-cust-grid ee-cust-grid-2">
-        <label className="field">
-          <span>Tax identification number (TIN)</span>
+        <Field label="Tax identification number (TIN)">
           <input className="input" value={draft.tin} onChange={(e) => set("tin", e.target.value)} placeholder="TIN" />
-        </label>
-        <label className="field">
-          <span>RSSB number</span>
+        </Field>
+        <Field label="RSSB number">
           <input className="input" value={draft.rssb} onChange={(e) => set("rssb", e.target.value)} placeholder="RSSB number" />
-        </label>
+        </Field>
       </div>
 
       <button

@@ -15,6 +15,7 @@ import {
 import { type FormEvent, useState } from "react";
 import { erpLinks } from "./lib/config";
 import { readRememberedEmail, rememberEmail } from "./lib/session";
+import { signInSchema, useYupForm } from "./lib/validation";
 
 type LoginResponse = {
   accessToken?: string;
@@ -25,7 +26,6 @@ type LoginResponse = {
   error?: string;
 };
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SW = 1.5;
 
 export function SignIn({
@@ -35,16 +35,18 @@ export function SignIn({
   onSignedIn: (token: string, remember: boolean, refreshToken?: string) => void;
   notice?: string;
 }) {
-  const [email, setEmail] = useState(readRememberedEmail);
-  const [password, setPassword] = useState("");
+  const [values, setValues] = useState({
+    email: readRememberedEmail() || "",
+    password: "",
+    remember: true,
+  });
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
-  const [touched, setTouched] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { showError, setField, blurField, validate } = useYupForm(signInSchema, values, setValues);
 
-  const emailError = touched && !EMAIL_PATTERN.test(email.trim()) ? "Enter a valid email address." : "";
-  const passwordError = touched && !password ? "Enter your password." : "";
+  const emailError = showError("email") ?? "";
+  const passwordError = showError("password") ?? "";
 
   function useErpSession() {
     window.location.href = erpLinks.handoff(window.location.origin);
@@ -52,15 +54,15 @@ export function SignIn({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setTouched(true);
-    if (!EMAIL_PATTERN.test(email.trim()) || !password) return;
+    const ok = await validate();
+    if (!ok) return;
     setBusy(true);
     setError("");
     try {
       const res = await fetch(erpLinks.login, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: values.email.trim(), password: values.password }),
       });
       const body = (await res.json().catch(() => ({}))) as LoginResponse;
       if (!res.ok) {
@@ -76,8 +78,8 @@ export function SignIn({
         setError("Excel Edge did not return a session. Please try again.");
         return;
       }
-      rememberEmail(remember ? email.trim() : null);
-      onSignedIn(token, remember, body.refreshToken);
+      rememberEmail(values.remember ? values.email.trim() : null);
+      onSignedIn(token, values.remember, body.refreshToken);
     } catch {
       setError("Can't reach Excel Edge right now. Check your connection and try again.");
     } finally {
@@ -153,8 +155,8 @@ export function SignIn({
 
           {notice && <div className="notice info signin-notice">{notice}</div>}
 
-          <form onSubmit={submit} noValidate className="ee-signin-form">
-            <div className="field">
+          <form onSubmit={(e) => void submit(e)} noValidate className="ee-signin-form">
+            <div className={`field ${emailError ? "has-error" : ""}`}>
               <label className="field-label" htmlFor="signin-email">
                 Email address
               </label>
@@ -165,8 +167,9 @@ export function SignIn({
                   className="input input-lg"
                   type="email"
                   inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={values.email}
+                  onChange={(e) => setField("email", e.target.value)}
+                  onBlur={() => blurField("email")}
                   placeholder="you@company.com"
                   autoComplete="username"
                   autoFocus
@@ -175,7 +178,7 @@ export function SignIn({
                 />
               </span>
               {emailError && (
-                <span className="field-error" id="email-error">
+                <span className="field-error" id="email-error" role="alert">
                   {emailError}
                 </span>
               )}
@@ -186,14 +189,14 @@ export function SignIn({
                 <input
                   id="signin-remember"
                   type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
+                  checked={values.remember}
+                  onChange={(e) => setField("remember", e.target.checked)}
                 />
                 Remember me
               </label>
             </div>
 
-            <div className="field">
+            <div className={`field ${passwordError ? "has-error" : ""}`}>
               <span className="field-row">
                 <label className="field-label" htmlFor="signin-password">
                   Password
@@ -208,8 +211,9 @@ export function SignIn({
                   id="signin-password"
                   className="input input-lg"
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={values.password}
+                  onChange={(e) => setField("password", e.target.value)}
+                  onBlur={() => blurField("password")}
                   autoComplete="current-password"
                   aria-invalid={Boolean(passwordError)}
                   aria-describedby={passwordError ? "password-error" : undefined}
@@ -226,7 +230,7 @@ export function SignIn({
                 </button>
               </span>
               {passwordError && (
-                <span className="field-error" id="password-error">
+                <span className="field-error" id="password-error" role="alert">
                   {passwordError}
                 </span>
               )}

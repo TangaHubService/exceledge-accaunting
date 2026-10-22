@@ -17,15 +17,25 @@ export type HubDef = {
 
 export const ACCOUNTING_HUB_ITEMS: readonly HubItem[] = [
   { id: "bank-transactions", label: "Bank transactions", to: "/banking/transactions", match: ["/banking/transactions"] },
-  { id: "integration-transactions", label: "Integration transactions", to: "/banking/transactions" },
+  { id: "integration-transactions", label: "Integration transactions", to: "/banking/integration-transactions", match: ["/banking/integration-transactions"] },
   { id: "reconcile", label: "Reconcile", to: "/banking/reconciliation", match: ["/banking/reconciliation"] },
-  { id: "rules", label: "Rules", to: "/banking" },
-  { id: "chart-of-accounts", label: "Chart of accounts", to: "/accounts", match: ["/accounts"] },
-  { id: "recurring-transactions", label: "Recurring transactions", to: "/recurring-journals", match: ["/recurring-journals", "/recurring"] },
-  { id: "revenue-recognition", label: "Revenue recognition", to: "/journals", match: ["/journals"] },
+  { id: "rules", label: "Rules", to: "/banking/rules", match: ["/banking/rules"] },
+  {
+    id: "chart-of-accounts",
+    label: "Chart of accounts",
+    to: "/accounting/chart-of-accounts",
+    match: ["/accounting/chart-of-accounts", "/accounts"],
+  },
+  {
+    id: "recurring-transactions",
+    label: "Recurring transactions",
+    to: "/accounting/recurring-transactions",
+    match: ["/accounting/recurring-transactions", "/recurring-journals", "/recurring"],
+  },
+  { id: "revenue-recognition", label: "Revenue recognition", to: "/accounting/revenue-recognition", match: ["/accounting/revenue-recognition", "/journals"] },
   { id: "fixed-assets", label: "Fixed assets", to: "/fixed-assets", match: ["/fixed-assets"] },
-  { id: "prepaid-expenses", label: "Prepaid expenses", to: "/expenses" },
-  { id: "my-accountant", label: "My accountant", to: "/setup", match: ["/setup"] },
+  { id: "prepaid-expenses", label: "Prepaid expenses", to: "/accounting/prepaid-expenses", match: ["/accounting/prepaid-expenses"] },
+  { id: "my-accountant", label: "My accountant", to: "/accounting/my-accountant", match: ["/accounting/my-accountant", "/setup"] },
 ];
 
 export const EXPENSES_HUB_ITEMS: readonly HubItem[] = [
@@ -80,7 +90,11 @@ export const TAX_HUB_ITEMS: readonly HubItem[] = [
 ];
 
 export const APP_HUBS: readonly HubDef[] = [
-  { key: "accounting", items: ACCOUNTING_HUB_ITEMS, activePrefixes: ["/accounts", "/banking", "/journals", "/fixed-assets", "/recurring", "/setup"] },
+  {
+    key: "accounting",
+    items: ACCOUNTING_HUB_ITEMS,
+    activePrefixes: ["/accounting", "/accounts", "/banking", "/journals", "/fixed-assets", "/recurring", "/setup"],
+  },
   { key: "expenses", items: EXPENSES_HUB_ITEMS, activePrefixes: ["/expenses", "/suppliers", "/bills", "/supplier-payments"] },
   { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices"] },
   { key: "customers", items: CUSTOMER_HUB_ITEMS, activePrefixes: ["/customers"] },
