@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { TIME_SETTINGS } from "../../lib/settings-dummy";
 
@@ -15,9 +15,7 @@ export function TimeSettings() {
             <h2>General</h2>
             <p>Set the starting day for your weekly time records.</p>
           </div>
-          <button type="button" className="ee-link-btn">
-            <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-          </button>
+          <SettingsEditButton section="General" />
         </header>
         <div className="ee-settings-row">
           <div className="ee-settings-row-label">First day of work week</div>
@@ -31,9 +29,7 @@ export function TimeSettings() {
             <h2>Timesheet</h2>
             <p>Choose the fields and billing options available on timesheets.</p>
           </div>
-          <button type="button" className="ee-link-btn">
-            <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-          </button>
+          <SettingsEditButton section="Timesheet" />
         </header>
         <div className="ee-settings-row">
           <div className="ee-settings-row-label">Show service field</div>

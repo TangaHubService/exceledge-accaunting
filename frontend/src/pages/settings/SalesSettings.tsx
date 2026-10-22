@@ -1,5 +1,5 @@
-import { Pencil } from "lucide-react";
 import { useState, type Dispatch, type SetStateAction } from "react";
+import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { type PrefRow, SALES_SETTINGS } from "../../lib/settings-dummy";
@@ -40,14 +40,6 @@ function PrefList({
   );
 }
 
-function EditBtn() {
-  return (
-    <button type="button" className="ee-link-btn">
-      <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-    </button>
-  );
-}
-
 export function SalesSettings() {
   const [form, setForm] = useState<Record<string, string | boolean>>(() =>
     Object.fromEntries(SALES_SETTINGS.formContent.map((r) => [r.label, r.value])),
@@ -73,7 +65,7 @@ export function SalesSettings() {
               <h2>Sales form content</h2>
               <p>Customize the information and fields that appear on your sales forms.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Sales form content" />
           </header>
           <PrefList rows={SALES_SETTINGS.formContent} state={form} setState={setForm} />
         </section>
@@ -84,7 +76,7 @@ export function SalesSettings() {
               <h2>Products and services</h2>
               <p>Manage how products and services appear and are tracked on your sales forms.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Products and services" />
           </header>
           <PrefList rows={SALES_SETTINGS.products} state={products} setState={setProducts} />
         </section>
@@ -95,7 +87,7 @@ export function SalesSettings() {
               <h2>Invoice payments</h2>
               <p>Manage how your customers can pay and what appears on your invoices.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Invoice payments" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Accept online payments</div>
@@ -117,7 +109,7 @@ export function SalesSettings() {
               <h2>Progress invoicing</h2>
               <p>Manage options for creating and tracking progress invoices.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Progress invoicing" />
           </header>
           {SALES_SETTINGS.progressInvoicing.map((row) => (
             <div className="ee-settings-row" key={row.label}>
@@ -137,7 +129,7 @@ export function SalesSettings() {
               <h2>Messages</h2>
               <p>Manage the default email message sent with sales forms.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Messages" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Default email message sent with sales forms</div>
@@ -153,7 +145,7 @@ export function SalesSettings() {
               <h2>Post-invoice / Feedback survey</h2>
               <p>Collect work requests, reviews and referrals from your customers.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Post-invoice / Feedback survey" />
           </header>
           {SALES_SETTINGS.postInvoice.map((row) => (
             <div className="ee-settings-row" key={row.label}>
@@ -177,7 +169,7 @@ export function SalesSettings() {
               <h2>Reminders</h2>
               <p>Set up and manage invoice reminder emails.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Reminders" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Set up invoice reminder emails</div>
@@ -193,7 +185,7 @@ export function SalesSettings() {
               <h2>Online delivery</h2>
               <p>Manage email options for all sales forms.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Online delivery" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Email options for all sales forms</div>
@@ -209,7 +201,7 @@ export function SalesSettings() {
               <h2>Customer AI</h2>
               <p>Manage AI insights and email digests for your sales activity.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Customer AI" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Daily email digest</div>
@@ -223,7 +215,7 @@ export function SalesSettings() {
               <h2>Statements</h2>
               <p>Manage statement layout and presentation options.</p>
             </div>
-            <EditBtn />
+            <SettingsEditButton section="Statements" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Show ageing table at bottom of statement</div>

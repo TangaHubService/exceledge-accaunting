@@ -1,10 +1,12 @@
-import { Pencil } from "lucide-react";
 import { useState } from "react";
+import { useFeedback } from "../../components/feedback";
+import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { EXPENSES_SETTINGS } from "../../lib/settings-dummy";
 
 export function ExpensesSettings() {
+  const { toast } = useFeedback();
   const [bills, setBills] = useState(() =>
     Object.fromEntries(EXPENSES_SETTINGS.bills.map((r) => [r.label, r.value])),
   );
@@ -17,9 +19,7 @@ export function ExpensesSettings() {
           <div>
             <h2>Bills and expenses</h2>
           </div>
-          <button type="button" className="ee-link-btn">
-            <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-          </button>
+          <SettingsEditButton section="Bills and expenses" />
         </header>
         <ul className="ee-settings-pref-list">
           {EXPENSES_SETTINGS.bills.map((row) => (
@@ -43,9 +43,7 @@ export function ExpensesSettings() {
         <section className="ee-settings-card">
           <header className="ee-settings-card-head ee-settings-card-head-row">
             <h2>Purchase orders</h2>
-            <button type="button" className="ee-link-btn">
-              <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-            </button>
+            <SettingsEditButton section="Purchase orders" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Use purchase orders</div>
@@ -56,13 +54,11 @@ export function ExpensesSettings() {
         <section className="ee-settings-card">
           <header className="ee-settings-card-head ee-settings-card-head-row">
             <h2>Messages</h2>
-            <button type="button" className="ee-link-btn">
-              <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-            </button>
+            <SettingsEditButton section="Messages" />
           </header>
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Default email message sent with purchase orders and bills</div>
-            <button type="button" className="ee-link-btn">
+            <button type="button" className="ee-link-btn" onClick={() => toast("Customise purchase email message")}>
               {EXPENSES_SETTINGS.messages.customise}
             </button>
           </div>

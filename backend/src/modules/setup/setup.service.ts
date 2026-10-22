@@ -98,10 +98,45 @@ export async function ensureSystemChartOfAccounts(companyId: string) {
         name: a.name,
         type: a.type,
         systemProtected: a.systemProtected,
+        reportingGroup: a.reportingGroup ?? null,
+        description: a.description ?? null,
+        isCashAccount: Boolean(a.isCashAccount),
+        isTaxAccount: Boolean(a.isTaxAccount),
+        isInventoryAccount: Boolean(a.isInventoryAccount),
+        bankReconciliationRequired: Boolean(a.bankReconciliationRequired),
         allowManualPost: !NO_MANUAL_POSTING_CODES.has(a.code),
       })),
     });
   }
+
+  // Backfill Chart of accounts taxonomy on existing seeded rows (idempotent).
+  for (const seed of SYSTEM_ACCOUNT_SEED) {
+    if (!seed.reportingGroup) continue;
+    const row = byCode.get(seed.code);
+    if (!row) continue;
+    const needsGroup = !row.reportingGroup || !String(row.reportingGroup).includes("|||");
+    const needsFlags =
+      Boolean(seed.isCashAccount) !== row.isCashAccount ||
+      Boolean(seed.isTaxAccount) !== row.isTaxAccount ||
+      Boolean(seed.isInventoryAccount) !== row.isInventoryAccount ||
+      Boolean(seed.bankReconciliationRequired) !== row.bankReconciliationRequired;
+    if (!needsGroup && !needsFlags) continue;
+    await prisma.account.update({
+      where: { id: row.id },
+      data: {
+        ...(needsGroup ? { reportingGroup: seed.reportingGroup } : {}),
+        ...(needsFlags
+          ? {
+              isCashAccount: Boolean(seed.isCashAccount),
+              isTaxAccount: Boolean(seed.isTaxAccount),
+              isInventoryAccount: Boolean(seed.isInventoryAccount),
+              bankReconciliationRequired: Boolean(seed.bankReconciliationRequired),
+            }
+          : {}),
+      },
+    });
+  }
+
   return prisma.account.findMany({ where: { companyId } });
 }
 

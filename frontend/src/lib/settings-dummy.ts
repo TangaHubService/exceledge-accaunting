@@ -134,6 +134,7 @@ export const ADVANCED_SETTINGS = {
   warnDuplicateBill: false,
   warnDuplicateJournal: false,
   notifyInactive: "1 hour",
+  backups: true,
 };
 
 export const REPORT_VISUAL = [
@@ -179,15 +180,15 @@ export const APP_FLYOUTS: Record<string, { flyoutTitle: string; items: Array<{ l
     flyoutTitle: "ACCOUNTING",
     items: [
       { label: "Bank transactions", to: "/banking/transactions" },
-      { label: "Integration transactions", to: "/banking/transactions" },
+      { label: "Integration transactions", to: "/banking/integration-transactions" },
       { label: "Reconcile", to: "/banking/reconciliation" },
-      { label: "Rules", to: "/banking" },
-      { label: "Chart of accounts", to: "/accounts" },
-      { label: "Recurring transactions", to: "/recurring-journals" },
-      { label: "Revenue recognition", to: "/journals" },
+      { label: "Rules", to: "/banking/rules" },
+      { label: "Chart of accounts", to: "/accounting/chart-of-accounts" },
+      { label: "Recurring transactions", to: "/accounting/recurring-transactions" },
+      { label: "Revenue recognition", to: "/accounting/revenue-recognition" },
       { label: "Fixed assets", to: "/fixed-assets" },
-      { label: "Prepaid expenses", to: "/expenses" },
-      { label: "My accountant", to: "/settings/company" },
+      { label: "Prepaid expenses", to: "/accounting/prepaid-expenses" },
+      { label: "My accountant", to: "/accounting/my-accountant" },
     ],
   },
   expenses: {
@@ -222,7 +223,13 @@ export const APP_FLYOUTS: Record<string, { flyoutTitle: string; items: Array<{ l
   },
   team: {
     flyoutTitle: "TEAM",
-    items: [{ label: "Employees", to: "/settings/company" }],
+    items: [
+      { label: "Overview", to: "/employees" },
+      { label: "Employees", to: "/employees" },
+      { label: "Time tracking", to: "/time/weekly" },
+      { label: "Single time activity", to: "/time/single" },
+      { label: "Payroll", to: "/employees" },
+    ],
   },
   projects: {
     flyoutTitle: "PROJECTS",

@@ -476,59 +476,142 @@ export function hasCapability(
   return capabilitiesForRole(role).includes(capability);
 }
 
-/** Minimal system COA seed codes for Phase 1 default posting maps (full COA = Phase 2) */
-export const SYSTEM_ACCOUNT_SEED: Array<{
+/** Persist UI account type + detail type (matches Chart of accounts taxonomy). */
+export const COA_REPORTING_SEP = "|||";
+
+export function encodeCoaReportingGroup(accountType: string, detailType: string) {
+  return `${accountType}${COA_REPORTING_SEP}${detailType}`;
+}
+
+export type SystemAccountSeed = {
   code: string;
   name: string;
   type: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "COST_OF_SALES" | "EXPENSE" | "OTHER_INCOME" | "OTHER_EXPENSE";
   systemProtected: boolean;
-}> = [
-  { code: "1100", name: "Cash on Hand", type: "ASSET", systemProtected: true },
-  { code: "1110", name: "Bank Account", type: "ASSET", systemProtected: true },
-  { code: "1120", name: "Petty Cash", type: "ASSET", systemProtected: true },
-  { code: "1130", name: "Mobile Money Clearing", type: "ASSET", systemProtected: true },
-  { code: "1140", name: "Undeposited Funds", type: "ASSET", systemProtected: true },
-  { code: "1200", name: "Accounts Receivable", type: "ASSET", systemProtected: true },
-  { code: "1300", name: "Inventory Asset", type: "ASSET", systemProtected: true },
-  { code: "1400", name: "Input Tax Receivable", type: "ASSET", systemProtected: true },
-  { code: "1500", name: "Fixed Asset Cost", type: "ASSET", systemProtected: true },
-  { code: "1510", name: "Accumulated Depreciation", type: "ASSET", systemProtected: true },
-  { code: "1600", name: "Goods In Transit", type: "ASSET", systemProtected: true },
-  { code: "2100", name: "Accounts Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2110", name: "Supplier Advances", type: "LIABILITY", systemProtected: true },
-  { code: "2120", name: "Customer Deposits", type: "LIABILITY", systemProtected: true },
-  { code: "2130", name: "Goods Received Not Invoiced", type: "LIABILITY", systemProtected: true },
-  { code: "2200", name: "Output Tax Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2210", name: "Withholding Tax Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2300", name: "PAYE Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2310", name: "RSSB Contributions Payable", type: "LIABILITY", systemProtected: true },
-  { code: "2320", name: "Net Salaries Payable", type: "LIABILITY", systemProtected: true },
-  { code: "3100", name: "Retained Earnings", type: "EQUITY", systemProtected: true },
-  { code: "3200", name: "Current Year Earnings", type: "EQUITY", systemProtected: true },
-  { code: "3300", name: "Asset Revaluation Reserve", type: "EQUITY", systemProtected: true },
-  { code: "4100", name: "Sales Revenue", type: "INCOME", systemProtected: true },
-  { code: "4110", name: "Service Revenue", type: "INCOME", systemProtected: true },
-  { code: "4400", name: "Sales Discounts", type: "INCOME", systemProtected: true },
-  { code: "4410", name: "Sales Returns", type: "INCOME", systemProtected: true },
-  { code: "4200", name: "Interest Income", type: "OTHER_INCOME", systemProtected: true },
-  { code: "4300", name: "Foreign Exchange Gain", type: "OTHER_INCOME", systemProtected: true },
-  { code: "5100", name: "Cost of Sales", type: "COST_OF_SALES", systemProtected: true },
-  { code: "5200", name: "Purchases", type: "COST_OF_SALES", systemProtected: true },
-  { code: "6100", name: "Salaries and Wages", type: "EXPENSE", systemProtected: true },
-  { code: "6120", name: "Employer Social Security", type: "EXPENSE", systemProtected: true },
-  { code: "6200", name: "Bad Debt Expense", type: "EXPENSE", systemProtected: true },
-  { code: "6300", name: "Depreciation Expense", type: "EXPENSE", systemProtected: true },
-  { code: "6400", name: "Inventory Adjustment", type: "EXPENSE", systemProtected: true },
-  { code: "6410", name: "Inventory Write-Off", type: "EXPENSE", systemProtected: true },
-  { code: "6420", name: "Inventory Loss", type: "EXPENSE", systemProtected: true },
-  { code: "6430", name: "Bank Charges", type: "EXPENSE", systemProtected: true },
-  { code: "6500", name: "Foreign Exchange Loss", type: "OTHER_EXPENSE", systemProtected: true },
-  { code: "1900", name: "Suspense Account", type: "ASSET", systemProtected: true },
-  { code: "1590", name: "Asset Disposal", type: "ASSET", systemProtected: true },
-  { code: "6700", name: "Rounding Difference", type: "EXPENSE", systemProtected: true },
-  { code: "7200", name: "Inventory Gain", type: "OTHER_INCOME", systemProtected: true },
-  { code: "7300", name: "Gain on Disposal", type: "OTHER_INCOME", systemProtected: true },
-  { code: "8100", name: "Loss on Disposal", type: "OTHER_EXPENSE", systemProtected: true },
+  /** `Account type|||Detail type` for Chart of accounts columns. */
+  reportingGroup?: string;
+  description?: string;
+  isCashAccount?: boolean;
+  isTaxAccount?: boolean;
+  isInventoryAccount?: boolean;
+  bankReconciliationRequired?: boolean;
+};
+
+const rg = encodeCoaReportingGroup;
+
+/**
+ * Full Chart of accounts seed: mandatory posting accounts + QuickBooks-style
+ * accounts shown in the CoA UI (Account type / Detail type / BAL).
+ * Codes in Seg 3.7 ranges; existing system codes keep stable names for tests.
+ */
+export const SYSTEM_ACCOUNT_SEED: SystemAccountSeed[] = [
+  /* ── Cash & banks ─────────────────────────────────────────────── */
+  { code: "1100", name: "Cash on Hand", type: "ASSET", systemProtected: true, reportingGroup: rg("Cash and cash equivalents", "Cash on hand"), isCashAccount: true },
+  { code: "1110", name: "Bank Account", type: "ASSET", systemProtected: true, reportingGroup: rg("Cash and cash equivalents", "Bank"), isCashAccount: true, bankReconciliationRequired: true },
+  { code: "1120", name: "Petty Cash", type: "ASSET", systemProtected: true, reportingGroup: rg("Cash and cash equivalents", "Cash on hand"), isCashAccount: true },
+  { code: "1130", name: "Mobile Money Clearing", type: "ASSET", systemProtected: true, reportingGroup: rg("Cash and cash equivalents", "Cash and cash equivalents"), isCashAccount: true },
+  { code: "1140", name: "Undeposited Funds", type: "ASSET", systemProtected: true, reportingGroup: rg("Current assets", "Undeposited Funds"), isCashAccount: true },
+  { code: "1150", name: "Cash and cash equivalents", type: "ASSET", systemProtected: false, reportingGroup: rg("Cash and cash equivalents", "Cash and cash equivalents"), isCashAccount: true },
+  { code: "1160", name: "Savings", type: "ASSET", systemProtected: false, reportingGroup: rg("Cash and cash equivalents", "Savings"), isCashAccount: true, bankReconciliationRequired: true },
+
+  /* ── Receivables & current assets ─────────────────────────────── */
+  { code: "1200", name: "Accounts Receivable", type: "ASSET", systemProtected: true, reportingGroup: rg("Accounts receivable (A/R)", "Accounts receivable (A/R)") },
+  { code: "1210", name: "Allowance for bad debts", type: "ASSET", systemProtected: false, reportingGroup: rg("Current assets", "Allowance for bad debts") },
+  { code: "1220", name: "Available for sale assets (short-term)", type: "ASSET", systemProtected: false, reportingGroup: rg("Current assets", "Assets available for sale") },
+  { code: "1230", name: "Employee Cash Advances", type: "ASSET", systemProtected: false, reportingGroup: rg("Current assets", "Employee Cash Advances") },
+  { code: "1240", name: "Prepaid expenses", type: "ASSET", systemProtected: false, reportingGroup: rg("Current assets", "Prepaid Expenses") },
+  { code: "1250", name: "Uncategorised Asset", type: "ASSET", systemProtected: false, reportingGroup: rg("Current assets", "Other current assets") },
+  { code: "1300", name: "Inventory Asset", type: "ASSET", systemProtected: true, reportingGroup: rg("Current assets", "Inventory"), isInventoryAccount: true },
+  { code: "1400", name: "Input Tax Receivable", type: "ASSET", systemProtected: true, reportingGroup: rg("Current assets", "Other current assets"), isTaxAccount: true },
+
+  /* ── Fixed & non-current assets ───────────────────────────────── */
+  { code: "1500", name: "Fixed Asset Cost", type: "ASSET", systemProtected: true, reportingGroup: rg("Fixed assets", "Other fixed assets") },
+  { code: "1510", name: "Accumulated Depreciation", type: "ASSET", systemProtected: true, reportingGroup: rg("Fixed assets", "Accumulated depreciation on property, plant and equipment") },
+  { code: "1515", name: "Property, plant and equipment", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Other fixed assets") },
+  { code: "1516", name: "Accumulated depreciation on property, plant and equipment", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Accumulated depreciation on property, plant and equipment") },
+  { code: "1520", name: "Land", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Land") },
+  { code: "1530", name: "Buildings", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Buildings") },
+  { code: "1540", name: "Furniture and Fixtures", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Furniture and Fixtures") },
+  { code: "1550", name: "Vehicles", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Vehicles") },
+  { code: "1560", name: "Machinery and equipment", type: "ASSET", systemProtected: false, reportingGroup: rg("Fixed assets", "Machinery and equipment") },
+  { code: "1590", name: "Asset Disposal", type: "ASSET", systemProtected: true, reportingGroup: rg("Fixed assets", "Other fixed assets") },
+  { code: "1600", name: "Goods In Transit", type: "ASSET", systemProtected: true, reportingGroup: rg("Current assets", "Inventory"), isInventoryAccount: true },
+  { code: "1610", name: "Assets held for sale", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Assets held for sale") },
+  { code: "1620", name: "Deferred tax assets", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Deferred tax"), isTaxAccount: true },
+  { code: "1630", name: "Goodwill", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Goodwill") },
+  { code: "1640", name: "Intangibles", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Intangible Assets") },
+  { code: "1650", name: "Long-term investments", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Long-term investments") },
+  { code: "1660", name: "Security Deposits", type: "ASSET", systemProtected: false, reportingGroup: rg("Non-current assets", "Security Deposits") },
+  { code: "1900", name: "Suspense Account", type: "ASSET", systemProtected: true, reportingGroup: rg("Current assets", "Other current assets") },
+
+  /* ── Liabilities ──────────────────────────────────────────────── */
+  { code: "2050", name: "Credit Card", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Credit card", "Credit card") },
+  { code: "2100", name: "Accounts Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Accounts payable (A/P)", "Accounts payable (A/P)") },
+  { code: "2110", name: "Supplier Advances", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Other current liabilities") },
+  { code: "2120", name: "Customer Deposits", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Other current liabilities") },
+  { code: "2130", name: "Goods Received Not Invoiced", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Accrued liabilities") },
+  { code: "2140", name: "Accrued liabilities", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Current liabilities", "Accrued liabilities") },
+  { code: "2150", name: "Loan Payable", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Current liabilities", "Loan Payable") },
+  { code: "2160", name: "Payroll liabilities", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Current liabilities", "Payroll liabilities") },
+  { code: "2200", name: "Output Tax Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Sales and service tax payable"), isTaxAccount: true },
+  { code: "2210", name: "Withholding Tax Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Current Tax Liability"), isTaxAccount: true },
+  { code: "2220", name: "Income tax payable", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Current liabilities", "Income tax payable"), isTaxAccount: true },
+  { code: "2300", name: "PAYE Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Payroll liabilities") },
+  { code: "2310", name: "RSSB Contributions Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Payroll liabilities") },
+  { code: "2320", name: "Net Salaries Payable", type: "LIABILITY", systemProtected: true, reportingGroup: rg("Current liabilities", "Payroll Clearing") },
+  /* 2500 / 3010 / 3400 reserved — some tests create them dynamically */
+  { code: "2510", name: "Notes Payable", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Non-current liabilities", "Notes Payable") },
+  { code: "2520", name: "Long-term debt", type: "LIABILITY", systemProtected: false, reportingGroup: rg("Non-current liabilities", "Long-term debt") },
+
+  /* ── Equity ───────────────────────────────────────────────────── */
+  { code: "3000", name: "Share capital", type: "EQUITY", systemProtected: false, reportingGroup: rg("Owner's equity", "Share capital") },
+  { code: "3020", name: "Opening Balance Equity", type: "EQUITY", systemProtected: false, reportingGroup: rg("Owner's equity", "Opening Balance Equity") },
+  { code: "3030", name: "Owner's Equity", type: "EQUITY", systemProtected: false, reportingGroup: rg("Owner's equity", "Owner's Equity") },
+  { code: "3100", name: "Retained Earnings", type: "EQUITY", systemProtected: true, reportingGroup: rg("Owner's equity", "Retained Earnings") },
+  { code: "3200", name: "Current Year Earnings", type: "EQUITY", systemProtected: true, reportingGroup: rg("Owner's equity", "Retained Earnings") },
+  { code: "3300", name: "Asset Revaluation Reserve", type: "EQUITY", systemProtected: true, reportingGroup: rg("Owner's equity", "Other comprehensive income") },
+
+  /* ── Income ───────────────────────────────────────────────────── */
+  { code: "4100", name: "Sales Revenue", type: "INCOME", systemProtected: true, reportingGroup: rg("Income", "Sales of Product Income") },
+  { code: "4110", name: "Service Revenue", type: "INCOME", systemProtected: true, reportingGroup: rg("Income", "Service/Fee Income") },
+  { code: "4120", name: "Sales - retail", type: "INCOME", systemProtected: false, reportingGroup: rg("Income", "Sales - retail") },
+  { code: "4130", name: "Sales - wholesale", type: "INCOME", systemProtected: false, reportingGroup: rg("Income", "Sales - wholesale") },
+  { code: "4400", name: "Sales Discounts", type: "INCOME", systemProtected: true, reportingGroup: rg("Income", "Discounts/Refunds Given") },
+  { code: "4410", name: "Sales Returns", type: "INCOME", systemProtected: true, reportingGroup: rg("Income", "Discounts/Refunds Given") },
+  { code: "4200", name: "Interest Income", type: "OTHER_INCOME", systemProtected: true, reportingGroup: rg("Other income", "Interest earned") },
+  { code: "4300", name: "Foreign Exchange Gain", type: "OTHER_INCOME", systemProtected: true, reportingGroup: rg("Other income", "Other Miscellaneous Income") },
+  { code: "7200", name: "Inventory Gain", type: "OTHER_INCOME", systemProtected: true, reportingGroup: rg("Other income", "Other Miscellaneous Income") },
+  { code: "7300", name: "Gain on Disposal", type: "OTHER_INCOME", systemProtected: true, reportingGroup: rg("Other income", "Other Miscellaneous Income") },
+  { code: "7400", name: "Dividend income", type: "OTHER_INCOME", systemProtected: false, reportingGroup: rg("Other income", "Dividend income") },
+
+  /* ── Cost of sales ────────────────────────────────────────────── */
+  { code: "5100", name: "Cost of Sales", type: "COST_OF_SALES", systemProtected: true, reportingGroup: rg("Cost of sales", "Other costs of sales - COS") },
+  { code: "5200", name: "Purchases", type: "COST_OF_SALES", systemProtected: true, reportingGroup: rg("Cost of sales", "Supplies and materials - COS") },
+  { code: "5300", name: "Freight and delivery - COS", type: "COST_OF_SALES", systemProtected: false, reportingGroup: rg("Cost of sales", "Freight and delivery - COS") },
+
+  /* ── Expenses ─────────────────────────────────────────────────── */
+  { code: "6100", name: "Salaries and Wages", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Payroll Expenses") },
+  { code: "6120", name: "Employer Social Security", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Payroll Expenses") },
+  { code: "6130", name: "Advertising/Promotional", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Advertising/Promotional") },
+  { code: "6140", name: "Office/General Administrative Expenses", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Office/General Administrative Expenses") },
+  { code: "6150", name: "Rent or Lease of Buildings", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Rent or Lease of Buildings") },
+  { code: "6160", name: "Utilities", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Utilities") },
+  { code: "6170", name: "Insurance", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Insurance") },
+  { code: "6180", name: "Legal and professional fees", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Legal and professional fees") },
+  { code: "6190", name: "Repair and maintenance", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Repair and maintenance") },
+  { code: "6200", name: "Bad Debt Expense", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Bad debts") },
+  { code: "6300", name: "Depreciation Expense", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Other expense", "Depreciation") },
+  { code: "6400", name: "Inventory Adjustment", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Supplies and materials") },
+  { code: "6410", name: "Inventory Write-Off", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Supplies and materials") },
+  { code: "6420", name: "Inventory Loss", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Supplies and materials") },
+  { code: "6430", name: "Bank Charges", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Bank charges") },
+  { code: "6440", name: "Travel expenses - general and admin expenses", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Travel expenses - general and admin expenses") },
+  { code: "6450", name: "Meals and entertainment", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Meals and entertainment") },
+  { code: "6460", name: "Income tax expense", type: "EXPENSE", systemProtected: false, reportingGroup: rg("Expenses", "Income tax expense"), isTaxAccount: true },
+  { code: "6700", name: "Rounding Difference", type: "EXPENSE", systemProtected: true, reportingGroup: rg("Expenses", "Other Miscellaneous Service Cost") },
+  { code: "6500", name: "Foreign Exchange Loss", type: "OTHER_EXPENSE", systemProtected: true, reportingGroup: rg("Other expense", "Exchange Gain or Loss") },
+  { code: "8100", name: "Loss on Disposal", type: "OTHER_EXPENSE", systemProtected: true, reportingGroup: rg("Other expense", "Other Expense") },
+  { code: "8200", name: "Penalties and settlements", type: "OTHER_EXPENSE", systemProtected: false, reportingGroup: rg("Other expense", "Penalties and settlements") },
 ];
 
 /** Old → new system account codes (Seg 3.7 ranges). Applied on seed and by migration for existing companies. */

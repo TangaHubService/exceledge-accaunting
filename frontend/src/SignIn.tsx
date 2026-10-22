@@ -1,7 +1,21 @@
-import { CircleAlert, Eye, EyeOff, LoaderCircle, Lock } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Box,
+  CircleAlert,
+  Eye,
+  EyeOff,
+  FileText,
+  Globe,
+  LoaderCircle,
+  Lock,
+  Mail,
+  UserPlus,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { erpLinks } from "./lib/config";
 import { readRememberedEmail, rememberEmail } from "./lib/session";
+import { signInSchema, useYupForm } from "./lib/validation";
 
 type LoginResponse = {
   accessToken?: string;
@@ -12,7 +26,7 @@ type LoginResponse = {
   error?: string;
 };
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SW = 1.5;
 
 export function SignIn({
   onSignedIn,
@@ -21,16 +35,18 @@ export function SignIn({
   onSignedIn: (token: string, remember: boolean, refreshToken?: string) => void;
   notice?: string;
 }) {
-  const [email, setEmail] = useState(readRememberedEmail);
-  const [password, setPassword] = useState("");
+  const [values, setValues] = useState({
+    email: readRememberedEmail() || "",
+    password: "",
+    remember: true,
+  });
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
-  const [touched, setTouched] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { showError, setField, blurField, validate } = useYupForm(signInSchema, values, setValues);
 
-  const emailError = touched && !EMAIL_PATTERN.test(email.trim()) ? "Enter a valid email address." : "";
-  const passwordError = touched && !password ? "Enter your password." : "";
+  const emailError = showError("email") ?? "";
+  const passwordError = showError("password") ?? "";
 
   function useErpSession() {
     window.location.href = erpLinks.handoff(window.location.origin);
@@ -38,15 +54,15 @@ export function SignIn({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setTouched(true);
-    if (!EMAIL_PATTERN.test(email.trim()) || !password) return;
+    const ok = await validate();
+    if (!ok) return;
     setBusy(true);
     setError("");
     try {
       const res = await fetch(erpLinks.login, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: values.email.trim(), password: values.password }),
       });
       const body = (await res.json().catch(() => ({}))) as LoginResponse;
       if (!res.ok) {
@@ -62,8 +78,8 @@ export function SignIn({
         setError("Excel Edge did not return a session. Please try again.");
         return;
       }
-      rememberEmail(remember ? email.trim() : null);
-      onSignedIn(token, remember, body.refreshToken);
+      rememberEmail(values.remember ? values.email.trim() : null);
+      onSignedIn(token, values.remember, body.refreshToken);
     } catch {
       setError("Can't reach Excel Edge right now. Check your connection and try again.");
     } finally {
@@ -72,62 +88,132 @@ export function SignIn({
   }
 
   return (
-    <div className="signin-screen">
-      <main className="signin">
-        <div className="signin-brand">
-          <img src="/logo.jpeg" alt="Excel Edge" />
+    <div className="ee-signin">
+      <aside className="ee-signin-hero" aria-hidden="false">
+        <div className="ee-signin-hero-brand">
+          <img src="/logo.jpeg" alt="" className="ee-signin-hero-logo" />
           <div>
-            <div className="name">Excel Edge</div>
-            <div className="product">Accounting</div>
+            <div className="ee-signin-hero-name">Excel Edge ERP</div>
+            <div className="ee-signin-hero-tag">One platform. Your whole business.</div>
           </div>
         </div>
 
-        <div className="signin-card">
-          <h1>Welcome back</h1>
-          <p className="signin-lead">Sign in to continue to your accounting workspace.</p>
+        <div className="ee-signin-hero-copy">
+          <h1>
+            Clarity for your numbers.
+            <br />
+            <span>Control</span> for your business.
+          </h1>
+          <p>Accounting, sales, inventory and your team—connected in one workspace.</p>
+        </div>
+
+        <div className="ee-signin-hero-visual" aria-hidden="true">
+          <div className="ee-signin-dash">
+            <div className="ee-signin-dash-bars">
+              <span style={{ height: "42%" }} />
+              <span style={{ height: "68%" }} />
+              <span style={{ height: "55%" }} />
+              <span style={{ height: "82%" }} />
+              <span style={{ height: "60%" }} />
+            </div>
+          </div>
+          <div className="ee-signin-float ee-signin-float-1">
+            <BarChart3 size={14} strokeWidth={SW} />
+            Accounting
+          </div>
+          <div className="ee-signin-float ee-signin-float-2">
+            <Box size={14} strokeWidth={SW} />
+            Inventory
+          </div>
+          <div className="ee-signin-float ee-signin-float-3">
+            <FileText size={14} strokeWidth={SW} />
+            Invoices
+          </div>
+        </div>
+
+        <div className="ee-signin-hero-modules">
+          <span>Accounting</span>
+          <span className="ee-signin-hero-sep" />
+          <span>Operations</span>
+          <span className="ee-signin-hero-sep" />
+          <span>Hospitality</span>
+        </div>
+
+        <p className="ee-signin-hero-copy-foot">© 2026 Excel Edge CPA</p>
+      </aside>
+
+      <main className="ee-signin-panel">
+        <div className="ee-signin-lang" aria-hidden="true">
+          <Globe size={14} strokeWidth={SW} />
+          English
+        </div>
+
+        <div className="ee-signin-form-wrap">
+          <div className="ee-signin-eyebrow">Your workspace awaits</div>
+          <h2>Welcome back</h2>
+          <p className="ee-signin-lead">Sign in to your Excel Edge account.</p>
 
           {notice && <div className="notice info signin-notice">{notice}</div>}
 
-          <form onSubmit={submit} noValidate>
-            <div className="field">
+          <form onSubmit={(e) => void submit(e)} noValidate className="ee-signin-form">
+            <div className={`field ${emailError ? "has-error" : ""}`}>
               <label className="field-label" htmlFor="signin-email">
-                Email
+                Email address
               </label>
-              <input
-                id="signin-email"
-                className={`input input-lg ${emailError ? "invalid" : ""}`}
-                type="email"
-                inputMode="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
-                autoFocus
-                aria-invalid={Boolean(emailError)}
-                aria-describedby={emailError ? "email-error" : undefined}
-              />
+              <span className={`ee-signin-affix ${emailError ? "invalid" : ""}`}>
+                <Mail size={16} strokeWidth={SW} aria-hidden="true" />
+                <input
+                  id="signin-email"
+                  className="input input-lg"
+                  type="email"
+                  inputMode="email"
+                  value={values.email}
+                  onChange={(e) => setField("email", e.target.value)}
+                  onBlur={() => blurField("email")}
+                  placeholder="you@company.com"
+                  autoComplete="username"
+                  autoFocus
+                  aria-invalid={Boolean(emailError)}
+                  aria-describedby={emailError ? "email-error" : undefined}
+                />
+              </span>
               {emailError && (
-                <span className="field-error" id="email-error">
+                <span className="field-error" id="email-error" role="alert">
                   {emailError}
                 </span>
               )}
             </div>
 
-            <div className="field">
+            <div className="ee-signin-remember-row">
+              <label className="check" htmlFor="signin-remember">
+                <input
+                  id="signin-remember"
+                  type="checkbox"
+                  checked={values.remember}
+                  onChange={(e) => setField("remember", e.target.checked)}
+                />
+                Remember me
+              </label>
+            </div>
+
+            <div className={`field ${passwordError ? "has-error" : ""}`}>
               <span className="field-row">
                 <label className="field-label" htmlFor="signin-password">
                   Password
                 </label>
-                <a href={erpLinks.forgotPassword} className="small">
+                <a href={erpLinks.forgotPassword} className="ee-signin-forgot">
                   Forgot password?
                 </a>
               </span>
-              <span className="input-affix">
+              <span className={`ee-signin-affix ${passwordError ? "invalid" : ""}`}>
+                <Lock size={16} strokeWidth={SW} aria-hidden="true" />
                 <input
                   id="signin-password"
-                  className={`input input-lg ${passwordError ? "invalid" : ""}`}
+                  className="input input-lg"
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={values.password}
+                  onChange={(e) => setField("password", e.target.value)}
+                  onBlur={() => blurField("password")}
                   autoComplete="current-password"
                   aria-invalid={Boolean(passwordError)}
                   aria-describedby={passwordError ? "password-error" : undefined}
@@ -144,7 +230,7 @@ export function SignIn({
                 </button>
               </span>
               {passwordError && (
-                <span className="field-error" id="password-error">
+                <span className="field-error" id="password-error" role="alert">
                   {passwordError}
                 </span>
               )}
@@ -157,25 +243,10 @@ export function SignIn({
               </div>
             )}
 
-            <div className="signin-row">
-              <label className="check" htmlFor="signin-remember">
-                <input
-                  id="signin-remember"
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                />
-                Remember me
-              </label>
-              <span className="signin-secure">
-                <Lock size={12} aria-hidden="true" />
-                Secured by Excel Edge
-              </span>
-            </div>
-
-            <button type="submit" className="btn btn-primary btn-lg" disabled={busy}>
+            <button type="submit" className="btn btn-primary btn-lg ee-signin-submit" disabled={busy}>
               {busy && <LoaderCircle size={16} className="spin" aria-hidden="true" />}
               {busy ? "Signing in…" : "Sign in"}
+              {!busy && <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />}
             </button>
           </form>
 
@@ -183,9 +254,23 @@ export function SignIn({
           <button type="button" className="btn btn-lg signin-sso" onClick={useErpSession}>
             Continue with my Excel Edge session
           </button>
+
+          <div className="ee-signin-new">
+            <p>New to Excel Edge?</p>
+            <a className="ee-signin-create" href={erpLinks.home}>
+              <UserPlus size={16} strokeWidth={SW} />
+              Create account
+            </a>
+          </div>
         </div>
 
-        <p className="signin-foot">Use the same account you sign in to Excel Edge with. Your books stay in your company's workspace.</p>
+        <p className="ee-signin-panel-foot">
+          <a href={erpLinks.home}>Help centre</a>
+          <span aria-hidden="true">|</span>
+          <a href={erpLinks.home}>Privacy</a>
+          <span aria-hidden="true">|</span>
+          <a href={erpLinks.home}>Terms</a>
+        </p>
       </main>
     </div>
   );

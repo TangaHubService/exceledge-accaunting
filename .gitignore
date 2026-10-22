@@ -8,6 +8,7 @@ coverage/
 apps/api/prisma/*.db
 apps/api/storage/
 apps/web/dist/
+PRIMARY RIBBONS
 
 .env
 .env.*

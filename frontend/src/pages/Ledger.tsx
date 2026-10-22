@@ -75,7 +75,7 @@ export function Ledger() {
             "Every posting to an account, with its running balance."
           )
         }
-        back={account ? { to: "/accounts", label: "Chart of accounts" } : undefined}
+        back={account ? { to: "/accounting/chart-of-accounts", label: "Chart of accounts" } : undefined}
         actions={
           account && (
             <>

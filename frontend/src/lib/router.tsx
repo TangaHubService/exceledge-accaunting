@@ -1,4 +1,4 @@
-import { type AnchorHTMLAttributes, type MouseEvent, useSyncExternalStore } from "react";
+import { type AnchorHTMLAttributes, type MouseEvent, useEffect, useSyncExternalStore } from "react";
 
 const listeners = new Set<() => void>();
 
@@ -59,4 +59,20 @@ export function Link({ to, onClick, ...rest }: AnchorHTMLAttributes<HTMLAnchorEl
     navigate(to);
   }
   return <a href={to} onClick={handle} {...rest} />;
+}
+
+/** True when `path` is the same as `to` (ignoring query) or a nested child of it. */
+export function isPathActive(path: string, to: string | undefined): boolean {
+  if (!to) return false;
+  const base = to.split("?")[0] || "/";
+  if (base === "/") return path === "/";
+  return path === base || path.startsWith(`${base}/`);
+}
+
+/** Soft redirect that keeps history tidy (replace). */
+export function Redirect({ to }: { to: string }) {
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [to]);
+  return null;
 }

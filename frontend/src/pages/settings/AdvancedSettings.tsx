@@ -1,16 +1,9 @@
-import { ChevronDown, Pencil } from "lucide-react";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { ADVANCED_SETTINGS } from "../../lib/settings-dummy";
-
-function EditBtn() {
-  return (
-    <button type="button" className="ee-link-btn">
-      <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
-    </button>
-  );
-}
 
 function TextRow({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
@@ -38,6 +31,7 @@ export function AdvancedSettings() {
   const [warnCheque, setWarnCheque] = useState(d.warnDuplicateCheque);
   const [warnBill, setWarnBill] = useState(d.warnDuplicateBill);
   const [warnJournal, setWarnJournal] = useState(d.warnDuplicateJournal);
+  const [backups, setBackups] = useState(true);
   const [coaOpen, setCoaOpen] = useState(true);
 
   return (
@@ -45,7 +39,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Accounting method</h2>
-          <EditBtn />
+          <SettingsEditButton section="Accounting method" />
         </header>
         <TextRow label="Default accounting method" value={d.accountingMethod} />
       </section>
@@ -53,7 +47,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Communications with Excel Edge</h2>
-          <EditBtn />
+          <SettingsEditButton section="Communications" />
         </header>
         <div className="ee-settings-row">
           <button type="button" className="ee-link-btn" style={{ padding: 0 }}>
@@ -65,7 +59,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Accounting</h2>
-          <EditBtn />
+          <SettingsEditButton section="Accounting" />
         </header>
         <TextRow label="First month of financial year" value={d.firstMonthFy} />
         <TextRow label="First month of tax year" value={d.firstMonthTax} />
@@ -79,7 +73,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Company type</h2>
-          <EditBtn />
+          <SettingsEditButton section="Company type" />
         </header>
         <TextRow
           label="Tax form"
@@ -99,7 +93,7 @@ export function AdvancedSettings() {
             <h2>Chart of accounts</h2>
             <ChevronDown size={18} strokeWidth={1.5} className={coaOpen ? "open" : ""} aria-hidden="true" />
           </button>
-          <EditBtn />
+          <SettingsEditButton section="Chart of accounts" />
         </header>
         {coaOpen ? (
           <div className="ee-settings-row">
@@ -112,7 +106,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Categories</h2>
-          <EditBtn />
+          <SettingsEditButton section="Categories" />
         </header>
         <div className="ee-settings-row">
           <div className="ee-settings-row-label">Track classes</div>
@@ -127,7 +121,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Automation</h2>
-          <EditBtn />
+          <SettingsEditButton section="Automation" />
         </header>
         <div className="ee-settings-row">
           <div className="ee-settings-row-label">Pre-fill forms with previously entered content</div>
@@ -157,7 +151,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Projects</h2>
-          <EditBtn />
+          <SettingsEditButton section="Projects" />
         </header>
         <div className="ee-settings-row">
           <div className="ee-settings-row-label">Organise all job-related activity in one place</div>
@@ -168,7 +162,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Language</h2>
-          <EditBtn />
+          <SettingsEditButton section="Language" />
         </header>
         <TextRow label="Language" value={d.language} />
       </section>
@@ -176,7 +170,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Currency</h2>
-          <EditBtn />
+          <SettingsEditButton section="Currency" />
         </header>
         <TextRow label="Home currency" value={d.homeCurrency} />
         <div className="ee-settings-row">
@@ -188,7 +182,7 @@ export function AdvancedSettings() {
       <section className="ee-settings-card">
         <header className="ee-settings-card-head ee-settings-card-head-row">
           <h2>Other preferences</h2>
-          <EditBtn />
+          <SettingsEditButton section="Other preferences" />
         </header>
         <TextRow label="Date format" value={d.dateFormat} />
         <TextRow label="Currency format" value={d.currencyFormat} />
@@ -207,6 +201,44 @@ export function AdvancedSettings() {
           <SettingsToggle label="Warn duplicate journal" on={warnJournal} onChange={setWarnJournal} />
         </div>
         <TextRow label="Notify me if inactive for" value={d.notifyInactive} />
+      </section>
+
+      <section className="ee-settings-card">
+        <header className="ee-settings-card-head ee-settings-card-head-row">
+          <h2>Backup</h2>
+          <SettingsEditButton section="Backup" />
+        </header>
+        <div className="ee-settings-row ee-settings-row-top">
+          <div>
+            <div className="ee-settings-row-label">Turn on backups</div>
+            <div className="ee-settings-hint" style={{ marginTop: 4 }}>
+              Turn off to stop backing up your data.
+            </div>
+          </div>
+          <SettingsToggle label="Turn on backups" on={backups} onChange={setBackups} />
+        </div>
+      </section>
+
+      <section className="ee-settings-card">
+        <header className="ee-settings-card-head">
+          <h2>Personal cloud backup</h2>
+        </header>
+        <div className="ee-settings-row ee-settings-row-stack">
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <p className="ee-settings-hint" style={{ margin: 0 }}>
+              Back up company data to your personal cloud storage and export CSVs when you need an offline copy.
+            </p>
+          </div>
+          <div className="ee-settings-cloud-actions">
+            <button type="button" className="btn ee-btn-outline-blue btn-sm">
+              Link Google Drive
+            </button>
+            <div className="ee-settings-warn">
+              <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
+              Google Drive disconnected. Please link again.
+            </div>
+          </div>
+        </div>
       </section>
     </SettingsLayout>
   );

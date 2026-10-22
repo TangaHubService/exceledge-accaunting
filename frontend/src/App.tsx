@@ -5,7 +5,7 @@ import { Shell } from "./components/Shell";
 import { erpLinks } from "./lib/config";
 import { EmptyState } from "./components/ui";
 import { CompanyProvider } from "./lib/company";
-import { Link, match, useLocation } from "./lib/router";
+import { Link, match, Redirect, useLocation } from "./lib/router";
 import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
 import { Accounts } from "./pages/Accounts";
 import { AgeingReportPage } from "./pages/Ageing";
@@ -22,7 +22,10 @@ import { Budgets } from "./pages/Budgets";
 import { CashPosition } from "./pages/CashPosition";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
+import { Employees } from "./pages/Employees";
 import { Dimensions } from "./pages/Dimensions";
+import { SingleTimeActivity } from "./components/team/SingleTimeActivity";
+import { WeeklyTimesheet } from "./components/team/WeeklyTimesheet";
 import { Exceptions } from "./pages/Exceptions";
 import { ExpenseCategories } from "./pages/ExpenseCategories";
 import { Expenses } from "./pages/Expenses";
@@ -38,6 +41,7 @@ import { Inventory } from "./pages/Inventory";
 import { InventoryMovements } from "./pages/InventoryMovements";
 import { InventoryReconciliation } from "./pages/InventoryReconciliation";
 import { CostOfSalesReport, InventoryValuationReport, SlowMovingReport } from "./pages/InventoryReports";
+import { ImportSuppliers } from "./pages/ImportSuppliers";
 import { Invoices } from "./pages/Invoices";
 import { JournalNew } from "./pages/JournalNew";
 import { Journals } from "./pages/Journals";
@@ -61,7 +65,13 @@ import { TaxSettingsPage } from "./pages/TaxSettings";
 import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
+import { Workflows } from "./pages/Workflows";
 import { SignIn } from "./SignIn";
+import { AddUser } from "./pages/AddUser";
+import { CustomFormStyles } from "./pages/CustomFormStyles";
+import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
+import { InviteFirm } from "./pages/InviteFirm";
+import { ManageUsers } from "./pages/ManageUsers";
 import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
 import { CompanySettings } from "./pages/settings/CompanySettings";
 import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
@@ -76,6 +86,7 @@ type Route = { pattern: string; needs: AccountingCapability; render: (params: Re
 
 const ROUTES: Route[] = [
   { pattern: "/", needs: "setup:view", render: () => <Overview /> },
+  { pattern: "/workflows", needs: "setup:view", render: () => <Workflows /> },
   { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
   { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
@@ -85,10 +96,21 @@ const ROUTES: Route[] = [
   { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
   { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
   { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
+  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <EditInvoiceStyle /> },
+  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <CustomFormStyles /> },
   { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
+  { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
+  { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
+  { pattern: "/users/accounting-firms", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users/roles", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
+  { pattern: "/employees", needs: "setup:view", render: () => <Employees /> },
+  { pattern: "/time/single", needs: "setup:view", render: () => <SingleTimeActivity /> },
+  { pattern: "/time/weekly", needs: "setup:view", render: () => <WeeklyTimesheet /> },
   { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
+  { pattern: "/suppliers/import", needs: "ap:manage", render: () => <ImportSuppliers /> },
   { pattern: "/suppliers", needs: "ap:view", render: () => <Suppliers /> },
   { pattern: "/suppliers/:id", needs: "ap:view", render: (p) => <SupplierDetail id={p.id} /> },
   { pattern: "/bills", needs: "ap:view", render: () => <Bills /> },
@@ -99,6 +121,8 @@ const ROUTES: Route[] = [
   { pattern: "/banking", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/accounts/:id", needs: "bank:view", render: (p) => <BankAccount key={p.id} id={p.id} /> },
   { pattern: "/banking/transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/integration-transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/rules", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/reconciliation", needs: "bank:view", render: () => <BankReconciliations /> },
   { pattern: "/banking/reconciliation/:id", needs: "bank:view", render: (p) => <BankReconciliationDetail key={p.id} id={p.id} /> },
   { pattern: "/tax", needs: "tax:view", render: () => <Tax /> },
@@ -122,11 +146,16 @@ const ROUTES: Route[] = [
   { pattern: "/journals", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/journals/new", needs: "journal:create", render: () => <JournalNew /> },
   { pattern: "/journals/:id/edit", needs: "journal:create", render: (p) => <JournalNew key={p.id} id={p.id} /> },
+  { pattern: "/accounting/revenue-recognition", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/approvals", needs: "journal:view", render: () => <Approvals /> },
   { pattern: "/notifications", needs: "setup:view", render: () => <Notifications /> },
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
-  { pattern: "/accounts", needs: "coa:view", render: () => <Accounts /> },
-  { pattern: "/recurring-journals", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/accounting/chart-of-accounts", needs: "coa:view", render: () => <Accounts /> },
+  { pattern: "/accounts", needs: "coa:view", render: () => <Redirect to="/accounting/chart-of-accounts" /> },
+  { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/recurring-journals", needs: "journal:view", render: () => <Redirect to="/accounting/recurring-transactions" /> },
+  { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
+  { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
   { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
   { pattern: "/reports/trial-balance", needs: "report:view", render: () => <TrialBalance /> },
   { pattern: "/dimensions", needs: "report:view", render: () => <Dimensions /> },
@@ -212,7 +241,11 @@ function Gate() {
 function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
-  if (path.startsWith("/settings")) return page;
+  // Full-page chrome (not the main app Shell).
+  if (path.startsWith("/settings/form-styles/edit")) return page;
+  if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
+  if (path.startsWith("/suppliers/import")) return page;
+  if (path.startsWith("/time/")) return page;
   return <Shell>{page}</Shell>;
 }
 

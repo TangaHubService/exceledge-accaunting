@@ -7,13 +7,11 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   FolderKanban,
   Grid3X3,
   HelpCircle,
   Home,
   LayoutGrid,
-  LogOut,
   type LucideIcon,
   Menu as MenuIcon,
   MoreHorizontal,
@@ -42,21 +40,29 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { APP_HUBS, isAppActive } from "../lib/app-hub-nav";
 import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
-import { erpLinks } from "../lib/config";
-import { humanize } from "../lib/format";
-import { Link, navigate, useLocation } from "../lib/router";
+import { isPathActive, Link, navigate, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
+import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { CustomisePreferences } from "./CustomisePreferences";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
+import { HelpDrawer } from "./ribbon/HelpDrawer";
+import { InboxDrawer } from "./ribbon/InboxDrawer";
+import { IntegrationsModal } from "./ribbon/IntegrationsModal";
+import { NotificationsPopover } from "./ribbon/NotificationsPopover";
+import { SettingsMegaMenu } from "./ribbon/SettingsMegaMenu";
+import { TasksDrawer } from "./ribbon/TasksDrawer";
+import { UserProfileMenu } from "./ribbon/UserProfileMenu";
 import { SearchWorkspace } from "./SearchWorkspace";
-import { Menu } from "./ui";
 
 /** Thin stroke matching the mock line icons. */
 const SW = 1.5;
 
 type Panel = "create" | "bookmarks" | "reports" | "apps" | string | null;
+type Overlay = "tasks" | "help" | "inbox" | "integrations" | "notifications" | "settings" | "profile" | null;
 
 type PanelPos = { top: number; left: number; maxHeight: number };
 
@@ -121,15 +127,17 @@ function placeBeside(el: HTMLElement | null, opts?: { caretAlign?: boolean }): P
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { email, role, signOut } = useSession();
+  const { email } = useSession();
   const company = useCompany();
   const { path } = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [panelPos, setPanelPos] = useState<PanelPos | null>(null);
+  const [overlay, setOverlay] = useState<Overlay>(null);
   const [customiseOpen, setCustomiseOpen] = useState(false);
   const [customiseTab, setCustomiseTab] = useState<"navigation" | "bookmarks">("navigation");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<Array<{ label: string; to: string }>>([]);
   const [pinnedKeys, setPinnedKeys] = useState<string[]>(() => [...DEFAULT_PINNED_KEYS]);
   const [showNavLabels, setShowNavLabels] = useState(true);
@@ -137,10 +145,23 @@ export function Shell({ children }: { children: ReactNode }) {
   const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
   const reportsBtnRef = useRef<HTMLButtonElement>(null);
   const appsBtnRef = useRef<HTMLButtonElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const profileBtnRef = useRef<HTMLButtonElement>(null);
   const pinBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const closeTimer = useRef<number | null>(null);
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine);
   const companyLabel = company.name || DUMMY.companyName;
+
+  function openOverlay(next: Overlay) {
+    setPanel(null);
+    setSearchOpen(false);
+    setOverlay((cur) => (cur === next ? null : next));
+  }
+
+  function closeOverlay() {
+    setOverlay(null);
+  }
 
   function clearCloseTimer() {
     if (closeTimer.current != null) {
@@ -169,12 +190,14 @@ export function Shell({ children }: { children: ReactNode }) {
     setNavOpen(false);
     setPanel(null);
     setSearchOpen(false);
+    setOverlay(null);
   }, [path]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setOverlay(null);
         setSearchOpen(true);
         setPanel(null);
       }
@@ -257,8 +280,10 @@ export function Shell({ children }: { children: ReactNode }) {
       }
     : undefined;
 
+  const hubOpen = APP_HUBS.some((hub) => isAppActive(hub.key, path));
+
   return (
-    <div className={`ee-app ${navOpen ? "nav-open" : ""}`}>
+    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${hubOpen ? "ee-hub-open" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -344,6 +369,7 @@ export function Shell({ children }: { children: ReactNode }) {
             const meta = CUSTOMISE_NAV_APPS.find((a) => a.key === key);
             const Icon = PIN_ICONS[key] ?? BookOpen;
             const open = panel === key;
+            const sectionOn = isAppActive(key, path);
             const label = meta?.label ?? key;
             return (
               <button
@@ -352,8 +378,9 @@ export function Shell({ children }: { children: ReactNode }) {
                   pinBtnRefs.current[key] = el;
                 }}
                 type="button"
-                className={`ee-rail-item ${open ? "hot" : ""}`}
+                className={`ee-rail-item ${open ? "hot" : ""} ${sectionOn && !open ? "active" : ""}`}
                 aria-expanded={open}
+                aria-current={sectionOn ? "page" : undefined}
                 onMouseEnter={() => showPanel(key)}
                 onMouseLeave={scheduleClose}
                 onClick={() => showPanel(key)}
@@ -367,15 +394,22 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="ee-rail-foot">
-          <Link to="/settings/company" className="ee-rail-item" onClick={() => setNavOpen(false)}>
+          <Link
+            to="/settings/company"
+            className={`ee-rail-item ${path.startsWith("/settings") || path.startsWith("/users") ? "active" : ""}`}
+            onClick={() => setNavOpen(false)}
+          >
             <Settings size={18} strokeWidth={SW} />
             {showNavLabels && <span>Settings</span>}
           </Link>
           <button
             type="button"
             className={`ee-rail-item ${customiseOpen ? "active" : ""}`}
-            onClick={() => {
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
               setPanel(null);
+              setOverlay(null);
               setCustomiseTab("navigation");
               setCustomiseOpen(true);
             }}
@@ -409,7 +443,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   <ul>
                     {col.items.map((item) => (
                       <li key={item.label}>
-                        <button type="button" className="ee-create-link" onClick={() => go(item.to)} disabled={!item.to}>
+                        <button type="button" className="ee-create-link" onClick={() => go(item.to ?? "/")}>
                           {item.label}
                         </button>
                       </li>
@@ -452,13 +486,21 @@ export function Shell({ children }: { children: ReactNode }) {
             <p className="ee-bookmarks-empty">Add a bookmark to get started.</p>
           ) : (
             <ul className="ee-bookmarks-list">
-              {bookmarks.map((b) => (
-                <li key={b.to}>
-                  <button type="button" className="ee-bookmarks-link" onClick={() => go(b.to)}>
-                    {b.label}
-                  </button>
-                </li>
-              ))}
+              {bookmarks.map((b) => {
+                const on = isPathActive(path, b.to);
+                return (
+                  <li key={b.to}>
+                    <button
+                      type="button"
+                      className={`ee-bookmarks-link ${on ? "on" : ""}`}
+                      aria-current={on ? "page" : undefined}
+                      onClick={() => go(b.to)}
+                    >
+                      {b.label}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <button type="button" className="ee-bookmarks-add" onClick={bookmarkCurrent}>
@@ -477,18 +519,22 @@ export function Shell({ children }: { children: ReactNode }) {
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleClose}
         >
-          {REPORTS_MENU.map((item) => (
-            <button
-              type="button"
-              key={item.label}
-              className="ee-flyout-text"
-              onClick={() => ("to" in item && item.to ? go(item.to) : undefined)}
-              disabled={!("to" in item && item.to)}
-            >
-              <span>{item.label}</span>
-              {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
-            </button>
-          ))}
+          {REPORTS_MENU.map((item) => {
+            const to = "to" in item && item.to ? item.to : "/reports/statements";
+            const on = isPathActive(path, to);
+            return (
+              <button
+                type="button"
+                key={item.label}
+                className={`ee-flyout-text ${on ? "on" : ""}`}
+                aria-current={on ? "page" : undefined}
+                onClick={() => go(to)}
+              >
+                <span>{item.label}</span>
+                {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -504,8 +550,15 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="ee-apps-title">All apps</div>
           {ALL_APPS.map((app) => {
             const Icon = APP_ICONS[app.icon] ?? LayoutGrid;
+            const on = isAppActive(app.key, path) || isPathActive(path, app.to);
             return (
-              <button type="button" key={app.key} className="ee-apps-item" onClick={() => go(app.to)}>
+              <button
+                type="button"
+                key={app.key}
+                className={`ee-apps-item ${on ? "on" : ""}`}
+                aria-current={on ? "page" : undefined}
+                onClick={() => go(app.to)}
+              >
                 <span className="ee-apps-icon" style={{ background: app.color }}>
                   <Icon size={15} strokeWidth={1.75} color="#fff" />
                 </span>
@@ -533,11 +586,20 @@ export function Shell({ children }: { children: ReactNode }) {
             onMouseLeave={scheduleClose}
           >
             <div className="ee-flyout-title">{flyout.flyoutTitle}</div>
-            {flyout.items.map((item) => (
-              <button type="button" key={item.to + item.label} className="ee-flyout-text" onClick={() => go(item.to)}>
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {flyout.items.map((item) => {
+              const on = isPathActive(path, item.to);
+              return (
+                <button
+                  type="button"
+                  key={item.to + item.label}
+                  className={`ee-flyout-text ${on ? "on" : ""}`}
+                  aria-current={on ? "page" : undefined}
+                  onClick={() => go(item.to)}
+                >
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         );
       })}
@@ -576,6 +638,7 @@ export function Shell({ children }: { children: ReactNode }) {
             className="ee-search"
             onClick={() => {
               setPanel(null);
+              setOverlay(null);
               setSearchOpen(true);
             }}
           >
@@ -589,54 +652,114 @@ export function Shell({ children }: { children: ReactNode }) {
                 <WifiOff size={14} strokeWidth={SW} /> Offline
               </span>
             )}
-            <button type="button" className="ee-icon-btn ee-hide-sm" title="Tasks" aria-label="Tasks">
+            <button
+              type="button"
+              className={`ee-icon-btn ee-hide-sm ${overlay === "tasks" ? "active" : ""}`}
+              title="Tasks"
+              aria-label="Tasks"
+              aria-expanded={overlay === "tasks"}
+              onClick={() => openOverlay("tasks")}
+            >
               <CheckSquare size={20} strokeWidth={SW} />
             </button>
-            <button type="button" className="ee-icon-btn ee-hide-sm" title="Quick actions" aria-label="Quick actions">
+            <button
+              type="button"
+              className={`ee-icon-btn ee-hide-sm ${path.startsWith("/workflows") ? "active" : ""}`}
+              title="Workflows"
+              aria-label="Workflows"
+              onClick={() => {
+                closeOverlay();
+                navigate("/workflows");
+              }}
+            >
               <Zap size={20} strokeWidth={SW} />
             </button>
-            <button type="button" className="ee-icon-btn ee-hide-sm" title="Apps" aria-label="Apps">
+            <button
+              type="button"
+              className={`ee-icon-btn ee-hide-sm ${overlay === "integrations" ? "active" : ""}`}
+              title="Integrations"
+              aria-label="Integrations"
+              aria-expanded={overlay === "integrations"}
+              onClick={() => openOverlay("integrations")}
+            >
               <Grid3X3 size={20} strokeWidth={SW} />
             </button>
-            <button type="button" className="ee-icon-btn ee-hide-sm" title="Organisation" aria-label="Organisation">
+            <button
+              type="button"
+              className={`ee-icon-btn ee-hide-sm ${overlay === "inbox" ? "active" : ""}`}
+              title="Inbox"
+              aria-label="Inbox"
+              aria-expanded={overlay === "inbox"}
+              onClick={() => openOverlay("inbox")}
+            >
               <Briefcase size={20} strokeWidth={SW} />
             </button>
-            <button type="button" className="ee-icon-btn" title="Help" aria-label="Help">
+            <button
+              type="button"
+              className={`ee-icon-btn ${overlay === "help" ? "active" : ""}`}
+              title="Help"
+              aria-label="Help"
+              aria-expanded={overlay === "help"}
+              onClick={() => openOverlay("help")}
+            >
               <HelpCircle size={20} strokeWidth={SW} />
             </button>
-            <Link to="/notifications" className="ee-icon-btn ee-bell" aria-label={`Notifications, ${DUMMY.notificationCount} unread`}>
+            <button
+              ref={notifBtnRef}
+              type="button"
+              className={`ee-icon-btn ee-bell ${overlay === "notifications" ? "active" : ""}`}
+              title="Notifications"
+              aria-label={`Notifications, ${DUMMY.notificationCount} unread`}
+              aria-expanded={overlay === "notifications"}
+              onClick={() => openOverlay("notifications")}
+            >
               <Bell size={20} strokeWidth={SW} />
               <span className="ee-badge">{DUMMY.notificationCount}</span>
-            </Link>
-            <Link to="/setup" className="ee-icon-btn" aria-label="Settings">
+            </button>
+            <button
+              ref={settingsBtnRef}
+              type="button"
+              className={`ee-icon-btn ${overlay === "settings" ? "active" : ""}`}
+              title="Settings"
+              aria-label="Settings"
+              aria-expanded={overlay === "settings"}
+              onClick={() => openOverlay("settings")}
+            >
               <Settings size={20} strokeWidth={SW} />
-            </Link>
-            <Menu
-              triggerClassName="ee-user-btn"
-              ariaLabel="Account"
-              label={
-                <span className="ee-avatar" aria-hidden="true">
-                  {initials(email)}
-                </span>
-              }
-              header={
-                <>
-                  <div className="strong">{email ?? "Signed in"}</div>
-                  {role && <div className="muted small">{humanize(role)}</div>}
-                </>
-              }
-              items={[
-                { label: "Back to Excel Edge", icon: ExternalLink, onSelect: () => window.location.assign(erpLinks.home) },
-                { label: "Sign out", icon: LogOut, onSelect: signOut },
-              ]}
-            />
+            </button>
+            <button
+              ref={profileBtnRef}
+              type="button"
+              className={`ee-user-btn ${overlay === "profile" ? "active" : ""}`}
+              title="Account"
+              aria-label="Account"
+              aria-expanded={overlay === "profile"}
+              onClick={() => openOverlay("profile")}
+            >
+              <span className="ee-avatar" aria-hidden="true">
+                {initials(email)}
+              </span>
+            </button>
           </div>
         </header>
 
-        <main className="ee-content" id="main-content" tabIndex={-1}>
-          {children}
-        </main>
+        <div className={`ee-workspace ${hubOpen ? "has-dock" : ""}`}>
+          {hubOpen ? <AllAppsSidebar /> : null}
+          <main className="ee-content" id="main-content" tabIndex={-1}>
+            {children}
+          </main>
+        </div>
       </div>
+
+      <TasksDrawer open={overlay === "tasks"} onClose={closeOverlay} />
+      <HelpDrawer open={overlay === "help"} onClose={closeOverlay} />
+      <InboxDrawer open={overlay === "inbox"} onClose={closeOverlay} />
+      <IntegrationsModal open={overlay === "integrations"} onClose={closeOverlay} />
+      <NotificationsPopover open={overlay === "notifications"} onClose={closeOverlay} anchorRef={notifBtnRef} />
+      <SettingsMegaMenu open={overlay === "settings"} onClose={closeOverlay} anchorRef={settingsBtnRef} />
+      <UserProfileMenu open={overlay === "profile"} onClose={closeOverlay} anchorRef={profileBtnRef} />
+
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

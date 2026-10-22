@@ -1,15 +1,34 @@
-import { Download, Plus } from "lucide-react";
-import { type FormEvent, Fragment, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  Pencil,
+  Plus,
+  Printer,
+  Search,
+  Settings,
+  Upload,
+} from "lucide-react";
+import { Fragment, useMemo, useRef, useState } from "react";
+import { NewAccountDrawer } from "../components/coa/NewAccountDrawer";
 import { useFeedback } from "../components/feedback";
-import { Select, type SelectOption } from "../components/Select";
-import { Badge, Drawer, EmptyState, Field, Loadable, PageHeader, SkeletonRows } from "../components/ui";
+import { Select } from "../components/Select";
+import { Badge, EmptyState, Loadable, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
-import { drCr, toNumber } from "../lib/format";
+import { ALL_ACCOUNT_TYPE_LABELS, decodeReportingGroup } from "../lib/coa-taxonomy";
+import { money, toNumber } from "../lib/format";
 import { navigate } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
 import type { Account, AccountType, CoaDashboard } from "../lib/types";
 
-export const TYPE_ORDER: AccountType[] = ["ASSET", "LIABILITY", "EQUITY", "INCOME", "COST_OF_SALES", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"];
+export const TYPE_ORDER: AccountType[] = [
+  "ASSET",
+  "LIABILITY",
+  "EQUITY",
+  "INCOME",
+  "COST_OF_SALES",
+  "EXPENSE",
+  "OTHER_INCOME",
+  "OTHER_EXPENSE",
+];
 
 export const TYPE_LABELS: Record<AccountType, string> = {
   ASSET: "Assets",
@@ -23,9 +42,11 @@ export const TYPE_LABELS: Record<AccountType, string> = {
 };
 
 /** Accounts as dropdown options, grouped by type in chart order. */
-export function accountOptions(accounts: Account[]): SelectOption[] {
+export function accountOptions(accounts: Account[]) {
   return TYPE_ORDER.flatMap((t) =>
-    accounts.filter((a) => a.type === t).map((a) => ({ value: a.id, label: a.name, prefix: a.code, group: TYPE_LABELS[t] })),
+    accounts
+      .filter((a) => a.type === t)
+      .map((a) => ({ value: a.id, label: a.name, prefix: a.code, group: TYPE_LABELS[t] })),
   );
 }
 
@@ -40,28 +61,56 @@ function flatten(nodes: TreeNode[], depth = 0, out: FlatRow[] = []) {
   return out;
 }
 
+function accountMeta(a: Account) {
+  const decoded = decodeReportingGroup(a.reportingGroup);
+  return {
+    accountType: decoded.accountType || TYPE_LABELS[a.type] || a.type,
+    detailType: decoded.detailType || a.description || "—",
+  };
+}
+
 export function Accounts() {
   const { can, download } = useSession();
   const { toast } = useFeedback();
+  const { currency } = useCompany();
   const tree = useResource<TreeNode[]>("/api/v1/coa/tree");
   const dash = useResource<CoaDashboard>("/api/v1/coa/dashboard");
   const [search, setSearch] = useState("");
-  const [type, setType] = useState<AccountType | "">("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const newMenuRef = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(() => {
     const flat = flatten(tree.data ?? []);
     const q = search.trim().toLowerCase();
-    return flat.filter(
-      ({ account: a }) =>
-        (showInactive || a.isActive) &&
-        (!type || a.type === type) &&
-        (!q || a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)),
-    );
-  }, [tree.data, search, type, showInactive]);
+    return flat.filter(({ account: a }) => {
+      if (!showInactive && !a.isActive) return false;
+      const meta = accountMeta(a);
+      if (typeFilter && meta.accountType !== typeFilter && a.type !== typeFilter) return false;
+      if (!q) return true;
+      return (
+        a.code.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q) ||
+        meta.accountType.toLowerCase().includes(q) ||
+        meta.detailType.toLowerCase().includes(q)
+      );
+    });
+  }, [tree.data, search, typeFilter, showInactive]);
 
-  const byType = TYPE_ORDER.map((t) => ({ type: t, rows: rows.filter((r) => r.account.type === t) })).filter((g) => g.rows.length);
+  const allSelected = rows.length > 0 && rows.every((r) => selected[r.account.id]);
+
+  function toggleAll(on: boolean) {
+    if (!on) {
+      setSelected({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    for (const r of rows) next[r.account.id] = true;
+    setSelected(next);
+  }
 
   async function exportCsv() {
     try {
@@ -71,99 +120,226 @@ export function Accounts() {
     }
   }
 
+  function printPage() {
+    window.print();
+  }
+
   return (
-    <>
-      <PageHeader
-        title="Chart of accounts"
-        description={dash.data ? `${dash.data.active} active accounts${dash.data.inactive ? ` · ${dash.data.inactive} inactive` : ""}` : "The accounts your transactions are posted to."}
-        actions={
-          <>
+    <div className="ee-coa-page">
+        <nav className="ee-cust-crumbs" aria-label="Breadcrumb">
+          <span>Accounting</span>
+          <span className="ee-cust-crumbs-sep">/</span>
+          <span>Chart of accounts</span>
+        </nav>
+
+        <header className="ee-coa-head">
+          <h1>Chart of accounts</h1>
+          <div className="ee-coa-head-actions">
             {can("coa:export") && (
-              <button type="button" className="btn" onClick={() => void exportCsv()}>
-                <Download size={16} aria-hidden="true" />
-                Export CSV
+              <button type="button" className="btn ee-btn-outline-blue" onClick={() => void exportCsv()}>
+                Run report
               </button>
             )}
             {can("coa:create") && (
-              <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-                <Plus size={16} aria-hidden="true" />
-                New account
+              <div className="ee-coa-new-wrap" ref={newMenuRef}>
+                <button type="button" className="btn btn-primary ee-coa-new-btn" onClick={() => setCreating(true)}>
+                  <Plus size={16} strokeWidth={2} aria-hidden="true" />
+                  New account
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary ee-coa-new-more"
+                  aria-label="More new account options"
+                  aria-expanded={newMenuOpen}
+                  onClick={() => setNewMenuOpen((v) => !v)}
+                >
+                  <ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
+                </button>
+                {newMenuOpen && (
+                  <div className="ee-coa-new-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setNewMenuOpen(false);
+                        toast("Import chart of accounts — use Settings → Advanced or contact support for bulk import.");
+                      }}
+                    >
+                      Import chart of accounts
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setNewMenuOpen(false);
+                        toast("Clean up is available after reviewing inactive accounts.");
+                        setShowInactive(true);
+                      }}
+                    >
+                      Clean up chart of accounts
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </header>
+
+        <div className="ee-coa-toolbar">
+          <label className="ee-coa-search">
+            <Search size={15} strokeWidth={1.75} aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by name or number"
+              aria-label="Filter by name or number"
+            />
+          </label>
+          <Select
+            className="ee-coa-filter-select"
+            value={typeFilter}
+            onChange={setTypeFilter}
+            aria-label="Filter by account type"
+            searchable
+            options={[
+              { value: "", label: "All" },
+              ...ALL_ACCOUNT_TYPE_LABELS.map((l) => ({ value: l, label: l, group: "Account type" })),
+              ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t], group: "Backend type" })),
+            ]}
+          />
+          <label className="ee-coa-inactive">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+            Show inactive
+          </label>
+          <div className="ee-coa-tools">
+            <button type="button" className="ee-coa-tool" onClick={() => toast("Edit mode coming soon")}>
+              <Pencil size={14} strokeWidth={1.75} aria-hidden="true" /> Edit mode
+            </button>
+            {can("coa:export") && (
+              <button type="button" className="ee-coa-tool" onClick={() => void exportCsv()}>
+                <Upload size={14} strokeWidth={1.75} aria-hidden="true" /> Export
               </button>
             )}
-          </>
-        }
-      />
+            <button type="button" className="ee-coa-tool" onClick={printPage}>
+              <Printer size={14} strokeWidth={1.75} aria-hidden="true" /> Print
+            </button>
+            <button type="button" className="ee-coa-tool" onClick={() => navigate("/settings/advanced")}>
+              <Settings size={14} strokeWidth={1.75} aria-hidden="true" /> Settings
+            </button>
+          </div>
+        </div>
 
-      <div className="filter-bar">
-        <input className="input search" type="search" placeholder="Search code or name" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search accounts" />
-        <Select
-          style={{ width: 210 }}
-          value={type}
-          onChange={(v) => setType(v as AccountType | "")}
-          aria-label="Account type"
-          searchable={false}
-          options={[{ value: "", label: "All account types" }, ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t] }))]}
-        />
-        <label className="check">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-          Show inactive
-        </label>
-      </div>
-
-      <Loadable resource={tree} skeleton={<SkeletonRows rows={10} cols={3} />}>
-        {() => (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 110 }}>Code</th>
-                  <th>Account</th>
-                  <th className="num" style={{ width: 180 }}>
-                    Balance
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {byType.map((g) => (
-                  <Fragment key={g.type}>
-                    <tr className="type-group">
-                      <td colSpan={3}>
-                        {TYPE_LABELS[g.type]} <span className="muted">· {g.rows.length}</span>
+        <Loadable resource={tree} skeleton={<SkeletonRows rows={10} cols={6} />}>
+          {() => (
+            <div className="ee-coa-table-wrap">
+              <table className="ee-coa-table">
+                <thead>
+                  <tr>
+                    <th className="ee-coa-check-col">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(e) => toggleAll(e.target.checked)}
+                        aria-label="Select all accounts"
+                      />
+                    </th>
+                    <th className="ee-coa-no">No.</th>
+                    <th>Name</th>
+                    <th>
+                      Account type <span className="ee-coa-sort" aria-hidden="true">↕</span>
+                    </th>
+                    <th>Detail type</th>
+                    <th>Currency</th>
+                    <th>Default tax code</th>
+                    <th className="num">ERP balance</th>
+                    <th className="num">Bank balance</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ account: a, depth }) => {
+                    const meta = accountMeta(a);
+                    const bal = toNumber(a.currentBalance);
+                    return (
+                      <Fragment key={a.id}>
+                        <tr className={`${selected[a.id] ? "selected" : ""} ${a.isActive ? "" : "inactive"}`}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selected[a.id])}
+                              onChange={(e) => setSelected((s) => ({ ...s, [a.id]: e.target.checked }))}
+                              aria-label={`Select ${a.name}`}
+                            />
+                          </td>
+                          <td className="mono ee-coa-no">{a.code}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="ee-coa-name"
+                              style={{ paddingLeft: depth ? depth * 14 : 0 }}
+                              onClick={() => navigate(`/ledger?account=${a.id}`)}
+                            >
+                              {a.name}
+                              {!a.isActive && (
+                                <>
+                                  {" "}
+                                  <Badge>Inactive</Badge>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                          <td>
+                            <span className="ee-coa-atype">
+                              {meta.accountType}
+                              {(a.type === "ASSET" || a.type === "LIABILITY" || a.type === "EQUITY") && (
+                                <span className="ee-coa-bal-badge">BAL</span>
+                              )}
+                            </span>
+                          </td>
+                          <td>{meta.detailType}</td>
+                          <td>{a.currency || currency || "RWF"}</td>
+                          <td>{a.taxMapping || <span className="subtle">—</span>}</td>
+                          <td className="num">{money(bal, a.currency || currency || "RWF")}</td>
+                          <td className="num">
+                            {a.isCashAccount ? <span className="subtle">—</span> : <span className="subtle">—</span>}
+                          </td>
+                          <td>
+                            <div className="ee-coa-row-actions">
+                              <button type="button" className="ee-link-btn" onClick={() => navigate(`/ledger?account=${a.id}`)}>
+                                Account history
+                              </button>
+                              <button type="button" className="ee-coa-action-more" aria-label="More actions" onClick={() => toast(`Actions for ${a.code}`)}>
+                                <ChevronDown size={15} strokeWidth={2} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ padding: 0 }}>
+                        <EmptyState title="No accounts match" body="Try a different search or account type." />
                       </td>
                     </tr>
-                    {g.rows.map(({ account: a, depth, isParent }) => (
-                      <tr
-                        key={a.id}
-                        className={`clickable ${a.isActive ? "" : "row-inactive"}`}
-                        tabIndex={0}
-                        onClick={() => navigate(`/ledger?account=${a.id}`)}
-                        onKeyDown={(e) => e.key === "Enter" && navigate(`/ledger?account=${a.id}`)}
-                      >
-                        <td className="mono">{a.code}</td>
-                        <td className={depth ? `indent-${Math.min(depth, 3)}` : undefined}>
-                          <span className={isParent ? "strong" : undefined}>{a.name}</span>{" "}
-                          {!a.isActive && <Badge>Inactive</Badge>}
-                        </td>
-                        <td className="num">{toNumber(a.currentBalance) ? drCr(a.currentBalance) : <span className="subtle">—</span>}</td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                {byType.length === 0 && (
-                  <tr>
-                    <td colSpan={3} style={{ padding: 0 }}>
-                      <EmptyState title="No accounts match" body="Try a different search or account type." />
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Loadable>
+
+        {dash.data && (
+          <p className="ee-coa-caption">
+            {dash.data.active} active accounts
+            {dash.data.inactive ? ` · ${dash.data.inactive} inactive` : ""}
+          </p>
         )}
-      </Loadable>
 
       {creating && dash.data && (
-        <NewAccountForm
+        <NewAccountDrawer
           categories={dash.data.categories}
           accounts={flatten(tree.data ?? []).map((r) => r.account)}
           onClose={() => setCreating(false)}
@@ -174,133 +350,6 @@ export function Accounts() {
           }}
         />
       )}
-    </>
-  );
-}
-
-function NewAccountForm({
-  categories,
-  accounts,
-  onClose,
-  onSaved,
-}: {
-  categories: CoaDashboard["categories"];
-  accounts: Account[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { api } = useSession();
-  const { toast } = useFeedback();
-  const { reload: reloadCompany } = useCompany();
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [type, setType] = useState<AccountType>("EXPENSE");
-  const [parentId, setParentId] = useState("");
-  const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const ranges = useMemo(
-    () =>
-      categories.map((c) => {
-        const [min, max] = c.range.split("-").map(Number);
-        return { type: c.type, label: c.label, min, max };
-      }),
-    [categories],
-  );
-  const range = ranges.find((r) => r.type === type);
-  const codeNumber = Number(code);
-  const outOfRange = code !== "" && range && (!Number.isFinite(codeNumber) || codeNumber < range.min || codeNumber > range.max);
-  const duplicate = accounts.some((a) => a.code === code);
-  const parents = accounts.filter((a) => a.type === type && a.isActive);
-
-  function onCode(value: string) {
-    const digits = value.replace(/\D/g, "").slice(0, 6);
-    setCode(digits);
-    const n = Number(digits);
-    const inferred = digits.length >= 4 ? ranges.find((r) => n >= r.min && n <= r.max) : undefined;
-    if (inferred && inferred.type !== type) {
-      setType(inferred.type);
-      setParentId("");
-    }
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (outOfRange || duplicate) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api("/api/v1/coa", {
-        method: "POST",
-        body: JSON.stringify({ code, name: name.trim(), type, parentId: parentId || undefined, description: description || undefined }),
-      });
-      toast(`Account ${code} ${name} created`);
-      reloadCompany();
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Drawer
-      title="New account"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" form="account-form" className="btn btn-primary" disabled={busy}>
-            {busy ? "Creating…" : "Create account"}
-          </button>
-        </>
-      }
-    >
-      <form id="account-form" onSubmit={submit}>
-        {error && (
-          <div className="notice error" role="alert">
-            {error}
-          </div>
-        )}
-        <div className="form-grid">
-          <Field
-            label="Code"
-            required
-            error={duplicate ? "An account with this code already exists" : outOfRange && range ? `${range.label} use codes ${range.min}–${range.max}` : null}
-            hint={range ? `${range.label}: ${range.min}–${range.max}` : undefined}
-          >
-            <input className={`input mono ${outOfRange || duplicate ? "invalid" : ""}`} value={code} onChange={(e) => onCode(e.target.value)} inputMode="numeric" required />
-          </Field>
-          <Field label="Type" required>
-            <Select
-              value={type}
-              onChange={(v) => {
-                setType(v as AccountType);
-                setParentId("");
-              }}
-              searchable={false}
-              options={TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t] }))}
-            />
-          </Field>
-          <Field label="Account name" required className="span-2">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Office rent" required />
-          </Field>
-          <Field label="Sub-account of" className="span-2" hint="Optional — group this account under another">
-            <Select
-              value={parentId}
-              onChange={setParentId}
-              options={[{ value: "", label: "None (top level)" }, ...parents.map((a) => ({ value: a.id, label: a.name, prefix: a.code }))]}
-            />
-          </Field>
-          <Field label="Description" className="span-2">
-            <textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-        </div>
-      </form>
-    </Drawer>
+    </div>
   );
 }

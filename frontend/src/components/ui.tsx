@@ -126,14 +126,21 @@ export function Field({
   className?: string;
   children: ReactNode;
 }) {
+  const invalid = Boolean(error);
   return (
-    <label className={`field ${className ?? ""}`}>
+    <label className={`field ${invalid ? "has-error" : ""} ${className ?? ""}`}>
       <span className="field-label">
         {label}
         {required && <span className="req" aria-hidden="true">*</span>}
       </span>
       {children}
-      {error ? <span className="field-error">{error}</span> : hint && <span className="field-hint">{hint}</span>}
+      {invalid ? (
+        <span className="field-error" role="alert">
+          {error}
+        </span>
+      ) : (
+        hint && <span className="field-hint">{hint}</span>
+      )}
     </label>
   );
 }
