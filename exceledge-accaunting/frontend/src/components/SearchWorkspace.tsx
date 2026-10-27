@@ -48,7 +48,7 @@ export function SearchWorkspace({ open, onClose }: Props) {
 
   const recent = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = SEARCH_RECENT;
+    let list = [...SEARCH_RECENT];
     if (filter !== "All") {
       const toneMap: Record<string, string[]> = {
         Transactions: ["invoice", "expense", "page"],
