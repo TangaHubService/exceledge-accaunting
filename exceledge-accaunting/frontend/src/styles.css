@@ -296,8 +296,9 @@ code, .mono { font-family: inherit; font-variant-numeric: tabular-nums; font-siz
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 14px;
+  min-height: 34px;
+  height: auto;
+  padding: 6px 14px;
   border-radius: var(--radius);
   border: 1px solid var(--line-strong);
   background: var(--surface);
@@ -305,7 +306,9 @@ code, .mono { font-family: inherit; font-variant-numeric: tabular-nums; font-siz
   font-weight: 500;
   font-size: 13.5px;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
   transition: background 0.12s, border-color 0.12s;
 }
 .btn:hover { background: var(--surface-2); text-decoration: none; }

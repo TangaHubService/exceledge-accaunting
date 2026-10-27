@@ -24,6 +24,13 @@ import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
 import { Employees } from "./pages/Employees";
 import { Dimensions } from "./pages/Dimensions";
+import { Lists } from "./pages/Lists";
+import { CustomFields } from "./pages/CustomFields";
+import { BankingRules } from "./pages/BankingRules";
+import { ProductsServices } from "./pages/ProductsServices";
+import { RecurringTxnTypes } from "./pages/RecurringTxnTypes";
+import { AttachmentsWorkspace } from "./pages/AttachmentsWorkspace";
+import { SelectForms } from "./pages/SelectForms";
 import { SingleTimeActivity } from "./components/team/SingleTimeActivity";
 import { WeeklyTimesheet } from "./components/team/WeeklyTimesheet";
 import { Exceptions } from "./pages/Exceptions";
@@ -96,6 +103,8 @@ const ROUTES: Route[] = [
   { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
   { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
   { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
+  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <CustomFields /> },
+  { pattern: "/settings/forms", needs: "setup:view", render: () => <SelectForms /> },
   { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <EditInvoiceStyle /> },
   { pattern: "/settings/form-styles", needs: "setup:view", render: () => <CustomFormStyles /> },
   { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
@@ -118,11 +127,15 @@ const ROUTES: Route[] = [
   { pattern: "/inventory", needs: "inventory:view", render: () => <Inventory /> },
   { pattern: "/inventory/movements", needs: "inventory:view", render: () => <InventoryMovements /> },
   { pattern: "/inventory/reconciliation", needs: "inventory:view", render: () => <InventoryReconciliation /> },
+  { pattern: "/lists", needs: "inventory:view", render: () => <Lists /> },
+  { pattern: "/products-services", needs: "inventory:view", render: () => <ProductsServices /> },
   { pattern: "/banking", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/accounts/:id", needs: "bank:view", render: (p) => <BankAccount key={p.id} id={p.id} /> },
   { pattern: "/banking/transactions", needs: "bank:view", render: () => <BankTransactions /> },
   { pattern: "/banking/integration-transactions", needs: "bank:view", render: () => <BankTransactions /> },
-  { pattern: "/banking/rules", needs: "bank:view", render: () => <Banking /> },
+  { pattern: "/banking/rules", needs: "bank:view", render: () => <BankingRules /> },
+  { pattern: "/banking/recurring-transaction-types", needs: "bank:view", render: () => <RecurringTxnTypes /> },
+  { pattern: "/attachments", needs: "bank:view", render: () => <AttachmentsWorkspace /> },
   { pattern: "/banking/reconciliation", needs: "bank:view", render: () => <BankReconciliations /> },
   { pattern: "/banking/reconciliation/:id", needs: "bank:view", render: (p) => <BankReconciliationDetail key={p.id} id={p.id} /> },
   { pattern: "/tax", needs: "tax:view", render: () => <Tax /> },
@@ -152,7 +165,7 @@ const ROUTES: Route[] = [
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
   { pattern: "/accounting/chart-of-accounts", needs: "coa:view", render: () => <Accounts /> },
   { pattern: "/accounts", needs: "coa:view", render: () => <Redirect to="/accounting/chart-of-accounts" /> },
-  { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringJournals /> },
+  { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringTxnTypes /> },
   { pattern: "/recurring-journals", needs: "journal:view", render: () => <Redirect to="/accounting/recurring-transactions" /> },
   { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
   { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
@@ -243,6 +256,7 @@ function RoutedShell() {
   const page = <Routes />;
   // Full-page chrome (not the main app Shell).
   if (path.startsWith("/settings/form-styles/edit")) return page;
+  if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
   if (path.startsWith("/suppliers/import")) return page;
   if (path.startsWith("/time/")) return page;

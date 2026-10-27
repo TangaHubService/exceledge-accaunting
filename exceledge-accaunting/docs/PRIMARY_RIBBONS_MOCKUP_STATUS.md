@@ -31,3 +31,10 @@ Canonical copy also lives in the agent store so the same rule persists across se
 | 27 | `27. Notification.png` | Notifications popover | DONE |
 | 28 | `28. Setting button.png` | Settings mega-menu | DONE |
 | 29 | `29. user profile.png` | User profile popover | DONE |
+| 57–58 | `57. Excel Edge ERP All Lists Directory.png` + `58. Excel Edge ERP lists continuation.png` | All Lists Directory | DONE | `Lists.tsx` at `/lists` |
+| 59–62 | `59–62` Products & services onboarding, resource section, New Service Drawer, Add Service Form | Products & services | PARTIAL | `/inventory` exists; onboarding/drawer/forms not yet built |
+| 63–64 | `63. Open recurring transaction type menu.png` + `64. Recurring transaction type selector.png` | Recurring transaction type menu/selector | NOT DONE | No screen yet |
+| 65 | `65. Excel Edge ERP Attachments Workspace.png` | Attachments Workspace | NOT DONE | `AttachmentsPanel.tsx` exists but no workspace screen |
+| 66–67 | `66. Custom fields onboarding.png` + `67. Excel Edge ERP custom field setup.png` | Custom fields onboarding + setup | DONE | `CustomFields.tsx` at `/settings/custom-fields` |
+| 68 | `68. Excel Edge ERP select forms.png` | Select forms | NOT DONE | No screen yet |
+| 69–70 | `69. Excel Edge ERP Rules Workspace.png` + `70. Create rule criteria and auto-post settings.png` | Rules Workspace + rule criteria/auto-post | DONE | `BankingRules.tsx` at `/banking/rules` |

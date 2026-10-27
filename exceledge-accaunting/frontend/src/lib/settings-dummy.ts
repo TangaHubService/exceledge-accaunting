@@ -10,6 +10,7 @@ export const SETTINGS_NAV = [
   { id: "inbox", label: "Inbox", to: "/settings/inbox" },
   { id: "wallet", label: "Wallet", to: "/settings/wallet" },
   { id: "advanced", label: "Advanced", to: "/settings/advanced" },
+  { id: "custom-fields", label: "Custom fields", to: "/settings/custom-fields" },
 ] as const;
 
 export const USAGE_LIMITS = {
@@ -242,8 +243,18 @@ export const APP_FLYOUTS: Record<string, { flyoutTitle: string; items: Array<{ l
     flyoutTitle: "INVENTORY",
     items: [
       { label: "Overview", to: "/inventory" },
-      { label: "Products & services", to: "/inventory" },
+      { label: "Products & services", to: "/products-services" },
       { label: "Movements", to: "/inventory/movements" },
+      { label: "All lists", to: "/lists" },
+    ],
+  },
+  lists: {
+    flyoutTitle: "LISTS",
+    items: [
+      { label: "All lists directory", to: "/lists" },
+      { label: "Products & services", to: "/products-services" },
+      { label: "Custom fields", to: "/settings/custom-fields" },
+      { label: "Banking rules", to: "/banking/rules" },
     ],
   },
   tax: {

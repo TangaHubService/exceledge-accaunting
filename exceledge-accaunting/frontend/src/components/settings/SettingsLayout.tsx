@@ -4,6 +4,7 @@ import {
   Clock,
   CreditCard,
   FileText,
+  Hash,
   HelpCircle,
   Inbox,
   type LucideIcon,
@@ -30,6 +31,7 @@ const ICONS: Record<string, LucideIcon> = {
   inbox: Inbox,
   wallet: Wallet,
   advanced: Settings2,
+  "custom-fields": Hash,
 };
 
 /**

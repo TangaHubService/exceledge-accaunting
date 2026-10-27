@@ -247,12 +247,12 @@ export const SETTINGS_MEGA_MENU: SettingsMenuColumn[] = [
   {
     title: "LISTS",
     items: [
-      { label: "All lists", to: "/settings/company" },
-      { label: "Products and services", to: "/inventory" },
-      { label: "Recurring transactions", to: "/expenses/recurring" },
-      { label: "Attachments", to: "/settings/advanced" },
-      { label: "Custom fields", to: "/settings/advanced" },
-      { label: "Rules", to: "/banking" },
+      { label: "All lists", to: "/lists" },
+      { label: "Products and services", to: "/products-services" },
+      { label: "Recurring transactions", to: "/accounting/recurring-transactions" },
+      { label: "Attachments", to: "/attachments" },
+      { label: "Custom fields", to: "/settings/custom-fields" },
+      { label: "Rules", to: "/banking/rules" },
     ],
   },
   {

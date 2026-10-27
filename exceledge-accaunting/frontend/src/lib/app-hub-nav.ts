@@ -47,9 +47,10 @@ export const EXPENSES_HUB_ITEMS: readonly HubItem[] = [
 
 export const SALES_HUB_ITEMS: readonly HubItem[] = [
   { id: "sales-overview", label: "Overview", to: "/invoices" },
-  { id: "sales-transactions", label: "All sales", to: "/invoices" },
+  { id: "sales-transactions", label: "Sales transactions", to: "/invoices" },
   { id: "invoices", label: "Invoices", to: "/invoices", match: ["/invoices"] },
-  { id: "products-services", label: "Products & services", to: "/inventory" },
+  { id: "sales-orders", label: "Sales orders", to: "/invoices" },
+  { id: "products-services", label: "Products & services", to: "/products-services", match: ["/products-services"] },
 ];
 
 export const CUSTOMER_HUB_ITEMS: readonly HubItem[] = [
@@ -77,6 +78,7 @@ export const PROJECTS_HUB_ITEMS: readonly HubItem[] = [
 
 export const INVENTORY_HUB_ITEMS: readonly HubItem[] = [
   { id: "items", label: "Items", to: "/inventory", match: ["/inventory"] },
+  { id: "lists", label: "All lists", to: "/lists", match: ["/lists"] },
   { id: "movements", label: "Stock movements", to: "/inventory/movements", match: ["/inventory/movements"] },
   { id: "stock-reconciliation", label: "Stock reconciliation", to: "/inventory/reconciliation", match: ["/inventory/reconciliation"] },
 ];
@@ -96,7 +98,7 @@ export const APP_HUBS: readonly HubDef[] = [
     activePrefixes: ["/accounting", "/accounts", "/banking", "/journals", "/fixed-assets", "/recurring", "/setup"],
   },
   { key: "expenses", items: EXPENSES_HUB_ITEMS, activePrefixes: ["/expenses", "/suppliers", "/bills", "/supplier-payments"] },
-  { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices"] },
+  { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices", "/products-services"] },
   { key: "customers", items: CUSTOMER_HUB_ITEMS, activePrefixes: ["/customers"] },
   { key: "team", items: TEAM_HUB_ITEMS, activePrefixes: ["/employees", "/time"] },
   { key: "projects", items: PROJECTS_HUB_ITEMS, activePrefixes: ["/dimensions"] },

@@ -82,6 +82,7 @@ const PIN_ICONS: Record<string, LucideIcon> = {
   team: Users,
   projects: FolderKanban,
   inventory: Warehouse,
+  lists: Warehouse,
   tax: PieChart,
 };
 
@@ -95,6 +96,7 @@ const APP_ICONS: Record<string, LucideIcon> = {
   team: Users,
   projects: FolderKanban,
   inventory: Warehouse,
+  lists: Warehouse,
   tax: PieChart,
 };
 

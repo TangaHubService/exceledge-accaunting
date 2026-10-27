@@ -50,7 +50,7 @@ export function AddEmployeeDrawer({
     if (step === 0) {
       const result = await validateYup(employeePersonalSchema, draft);
       if (!result.ok) {
-        setPersonalErrors(result.errors);
+        setPersonalErrors((result.errors as Record<string, string>) || {});
         return;
       }
       setPersonalErrors({});
@@ -58,7 +58,7 @@ export function AddEmployeeDrawer({
     if (step === 1) {
       const result = await validateYup(employeeEmploymentSchema, draft);
       if (!result.ok) {
-        setEmploymentErrors(result.errors);
+        setEmploymentErrors((result.errors as Record<string, string>) || {});
         return;
       }
       setEmploymentErrors({});

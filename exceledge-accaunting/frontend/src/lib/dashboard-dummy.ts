@@ -217,6 +217,7 @@ export const CUSTOMISE_NAV_APPS = [
   { key: "team", label: "Team", color: "#1d4ed8", icon: "team" as const, pinned: false },
   { key: "projects", label: "Project Management", color: "#2563eb", icon: "projects" as const, pinned: false },
   { key: "inventory", label: "Inventory", color: "#312e81", icon: "inventory" as const, pinned: false },
+  { key: "lists", label: "Lists", color: "#312e81", icon: "inventory" as const, pinned: false },
   { key: "tax", label: "Tax", color: "#e11d48", icon: "tax" as const, pinned: false },
 ] as const;
 
