@@ -73,6 +73,9 @@ import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
 import { Workflows } from "./pages/Workflows";
+import { ImportData } from "./pages/ImportData";
+import { ExportData } from "./pages/ExportData";
+import { BackupRestore } from "./pages/BackupRestore";
 import { SignIn } from "./SignIn";
 import { AddUser } from "./pages/AddUser";
 import { CustomFormStyles } from "./pages/CustomFormStyles";
@@ -191,6 +194,9 @@ const ROUTES: Route[] = [
   { pattern: "/branches", needs: "setup:view", render: () => <Branches /> },
   { pattern: "/exceptions", needs: "exceptions:view", render: () => <Exceptions /> },
   { pattern: "/audit", needs: "audit:view", render: () => <AuditLog /> },
+  { pattern: "/import-data", needs: "setup:view", render: () => <ImportData /> },
+  { pattern: "/export-data", needs: "setup:view", render: () => <ExportData /> },
+  { pattern: "/backup-restore", needs: "setup:view", render: () => <BackupRestore /> },
 ];
 
 export function App() {

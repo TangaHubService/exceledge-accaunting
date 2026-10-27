@@ -1,0 +1,18 @@
+-- AlterTable
+ALTER TABLE "batches" ALTER COLUMN "quantity" SET DATA TYPE DECIMAL(15,3);
+
+-- AlterTable
+ALTER TABLE "inventory_ledger" ALTER COLUMN "quantity" SET DATA TYPE DECIMAL(15,3),
+ALTER COLUMN "runningBalance" SET DATA TYPE DECIMAL(15,3);
+
+-- AlterTable
+ALTER TABLE "products" ALTER COLUMN "quantity" SET DEFAULT 0,
+ALTER COLUMN "quantity" SET DATA TYPE DECIMAL(15,3);
+
+-- AlterTable
+ALTER TABLE "sale_items" ALTER COLUMN "quantity" SET DATA TYPE DECIMAL(15,3);
+
+-- AlterTable
+ALTER TABLE "stock_movements" ALTER COLUMN "quantity" SET DATA TYPE DECIMAL(15,3),
+ALTER COLUMN "previousStock" SET DATA TYPE DECIMAL(15,3),
+ALTER COLUMN "newStock" SET DATA TYPE DECIMAL(15,3);

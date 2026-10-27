@@ -1,0 +1,2485 @@
+{
+  "info": {
+    "name": "Excledge RRA / EBM API",
+    "description": "RRA-connected endpoints only — fiscal sales, master data, stock, purchases, imports, CIS reports.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwtToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4500"
+    },
+    {
+      "key": "jwtToken",
+      "value": ""
+    },
+    {
+      "key": "organizationId",
+      "value": "1"
+    },
+    {
+      "key": "id",
+      "value": "1"
+    },
+    {
+      "key": "ebmTin",
+      "value": "999945560"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login and obtain JWT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"enockiradukunda4@gmail.com\",\n  \"password\": \"Kigali@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "EBM Device & Outbox",
+      "item": [
+        {
+          "name": "CIS software version label (printed on receipts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "version"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "RRA CIS/VSDC §21 — public branding endpoint."
+          }
+        },
+        {
+          "name": "EBM enablement and VSDC online status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/ebm-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "ebm-status"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List EBM outbox entries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/ebm-outbox?saleId=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "ebm-outbox"
+              ],
+              "query": [
+                {
+                  "key": "saleId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": "Local transactional outbox for `/trnsSales/saveSales` (max 200)."
+          }
+        },
+        {
+          "name": "Reconcile a single outbox entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/ebm-outbox/{{id}}/check-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "ebm-outbox",
+                ":id",
+                "check-status"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotencyKey\": \"CHECK-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Initialize VSDC device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/ebm/initialize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "ebm",
+                "initialize"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "Calls VSDC `POST /initializer/selectInitInfo` (checklist §58).",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Submit daily Z-report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/z-report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "z-report"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "VSDC `POST /reports/saveZReports` (+ verify).",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Check Z-report status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/z-report?date=20260915",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "z-report"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "20260915",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": "VSDC `POST /reports/checkZReport`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fiscal Reports",
+      "item": [
+        {
+          "name": "X/Z daily fiscal report (§6)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/daily/{{organizationId}}?type=&date=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "daily",
+                ":organizationId"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "date",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "X/Z daily report PDF (80mm)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/daily/{{organizationId}}/pdf?type=&date=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "daily",
+                ":organizationId",
+                "pdf"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "date",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "PLU (Price Look-Up) report (§21)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/plu/{{organizationId}}?startDate=&endDate=&sortBy=&sortOrder=&page=&limit=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "plu",
+                ":organizationId"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "sortBy",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "PLU report PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/plu/{{organizationId}}/pdf?startDate=&endDate=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "plu",
+                ":organizationId",
+                "pdf"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "CIS electronic journal list (§5 / §44)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/electronic-journal/{{organizationId}}?startDate=&endDate=&page=&limit=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "electronic-journal",
+                ":organizationId"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Single electronic journal entry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/electronic-journal/{{organizationId}}/:saleId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "electronic-journal",
+                ":organizationId",
+                ":saleId"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Detailed purchases report (checklist §25)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/purchases/{{organizationId}}?startDate=&endDate=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "purchases",
+                ":organizationId"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fiscal Sales",
+      "item": [
+        {
+          "name": "Create sale (fiscalizes via EBM outbox)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "Blocked by `vsdcOnlineGuard` if VSDC has been unreachable beyond the offline limit. Queues `/trnsSales/saveSales` (NS/TS). Proforma (`isProforma=true`) skips fiscalization. Roles: ADMIN, SELLER, ACCOUNTANT, BRANCH_MANAGER.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Convert proforma → fiscal NS sale",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/:saleId/convert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                ":saleId",
+                "convert"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": 2,\n  \"items\": [\n    {}\n  ],\n  \"paymentType\": \"CASH\",\n  \"cashAmount\": 1000,\n  \"debtAmount\": 0,\n  \"insuranceAmount\": 0,\n  \"shiftId\": 2,\n  \"payments\": [\n    {}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Refund a sale (full refund; EBM salesSttsCd=05)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{id}}/refund/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":id",
+                "refund",
+                ":organizationId"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Uses `rfdRsnCd` from code class 32 (default `06`). Partial refunds are rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Testing this API operation\",\n  \"rfdRsnCd\": \"06\",\n  \"items\": [\n    {\n      \"saleItemId\": 2,\n      \"quantity\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cancel / void a sale (EBM salesSttsCd=04)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/:saleId/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                ":saleId",
+                "cancel"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer cancelled order\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Poll EBM/SDC fiscal receipt fields (E3)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/:saleId/ebm-receipt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                ":saleId",
+                "ebm-receipt"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Returns 202 while outbox processing is still pending."
+          }
+        },
+        {
+          "name": "Download fiscal invoice/receipt PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/invoices/:saleId/pdf?format=A4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                "invoices",
+                ":saleId",
+                "pdf"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "A4",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Composed invoice payload (HTML + metadata)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/invoices/:saleId?allowPending=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                "invoices",
+                ":saleId"
+              ],
+              "query": [
+                {
+                  "key": "allowPending",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Return invoice before VSDC success"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Reprint receipt (CIS copy watermark / reprintCount)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/:saleId/reprint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                ":saleId",
+                "reprint"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "CS/CR copy of an existing NS/NR receipt (PDF, original VSDC fiscal data, marked COPY; not submitted to VSDC)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/{{organizationId}}/:saleId/copy?format=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                ":organizationId",
+                ":saleId",
+                "copy"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": [
+                {
+                  "key": "saleId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Org EBM Config",
+      "item": [
+        {
+          "name": "Get organization settings (includes ebmConfig)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{id}}/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":id",
+                "settings"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update organization settings (ADMIN)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{id}}/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":id",
+                "settings"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"featureFlags\": {},\n  \"preferences\": {},\n  \"sidebarConfig\": {},\n  \"ebmConfig\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update organization fiscal identity (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":id"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Fields: TIN, VRN, vatRegistered, ebmDeviceId, ebmSerialNo, trainingMode (§16 TS/TR vs NS/NR).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TIN\": \"123456789\",\n  \"VRN\": \"123456789\",\n  \"vatRegistered\": false,\n  \"isTaxExempt\": false,\n  \"taxExemptionReason\": \"Test exemption\",\n  \"ebmDeviceId\": \"TEST-DEVICE\",\n  \"ebmSerialNo\": \"TEST-SERIAL\",\n  \"trainingMode\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RRA Entity Push",
+      "item": [
+        {
+          "name": "Sync branches from VSDC (§3.3.2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/branches/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "branches",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Pull stock moves from VSDC (§3.3.8.1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/stock-moves/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "stock-moves",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Push customer to VSDC (§3.3.3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/customers/:customerId/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "customers",
+                ":customerId",
+                "sync"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "customerId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Push user to VSDC (§3.3.3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/users/:userId/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "users",
+                ":userId",
+                "sync"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Push BOM composition to VSDC (§3.3.4.2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/items/:productId/composition/:componentId/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "items",
+                ":productId",
+                "composition",
+                ":componentId",
+                "sync"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "productId",
+                  "value": "1"
+                },
+                {
+                  "key": "componentId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RRA Lookups",
+      "item": [
+        {
+          "name": "Refund reason codes (class 32)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/refund-reasons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "refund-reasons"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "ERP payment method → RRA code mappings (class 07)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/payment-mappings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "payment-mappings"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "RRA Master Data",
+      "item": [
+        {
+          "name": "Master-data sync cursors and counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "status"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Sync codes, item classes, and notices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/sync-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "sync-all"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List cached RRA codes (§59)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/codes?cdCls=07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "codes"
+              ],
+              "query": [
+                {
+                  "key": "cdCls",
+                  "value": "07",
+                  "disabled": true,
+                  "description": "Code class filter"
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Typed catalog of cached `/code/selectCodes` lists",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/code-catalog",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "code-catalog"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "Tax types (04), tourism tax (03/08), countries (05), property types (02), units (10/17), refund reasons (32), etc."
+          }
+        },
+        {
+          "name": "Pull codes from VSDC `/code/selectCodes` (§59)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/codes/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "codes",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Search cached item classes (§61)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/item-classes?q=&limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "item-classes"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "30",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Pull item classes from VSDC (§61)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/item-classes/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "item-classes",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List cached RRA notices (§65)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/notices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "notices"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Pull notices from VSDC (§65)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/notices/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "notices",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mark a notice as read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/notices/:noticeNo/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "notices",
+                ":noticeNo",
+                "read"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "noticeNo",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Verify customer TIN via VSDC (§62)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/customers/:tin?customerId=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "customers",
+                ":tin"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": [
+                {
+                  "key": "tin",
+                  "value": "{{ebmTin}}"
+                }
+              ]
+            },
+            "description": "Calls `/customers/selectCustomer`."
+          }
+        },
+        {
+          "name": "Reconcile local items vs VSDC `/items/selectItems` (§64)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/items/reconcile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "items",
+                "reconcile"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Push one product to VSDC `/items/saveItems`",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/items/:productId/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "items",
+                ":productId",
+                "sync"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "productId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemClsCd\": \"REPLACE_WITH_VALID_RRA_CLASS\",\n  \"taxCode\": \"A\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RRA Stock & Trade",
+      "item": [
+        {
+          "name": "Stock sync queue status (§23 / §72 / §73)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "stock"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Process pending stock sync batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/stock/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "stock",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "Pushes `/stock/saveStockItems` + `/stockMaster/saveStockMaster`."
+          }
+        },
+        {
+          "name": "List cached B2B purchases (§70)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/purchases?status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "purchases"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Pull B2B purchases from VSDC (§70)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/purchases/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "purchases",
+                "sync"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Confirm or reject a B2B purchase (§71)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/purchases/{{id}}/confirm?reject=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "purchases",
+                ":id",
+                "confirm"
+              ],
+              "query": [
+                {
+                  "key": "reject",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Calls `/trnsPurchase/savePurchases`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reject\": false,\n  \"prcOrdCd\": \"REPLACE_WITH_VALID_PURCHASE_CODE\",\n  \"branchId\": 2,\n  \"items\": [\n    {\n      \"itemId\": 2,\n      \"itemSeq\": 1,\n      \"itemNm\": \"Example\",\n      \"linkProductId\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List cached import declarations (§66)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/imports?status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "imports"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Pull import items from VSDC (§66)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/imports/sync?requestDate=20260915",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "imports",
+                "sync"
+              ],
+              "query": [
+                {
+                  "key": "requestDate",
+                  "value": "20260915",
+                  "disabled": true,
+                  "description": ""
+                }
+              ],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": 2,\n  \"requestDate\": \"20260915\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Approve or reject an import (§67 / §68)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{organizationId}}/rra/imports/{{id}}/:action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                ":organizationId",
+                "rra",
+                "imports",
+                ":id",
+                ":action"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                },
+                {
+                  "key": "action",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "`action` is `approve` or `reject` (other values treated as approve).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemClsCd\": \"REPLACE_WITH_VALID_RRA_CLASS\",\n  \"itemCd\": \"Example\",\n  \"linkProductId\": 2,\n  \"remark\": \"Example\",\n  \"branchId\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sync Triggers",
+      "item": [
+        {
+          "name": "Create product (async `/items/saveItems` sync)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                ":organizationId"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "PRODUCT/RAW_MATERIAL require valid `itemClsCd`. Roles: ADMIN, ACCOUNTANT, SELLER, BRANCH_MANAGER.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update product (re-queues RRA item sync when fiscal fields change)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/{{organizationId}}/product/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                ":organizationId",
+                "product",
+                ":id"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add BOM component (async composition sync)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/{{organizationId}}/products/:productId/bom",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                ":organizationId",
+                "products",
+                ":productId",
+                "bom"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "key": "productId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"componentProductId\": 2,\n  \"quantity\": 0.5,\n  \"unit\": \"KG\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create production run (ledger → pending stock sync)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/{{organizationId}}/production/runs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                ":organizationId",
+                "production",
+                "runs"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": 2,\n  \"productId\": 2,\n  \"quantity\": 2,\n  \"note\": \"Test inventory adjustment\",\n  \"batchNumber\": \"API-BATCH-001\",\n  \"expiryDate\": \"2026-09-15T10:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create customer (TIN present → async RRA customer sync)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ":organizationId"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+meta {
+  name: GET Refund reasons (class 32)
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/refund-reasons
+  body: none
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

@@ -48,9 +48,21 @@ export function SearchWorkspace({ open, onClose }: Props) {
 
   const recent = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return SEARCH_RECENT;
-    return SEARCH_RECENT.filter((r) => r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q));
-  }, [query]);
+    let list = SEARCH_RECENT;
+    if (filter !== "All") {
+      const toneMap: Record<string, string[]> = {
+        Transactions: ["invoice", "expense", "page"],
+        Contacts: ["page"],
+        Reports: ["report", "invoice"],
+        Pages: ["page"],
+        Help: ["report", "page"],
+      };
+      const allowed = new Set(toneMap[filter] ?? []);
+      list = list.filter((r) => allowed.has(r.tone));
+    }
+    if (!q) return list;
+    return list.filter((r) => r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q));
+  }, [query, filter]);
 
   if (!open) return null;
 

@@ -10,9 +10,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   anchorRef: RefObject<HTMLElement | null>;
+  onShareScreen?: () => void;
 };
 
-export function SettingsMegaMenu({ open, onClose, anchorRef }: Props) {
+export function SettingsMegaMenu({ open, onClose, anchorRef, onShareScreen }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,6 +46,10 @@ export function SettingsMegaMenu({ open, onClose, anchorRef }: Props) {
 
   function go(to?: string, href?: string) {
     onClose();
+    if (to === "share-screen") {
+      onShareScreen?.();
+      return;
+    }
     if (href) {
       window.location.assign(href);
       return;

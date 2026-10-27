@@ -1,0 +1,33 @@
+meta {
+  name: POST Pull HQ↔branch stock moves
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/stock-moves/sync
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}
+
+docs {
+  Applies inbound moves with skipEbmSync (no double-count).
+}

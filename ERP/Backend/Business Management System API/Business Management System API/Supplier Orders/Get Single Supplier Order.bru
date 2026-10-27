@@ -1,0 +1,19 @@
+meta {
+  name: Get Single Supplier Order
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/organizations/{{organizationId}}/orders/order_id_here
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+settings {
+  encodeUrl: true
+}

@@ -1,0 +1,1274 @@
+/* ==========================================================================
+   PRIMARY RIBBONS - TOOLS MOCKUPS STYLES (71 - 85)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   MOCKUP 71: WORKFLOW AUTOMATION
+   -------------------------------------------------------------------------- */
+.ee-tools-page {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 8px 24px 64px;
+}
+
+.ee-wf-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.ee-wf-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0c1c38;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.ee-wf-header-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.ee-wf-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  color: #0052ff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.ee-wf-link-btn:hover {
+  color: #003ecb;
+  background-color: #f0f5ff;
+}
+
+.ee-wf-tabs {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+
+.ee-wf-tab {
+  background: none;
+  border: none;
+  padding: 10px 4px 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.ee-wf-tab:hover {
+  color: #0c1c38;
+}
+
+.ee-wf-tab.active {
+  color: #0052ff;
+  font-weight: 600;
+}
+
+.ee-wf-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: #0052ff;
+  border-radius: 3px 3px 0 0;
+}
+
+.ee-wf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ee-wf-search-wrap {
+  position: relative;
+  width: 320px;
+}
+
+.ee-wf-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  pointer-events: none;
+}
+
+.ee-wf-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px 0 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #0c1c38;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ee-wf-search-input:focus {
+  border-color: #0052ff;
+  box-shadow: 0 0 0 3px rgba(0, 82, 255, 0.12);
+}
+
+.ee-wf-filter-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ee-wf-filter-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0c1c38;
+}
+
+.ee-btn-blue {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #0052ff;
+  color: #ffffff;
+  border: 1px solid #0052ff;
+  border-radius: 6px;
+  padding: 0 20px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.ee-btn-blue:hover {
+  background-color: #0043d9;
+  border-color: #0043d9;
+}
+
+.ee-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #ffffff;
+  color: #0052ff;
+  border: 1.5px solid #0052ff;
+  border-radius: 6px;
+  padding: 0 18px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+
+.ee-btn-outline:hover {
+  background-color: #f0f5ff;
+}
+
+.ee-wf-section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0c1c38;
+  margin: 0 0 16px;
+}
+
+/* Tools Table Standard */
+.ee-tools-table-container {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: visible;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ee-tools-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  text-align: left;
+}
+
+.ee-tools-table th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  text-transform: uppercase;
+  white-space: normal;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: normal;
+  user-select: none;
+}
+
+.ee-tools-table th.nowrap,
+.ee-tools-table td.nowrap,
+.ee-tools-table .nowrap {
+  white-space: nowrap;
+}
+
+.ee-tools-table th.sortable {
+  cursor: pointer;
+}
+
+.ee-tools-table th.sortable:hover {
+  color: #0c1c38;
+  background-color: #f1f5f9;
+}
+
+.ee-tools-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+  vertical-align: middle;
+  white-space: normal;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.ee-tools-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ee-tools-table tr:hover td {
+  background-color: #f8faff;
+}
+
+/* Toggle Switch */
+.ee-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.ee-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ee-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: 0.2s;
+  border-radius: 24px;
+}
+
+.ee-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.2s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.ee-switch input:checked + .ee-slider {
+  background-color: #0052ff;
+}
+
+.ee-switch input:checked + .ee-slider:before {
+  transform: translateX(20px);
+}
+
+.ee-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #0052ff;
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px;
+}
+
+.ee-action-link:hover {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 72 & 73: IMPORT DATA CATALOG (27 TILES)
+   -------------------------------------------------------------------------- */
+.ee-import-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ee-import-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0c1c38;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.ee-import-subtitle {
+  font-size: 15px;
+  color: #475569;
+  margin: 0 0 28px;
+}
+
+.ee-import-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 1400px) {
+  .ee-import-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .ee-import-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .ee-import-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ee-import-tile {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  min-height: 144px;
+}
+
+.ee-import-tile:hover {
+  transform: translateY(-2px);
+  border-color: #93c5fd;
+  box-shadow: 0 8px 20px rgba(0, 82, 255, 0.08);
+}
+
+.ee-import-icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: #eff6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0052ff;
+  margin-bottom: 14px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.ee-import-tile:hover .ee-import-icon-circle {
+  background-color: #dbeafe;
+}
+
+.ee-import-tile-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #0c1c38;
+  line-height: 1.3;
+}
+
+.ee-import-scroll-hint {
+  text-align: right;
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 74 & 75: EXPORT WORKSPACE
+   -------------------------------------------------------------------------- */
+.ee-export-workspace {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 20px 100px;
+}
+
+.ee-export-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ee-export-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0c1c38;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.ee-export-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #475569;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.ee-export-close-btn:hover {
+  background-color: #f1f5f9;
+  color: #0c1c38;
+}
+
+.ee-export-question {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0c1c38;
+  margin: 0 0 4px;
+}
+
+.ee-export-helper {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 24px;
+}
+
+.ee-export-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+
+.ee-export-tab {
+  background: none;
+  border: none;
+  padding: 8px 4px 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  position: relative;
+}
+
+.ee-export-tab.active {
+  color: #0052ff;
+  font-weight: 600;
+}
+
+.ee-export-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: #0052ff;
+  border-radius: 3px 3px 0 0;
+}
+
+.ee-export-controls-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.ee-export-date-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.ee-export-date-select {
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 32px 0 12px;
+  font-size: 14px;
+  color: #0c1c38;
+  background-color: #ffffff;
+  outline: none;
+  cursor: pointer;
+}
+
+.ee-export-more-link {
+  font-size: 14px;
+  color: #0052ff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.ee-export-more-link:hover {
+  text-decoration: underline;
+}
+
+.ee-export-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ee-export-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.ee-export-card-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.ee-export-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+  z-index: 100;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 76 & 77: RECONCILE WORKSPACE
+   -------------------------------------------------------------------------- */
+.ee-reconcile-split-layout {
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - 70px);
+}
+
+.ee-subnav-sidebar {
+  width: 240px;
+  border-right: 1px solid #e5eaf2;
+  background-color: #ffffff;
+  padding: 16px 0;
+  flex-shrink: 0;
+}
+
+.ee-subnav-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  padding: 0 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ee-subnav-group {
+  margin-bottom: 20px;
+}
+
+.ee-subnav-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0c1c38;
+}
+
+.ee-subnav-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ee-subnav-link {
+  display: block;
+  padding: 8px 20px 8px 36px;
+  font-size: 13.5px;
+  color: #475569;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.ee-subnav-link:hover {
+  color: #0c1c38;
+  background-color: #f8fafc;
+}
+
+.ee-subnav-link.active {
+  color: #0052ff;
+  font-weight: 600;
+  background-color: #eff6ff;
+  border-left: 3px solid #0052ff;
+  padding-left: 33px;
+}
+
+.ee-reconcile-main {
+  flex: 1;
+  padding: 20px 32px 64px;
+  background-color: #f8fafc;
+}
+
+.ee-reconcile-hero-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-top: 16px;
+  min-height: 520px;
+}
+
+.ee-reconcile-hero-left {
+  max-width: 540px;
+}
+
+.ee-reconcile-hero-title {
+  font-size: 40px;
+  font-weight: 800;
+  color: #0c1c38;
+  line-height: 1.15;
+  margin: 0 0 16px;
+  letter-spacing: -0.03em;
+}
+
+.ee-reconcile-hero-sub {
+  font-size: 16px;
+  color: #475569;
+  margin: 0 0 20px;
+}
+
+.ee-reconcile-hero-sub a {
+  color: #0052ff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ee-reconcile-video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #0052ff;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-bottom: 28px;
+}
+
+.ee-reconcile-video-link:hover {
+  text-decoration: underline;
+}
+
+.ee-reconcile-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ee-reconcile-bullet {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.ee-reconcile-hero-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ee-reconcile-hero-img {
+  max-width: 480px;
+  height: auto;
+  object-fit: contain;
+}
+
+/* Reconcile Setup Screen (Mockup 77) */
+.ee-recon-setup-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ee-recon-section {
+  margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ee-recon-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.ee-recon-section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0c1c38;
+  margin: 0 0 16px;
+}
+
+.ee-recon-grid-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.ee-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ee-input-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.ee-input-field {
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0c1c38;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ee-input-field:focus {
+  border-color: #0052ff;
+}
+
+.ee-input-field:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 78, 79, 80, 81: BUDGETING & BUDGET EDITOR
+   -------------------------------------------------------------------------- */
+.ee-budget-hero-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-top: 16px;
+  min-height: 520px;
+}
+
+.ee-budget-hero-wrap {
+  padding: 16px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.ee-budget-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 12px;
+}
+.ee-budget-bc-section { color: #94a3b8; font-weight: 600; }
+.ee-budget-bc-sep { color: #cbd5e1; }
+.ee-budget-bc-current { color: #0c1c38; font-weight: 700; }
+
+.ee-budget-hero-body {
+  flex: 1 1 58%;
+  min-width: 320px;
+  padding-right: 32px;
+}
+.ee-budget-hero-title {
+  font-size: 36px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: #0c1c38;
+  margin: 0 0 14px;
+  letter-spacing: -1px;
+}
+.ee-budget-hero-sub {
+  font-size: 15px;
+  color: #475569;
+  margin: 0 0 18px;
+  line-height: 1.55;
+  max-width: 480px;
+}
+.ee-budget-hero-learn {
+  display: inline-block;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  margin-bottom: 24px;
+}
+.ee-budget-hero-learn:hover { text-decoration: underline; }
+.ee-budget-hero-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ee-budget-hero-bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.35;
+}
+.ee-budget-hero-bullets li svg { flex-shrink: 0; color: #16a34a; margin-top: 1px; }
+.ee-budget-hero-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ee-budget-hero-import {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+.ee-budget-hero-import-link {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.ee-budget-hero-import-link:hover { text-decoration: underline; }
+
+.ee-budget-hero-illustration {
+  flex: 1 1 42%;
+  min-width: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ee-budget-hero-img-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+}
+.ee-budget-hero-img-wrap img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+}
+.ee-budget-hero-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.ee-budget-editor-wrap {
+  width: 100%;
+  padding: 8px 16px 80px;
+}
+
+.ee-budget-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.ee-budget-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ee-budget-title-input {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0c1c38;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+
+.ee-budget-filters-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.ee-budget-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+}
+
+.ee-budget-matrix-table th,
+.ee-budget-matrix-table td {
+  border: 1px solid #e2e8f0;
+  padding: 8px 10px;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.ee-budget-matrix-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.ee-budget-matrix-table td:first-child {
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  min-width: 200px;
+}
+
+.ee-budget-matrix-table td.matrix-cell {
+  white-space: nowrap;
+}
+
+.ee-budget-cell-input {
+  width: 90px;
+  height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 13px;
+  text-align: right;
+  outline: none;
+  color: #0c1c38;
+}
+
+.ee-budget-cell-input:focus {
+  border-color: #0052ff;
+  box-shadow: 0 0 0 2px rgba(0, 82, 255, 0.15);
+}
+
+.ee-budget-setup-option-card {
+  border: 2px solid #0052ff;
+  background-color: #f8faff;
+  border-radius: 10px;
+  padding: 20px;
+  width: 240px;
+  position: relative;
+  cursor: pointer;
+  text-align: center;
+}
+
+.ee-budget-setup-option-card .check-circle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: #0052ff;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 82: AUDIT LOG
+   -------------------------------------------------------------------------- */
+.ee-audit-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.ee-audit-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.ee-audit-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ee-audit-select-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.ee-audit-select {
+  height: 38px;
+  min-width: 140px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  color: #0c1c38;
+  background: #ffffff;
+  outline: none;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 83 & 84: BACKUP & RESTORE
+   -------------------------------------------------------------------------- */
+.ee-backup-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #16a34a;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.ee-backup-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 440px;
+  background: #ffffff;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+
+.ee-backup-drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+}
+
+.ee-backup-choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ee-backup-choice-card:hover {
+  border-color: #93c5fd;
+  background-color: #f8fafc;
+}
+
+.ee-backup-choice-card.selected {
+  border-color: #0052ff;
+  background-color: #eff6ff;
+}
+
+/* --------------------------------------------------------------------------
+   MOCKUP 85: SCREEN SHARING PROMPT MODAL
+   -------------------------------------------------------------------------- */
+.ee-screen-share-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.ee-screen-share-dialog {
+  background: #ffffff;
+  border-radius: 16px;
+  width: 480px;
+  padding: 36px 32px 28px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+
+.ee-screen-share-icon-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: #e0f2fe;
+  color: #0052ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.ee-screen-share-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0c1c38;
+  line-height: 1.3;
+  margin: 0 0 24px;
+}
+
+.ee-screen-share-accordion {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-align: left;
+  margin-bottom: 24px;
+  background-color: #f8fafc;
+}
+
+.ee-screen-share-accordion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.ee-screen-share-accordion-body {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.ee-screen-share-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 20px;
+}
+
+/* --------------------------------------------------------------------------
+   GLOBAL BUTTONS NO-WRAP & WHITESPACE INTEGRITY
+   Avoid awkward line breaks on buttons in Budget, Reconcile, and all Tools
+   -------------------------------------------------------------------------- */
+.ee-btn-blue,
+.ee-btn-outline,
+.ee-btn-ghost,
+.ee-export-tab,
+.ee-custom-wf-btn,
+.ee-audit-action-btn,
+.ee-manual-backup-btn,
+.ee-budget-filters-bar button,
+.ee-budget-top-bar button,
+.ee-export-bottom-bar button,
+.ee-recon-setup-card button,
+.ee-screen-share-actions button,
+.btn {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0;
+}

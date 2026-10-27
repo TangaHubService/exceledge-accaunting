@@ -1,0 +1,18 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const branchAuth_middleware_1 = require("../middleware/branchAuth.middleware");
+const organizationAccess_middleware_1 = require("../middleware/organizationAccess.middleware");
+const feature_access_middleware_1 = require("../middleware/feature-access.middleware");
+const held_sale_controller_1 = require("../controllers/held-sale.controller");
+const router = (0, express_1.Router)();
+const orgAccess = (0, organizationAccess_middleware_1.requireOrganizationAccess)();
+const roles = (0, auth_middleware_1.authorize)('ADMIN', 'SELLER', 'ACCOUNTANT', 'BRANCH_MANAGER');
+router.use(auth_middleware_1.authenticate);
+router.post('/:organizationId', orgAccess, (0, feature_access_middleware_1.requireActiveSubscription)(), branchAuth_middleware_1.branchAuth, roles, held_sale_controller_1.createHeldSaleController);
+router.get('/:organizationId', orgAccess, (0, feature_access_middleware_1.requireActiveSubscription)(), branchAuth_middleware_1.branchAuth, roles, held_sale_controller_1.listHeldSalesController);
+router.get('/:organizationId/:id', orgAccess, (0, feature_access_middleware_1.requireActiveSubscription)(), branchAuth_middleware_1.branchAuth, roles, held_sale_controller_1.getHeldSaleController);
+router.post('/:organizationId/:id/resume', orgAccess, (0, feature_access_middleware_1.requireActiveSubscription)(), branchAuth_middleware_1.branchAuth, roles, held_sale_controller_1.resumeHeldSaleController);
+router.delete('/:organizationId/:id', orgAccess, (0, feature_access_middleware_1.requireActiveSubscription)(), branchAuth_middleware_1.branchAuth, roles, held_sale_controller_1.cancelHeldSaleController);
+exports.default = router;

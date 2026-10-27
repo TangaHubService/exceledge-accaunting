@@ -1,0 +1,45 @@
+meta {
+  name: POST Confirm purchase (02 + stock master)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/purchases/{purchaseId}/confirm
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "reject": false,
+    "prcOrdCd": "",
+    "items": [
+      {
+        "itemSeq": 1,
+        "itemNm": "Local name (optional)",
+        "linkProductId": "{{productId}}",
+        "sellingPrice": 1500,
+        "expiryDate": "2027-12-31"
+      }
+    ]
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}
+
+docs {
+  savePurchases pchsSttsCd=02, local stock skipEbmSync, then saveStockMaster.
+}

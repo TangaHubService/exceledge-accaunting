@@ -1,11 +1,15 @@
-import { Plus } from "lucide-react";
+import { CheckCircle2, Plus } from "lucide-react";
 import { type FormEvent, Fragment, useMemo, useRef, useState } from "react";
+import { BudgetEditor as MatrixBudgetEditor } from "../components/budgets/BudgetEditor";
+import { BudgetSetupModal } from "../components/budgets/BudgetSetupModal";
+import { SpreadsheetSyncModal } from "../components/budgets/SpreadsheetSyncModal";
 import { useFeedback } from "../components/feedback";
 import { Footer, FormError, MoneyInput, parseAmount, useSubmit } from "../components/forms";
 import { Select } from "../components/Select";
 import { Badge, Drawer, EmptyState, Field, Loadable, PageHeader, type Tone } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, humanize } from "../lib/format";
+import { navigate } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
 import type { Account } from "../lib/types";
 
@@ -57,94 +61,240 @@ const dims = (l: { costCentre: string | null; project: string | null; branchId?:
 export function Budgets() {
   const { can } = useSession();
   const { currency } = useCompany();
+  const { toast } = useFeedback();
   const budgets = useResource<Budget[]>("/api/v1/books/budgets");
   const years = useResource<Year[]>("/api/v1/books/periods");
   const [editing, setEditing] = useState<Budget | "new" | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Tools Ribbons Modes: "workspace" (Mockup 78) | "editor" (Mockup 81) | "list"
+  const [budgetMode, setBudgetMode] = useState<"workspace" | "editor" | "list">("workspace");
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+
   const yearName = (id: string | null) => years.data?.find((y) => y.id === id)?.name ?? "—";
 
-  return (
-    <>
-      <PageHeader
-        title="Budgets"
-        description="Plan income and spending by account, month, cost centre and project. A budget is submitted for approval, then activated; revise the active budget to start a new version."
-        actions={
-          can("budget:manage") && (
-            <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}>
-              <Plus size={16} aria-hidden="true" />
-              New budget
-            </button>
-          )
-        }
+  // If in FY26 Matrix Editor mode (Mockup 81)
+  if (budgetMode === "editor") {
+    return (
+      <MatrixBudgetEditor
+        onClose={() => setBudgetMode("workspace")}
+        onOpenSpreadsheetSync={() => setSyncModalOpen(true)}
       />
-      <Loadable resource={budgets}>
-        {(rows) =>
-          rows.length === 0 ? (
-            <div className="panel">
-              <EmptyState title="No budgets yet" body="Create a budget to compare planned and actual income and spending month by month." />
+    );
+  }
+
+  return (
+    <div className="ee-budget-workspace">
+      {/* Clean full-width budget hero — no inner sub-sidebar */}
+      {budgetMode === "workspace" && (
+        <div className="ee-budget-hero-wrap">
+          {/* Top breadcrumb row */}
+          <div className="ee-budget-breadcrumb">
+            <span className="ee-budget-bc-section">REPORTS &amp; ANALYTICS</span>
+            <span className="ee-budget-bc-sep">›</span>
+            <span className="ee-budget-bc-current">Budgets</span>
+            {budgets.data && budgets.data.length > 0 && (
+              <button
+                type="button"
+                className="ee-btn-outline"
+                style={{ marginLeft: "auto", height: 32, fontSize: 13, padding: "0 14px" }}
+                onClick={() => setBudgetMode("list")}
+              >
+                View all budgets ({budgets.data.length})
+              </button>
+            )}
+          </div>
+
+          {/* Hero card — matches mockup exactly */}
+          <div className="ee-budget-hero-card">
+            {/* Left: text + CTAs */}
+            <div className="ee-budget-hero-body">
+              <h1 className="ee-budget-hero-title">
+                Plan your finances<br />and stay ahead
+              </h1>
+              <p className="ee-budget-hero-sub">
+                Having visibility into your finances and prioritising expenses will give you the confidence to run your business smoothly.
+              </p>
+
+              <a
+                href="#learn-more-budgets"
+                className="ee-budget-hero-learn"
+                onClick={(e) => { e.preventDefault(); toast("Learn more about budgeting documentation."); }}
+              >
+                Learn more about budgets
+              </a>
+
+              <ul className="ee-budget-hero-bullets">
+                <li>
+                  <CheckCircle2 size={18} strokeWidth={2} />
+                  <span>Create budgets using financial data available in Excel Edge ERP.</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={18} strokeWidth={2} />
+                  <span>Compare actual performance against budgeted numbers.</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={18} strokeWidth={2} />
+                  <span>Use spreadsheets and sync changes back to Excel Edge ERP.</span>
+                </li>
+              </ul>
+
+              <div className="ee-budget-hero-actions">
+                <button
+                  type="button"
+                  className="ee-btn-blue"
+                  onClick={() => setSetupModalOpen(true)}
+                >
+                  Create a budget
+                </button>
+                <button
+                  type="button"
+                  className="ee-btn-outline"
+                  onClick={() => setSyncModalOpen(true)}
+                >
+                  Create in Spreadsheet Sync
+                </button>
+              </div>
+
+              <p className="ee-budget-hero-import">
+                Already have a budget in a spreadsheet? Bring it in.{" "}
+                <button
+                  type="button"
+                  className="ee-budget-hero-import-link"
+                  onClick={() => navigate("/import-data")}
+                >
+                  Import budget
+                </button>
+              </p>
             </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Budget</th>
-                    <th>Year</th>
-                    <th className="num">Version</th>
-                    <th className="num">Total ({currency})</th>
-                    <th>Status</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((b) => (
-                    <tr key={b.id}>
-                      <td>
-                        {b.name}
-                        <span className="sub">Created {date(b.createdAt)}</span>
-                      </td>
-                      <td>{yearName(b.financialYearId)}</td>
-                      <td className="num">v{b.version}</td>
-                      <td className="num">{amount(total(b.lines))}</td>
-                      <td>
-                        <Badge tone={STATUS_TONE[b.status]}>{humanize(b.status)}</Badge>
-                      </td>
-                      <td className="num nowrap">
-                        <button type="button" className="btn" onClick={() => setOpenId(b.id)}>
-                          Open
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            {/* Right: illustration */}
+            <div className="ee-budget-hero-illustration">
+              <div className="ee-budget-hero-img-wrap">
+                <img
+                  src="/illustrations/budget-hero.png"
+                  alt="Financial planning illustration"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                {/* Fallback decorative SVG when image is missing */}
+                <svg viewBox="0 0 340 280" fill="none" xmlns="http://www.w3.org/2000/svg" className="ee-budget-hero-svg" aria-hidden="true">
+                  <rect x="20" y="40" width="300" height="200" rx="16" fill="#f0f6ff" />
+                  <rect x="40" y="80" width="80" height="120" rx="6" fill="#bfdbfe" />
+                  <rect x="140" y="60" width="80" height="140" rx="6" fill="#93c5fd" />
+                  <rect x="240" y="100" width="60" height="100" rx="6" fill="#3b82f6" />
+                  <line x1="20" y1="200" x2="320" y2="200" stroke="#cbd5e1" strokeWidth="1.5" />
+                  <circle cx="80" cy="110" r="18" fill="#dbeafe" />
+                  <circle cx="180" cy="90" r="18" fill="#bfdbfe" />
+                  <circle cx="270" cy="130" r="18" fill="#93c5fd" />
+                  <path d="M80 110 Q130 75 180 90 Q225 105 270 130" stroke="#2563eb" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                </svg>
+              </div>
             </div>
-          )
-        }
-      </Loadable>
+          </div>
+        </div>
+      )}
+
+      {/* Existing List View */}
+      {budgetMode === "list" && (
+        <div className="ee-tools-page">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+            <div>
+              <h1 style={{ fontSize: 28, fontWeight: 700, color: "#0c1c38", margin: "0 0 6px" }}>
+                Budgets
+              </h1>
+              <p style={{ color: "#64748b", margin: 0, fontSize: 14 }}>
+                Compare planned and actual income and spending month by month.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" className="ee-btn-outline" onClick={() => setBudgetMode("workspace")}>
+                Back to workspace
+              </button>
+              <button type="button" className="ee-btn-blue" onClick={() => setSetupModalOpen(true)}>
+                <Plus size={16} /> New budget
+              </button>
+            </div>
+          </div>
+
+          <Loadable resource={budgets}>
+            {(rows) =>
+              rows.length === 0 ? (
+                <div className="panel">
+                  <EmptyState title="No budgets yet" body="Create a budget to compare planned and actual income and spending month by month." />
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Budget</th>
+                        <th>Year</th>
+                        <th className="num">Version</th>
+                        <th className="num">Total ({currency})</th>
+                        <th>Status</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((b) => (
+                        <tr key={b.id}>
+                          <td>
+                            {b.name}
+                            <span className="sub">Created {date(b.createdAt)}</span>
+                          </td>
+                          <td>{yearName(b.financialYearId)}</td>
+                          <td className="num">v{b.version}</td>
+                          <td className="num">{amount(total(b.lines))}</td>
+                          <td>
+                            <Badge tone={STATUS_TONE[b.status]}>{humanize(b.status)}</Badge>
+                          </td>
+                          <td className="num nowrap">
+                            <button type="button" className="btn" onClick={() => setOpenId(b.id)}>
+                              Open
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            }
+          </Loadable>
+        </div>
+      )}
+
+      {/* Mockup 79: Budget Setup Modal */}
+      <BudgetSetupModal
+        open={setupModalOpen}
+        onClose={() => setSetupModalOpen(false)}
+        onNext={() => { setSetupModalOpen(false); setBudgetMode("editor"); }}
+        onOpenSpreadsheetSync={() => { setSetupModalOpen(false); setSyncModalOpen(true); }}
+      />
+
+      {/* Mockup 80: Spreadsheet Sync Modal */}
+      <SpreadsheetSyncModal open={syncModalOpen} onClose={() => setSyncModalOpen(false)} />
+
       {editing && (
-        <BudgetEditor
+        <ClassicBudgetEditor
           budget={editing === "new" ? null : editing}
           years={years.data ?? []}
           onClose={() => setEditing(null)}
-          onSaved={(id) => {
-            setEditing(null);
-            budgets.reload();
-            setOpenId(id);
-          }}
+          onSaved={(id) => { setEditing(null); budgets.reload(); setOpenId(id); }}
         />
       )}
       {openId && !editing && (
         <BudgetDrawer
           id={openId}
           years={years.data ?? []}
-          onOpen={setOpenId}
-          onEdit={(b) => setEditing(b)}
-          onChanged={() => budgets.reload()}
           onClose={() => setOpenId(null)}
+          onEdit={(b) => { setOpenId(null); setEditing(b); }}
+          onOpen={setOpenId}
+          onChanged={() => budgets.reload()}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -385,7 +535,7 @@ const blankRow = (): Group => ({ key: `new-${++rowSeq}`, accountId: "", costCent
 
 type BranchOption = { id: string; name: string | null; code: string | null; isActive: boolean };
 
-function BudgetEditor({ budget, years, onClose, onSaved }: { budget: Budget | null; years: Year[]; onClose: () => void; onSaved: (id: string) => void }) {
+function ClassicBudgetEditor({ budget, years, onClose, onSaved }: { budget: Budget | null; years: Year[]; onClose: () => void; onSaved: (id: string) => void }) {
   const { api } = useSession();
   const { accounts } = useAccounts();
   const dimensions = useResource<Dimension[]>("/api/v1/books/dimensions");

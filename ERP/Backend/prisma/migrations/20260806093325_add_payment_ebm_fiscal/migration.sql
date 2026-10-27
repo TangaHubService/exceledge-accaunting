@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "payments" ADD COLUMN     "ebm_invoice_number" TEXT,
+ADD COLUMN     "error_message" TEXT,
+ADD COLUMN     "internal_data" TEXT,
+ADD COLUMN     "invoice_number" TEXT,
+ADD COLUMN     "qr_payload" TEXT,
+ADD COLUMN     "rcptLabel" "RcptLabel",
+ADD COLUMN     "receipt_signature" TEXT,
+ADD COLUMN     "retryCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "sdc_date_time" TIMESTAMP(3),
+ADD COLUMN     "sdc_id" TEXT,
+ADD COLUMN     "sdc_rcpt_no" INTEGER,
+ADD COLUMN     "submission_status" "EbmSubmissionStatus",
+ADD COLUMN     "submitted_at" TIMESTAMP(3),
+ADD COLUMN     "total_rcpt_no" INTEGER;

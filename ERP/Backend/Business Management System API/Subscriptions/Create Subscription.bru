@@ -1,0 +1,30 @@
+meta {
+  name: Create Subscription
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/subscriptions
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "organizationId": "{{organizationId}}",
+    "plan": "MONTHLY"
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Create a new subscription. Plans: MONTHLY, QUARTERLY, YEARLY
+}

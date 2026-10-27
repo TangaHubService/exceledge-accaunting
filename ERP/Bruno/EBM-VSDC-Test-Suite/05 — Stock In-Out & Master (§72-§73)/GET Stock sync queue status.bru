@@ -1,0 +1,26 @@
+meta {
+  name: GET Stock sync queue status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/stock
+  body: none
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('200', () => expect(res.getStatus()).to.equal(200));
+  console.log(res.getBody()?.data?.counts);
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #2563eb;
+  --accent-50: #eff6ff;
+  --accent-100: #dbeafe;
+  --chrome-950: #0a1628;
+  --chrome-900: #0f2744;
+  --chrome-800: #1a365d;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --radius-card: 0.75rem;
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+
+  /* shadcn/ui semantic tokens (HSL channels, no hsl() wrapper) — feed
+     tailwind.config.js `colors.*` so bg-primary/text-muted-foreground/etc
+     resolve to real colors instead of silently compiling to nothing. */
+  --background: 0 0% 100%;
+  --foreground: 221 39% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 221 39% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 221 39% 11%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 221 39% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 221 83% 53%;
+}
+
+.dark {
+  --background: 221 39% 11%;
+  --foreground: 210 20% 98%;
+  --card: 215 28% 17%;
+  --card-foreground: 210 20% 98%;
+  --popover: 215 28% 17%;
+  --popover-foreground: 210 20% 98%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 215 28% 17%;
+  --secondary-foreground: 210 20% 98%;
+  --muted: 215 28% 17%;
+  --muted-foreground: 218 11% 65%;
+  --destructive: 0 63% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 217 19% 27%;
+  --input: 217 19% 27%;
+  --ring: 217 91% 60%;
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply font-sans antialiased;
+  }
+}
+
+/* Dashboard shell: shared rhythm (sidebar + header vs main) */
+@layer components {
+  /* Deep navy–slate: lower saturation & luminance than bright blue-600 for less eye fatigue */
+  .dashboard-chrome {
+    @apply border-white/10 bg-gradient-to-b from-[#0f2744] via-[#0c2035] to-[#0a1628] text-slate-100 dark:from-[#0a1628] dark:via-[#070f18] dark:to-[#050a12] dark:border-slate-800/80;
+  }
+  .dashboard-main {
+    @apply flex-1 bg-slate-100 text-slate-900 dark:bg-zinc-900 dark:text-zinc-100;
+  }
+  .dashboard-main-padding {
+    @apply px-4 py-6 sm:px-6 lg:px-8;
+  }
+  .dashboard-nav-section-label {
+    @apply text-sm font-bold uppercase tracking-wide text-slate-200;
+  }
+  .dashboard-nav-item {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150;
+  }
+}
+
+/* Your custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
+@layer utilities {
+  .dark input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}

@@ -1,0 +1,452 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.downloadSupplierTemplate = exports.downloadSupplierErrorFile = exports.confirmImportSuppliers = exports.previewImportSuppliers = exports.bulkImportSuppliers = exports.deleteSupplier = exports.updateSupplier = exports.createSupplier = exports.getSupplier = exports.getSuppliers = void 0;
+const prisma_1 = require("../lib/prisma");
+const auditLogger_1 = require("../utils/auditLogger");
+const XLSX = __importStar(require("xlsx"));
+const import_validation_service_1 = require("../services/import-validation.service");
+const preview_session_service_1 = require("../services/preview-session.service");
+// Get all suppliers for an organization
+const getSuppliers = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const { showInactive } = req.query;
+        // Suppliers are organization-wide records (the Supplier model has no
+        // branchId column) — they are not owned by a single branch, so no
+        // branch filter is applied here. Filtering by `purchaseOrders.some({branchId})`
+        // was previously attempted, but that hides suppliers that have not yet
+        // had a purchase order raised against them in the selected branch,
+        // including every newly created supplier. Branch isolation for
+        // suppliers is unnecessary since the data itself is org-scoped, not
+        // branch-scoped; access is still limited to members of the organization.
+        const where = { organizationId };
+        if (showInactive !== 'true') {
+            where.isActive = true;
+        }
+        const suppliers = await prisma_1.prisma.supplier.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+        });
+        res.json(suppliers);
+    }
+    catch (error) {
+        console.error("Error fetching suppliers:", error);
+        res.status(500).json({ message: "Failed to fetch suppliers" });
+    }
+};
+exports.getSuppliers = getSuppliers;
+// Get single supplier
+const getSupplier = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const id = parseInt(req.params.id);
+        // See getSuppliers: suppliers are org-scoped, not branch-scoped.
+        const supplier = await prisma_1.prisma.supplier.findFirst({
+            where: { id, organizationId },
+        });
+        if (!supplier) {
+            return res.status(404).json({ message: "Supplier not found" });
+        }
+        res.json(supplier);
+    }
+    catch (error) {
+        console.error("Error fetching supplier:", error);
+        res.status(500).json({ message: "Failed to fetch supplier" });
+    }
+};
+exports.getSupplier = getSupplier;
+// Create supplier
+const createSupplier = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const { name, email, phone, address, contactPerson } = req.body;
+        if (!name || String(name).trim() === "") {
+            return res.status(400).json({ message: "Supplier name is required" });
+        }
+        if (!email || String(email).trim() === "") {
+            return res.status(400).json({ message: "Supplier email is required" });
+        }
+        const emailValidation = (0, import_validation_service_1.validateEmail)(email);
+        if (!emailValidation.isValid) {
+            return res.status(400).json({ message: "Invalid email format" });
+        }
+        const supplier = await prisma_1.prisma.supplier.create({
+            data: {
+                name,
+                email,
+                phone,
+                address,
+                contactPerson,
+                organizationId,
+            },
+        });
+        await auditLogger_1.auditLogger.purchaseOrders(req, {
+            type: 'SUPPLIER_CREATE',
+            description: `Supplier "${supplier.name}" created successfully`,
+            entityType: 'Supplier',
+            entityId: supplier.id,
+            metadata: { supplier }
+        });
+        res.status(201).json(supplier);
+    }
+    catch (error) {
+        console.error("Error creating supplier:", error);
+        res.status(500).json({ message: "Failed to create supplier" });
+    }
+};
+exports.createSupplier = createSupplier;
+// Update supplier
+const updateSupplier = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const id = parseInt(req.params.id);
+        const { name, email, phone, address, contactPerson, isActive } = req.body;
+        const existingSupplier = await prisma_1.prisma.supplier.findFirst({
+            where: { id, organizationId },
+        });
+        if (!existingSupplier) {
+            return res.status(404).json({ message: "Supplier not found" });
+        }
+        if (email !== undefined) {
+            if (String(email).trim() === "") {
+                return res.status(400).json({ message: "Supplier email is required" });
+            }
+            const emailValidation = (0, import_validation_service_1.validateEmail)(email);
+            if (!emailValidation.isValid) {
+                return res.status(400).json({ message: "Invalid email format" });
+            }
+        }
+        const supplier = await prisma_1.prisma.supplier.update({
+            where: { id: existingSupplier.id },
+            data: { name, email, phone, address, contactPerson, isActive },
+        });
+        await auditLogger_1.auditLogger.purchaseOrders(req, {
+            type: 'SUPPLIER_UPDATE',
+            description: `Supplier "${supplier.name}" updated successfully`,
+            entityType: 'Supplier',
+            entityId: id,
+            metadata: {
+                previousData: existingSupplier,
+                updatedData: supplier,
+            }
+        });
+        res.json(supplier);
+    }
+    catch (error) {
+        console.error("Error updating supplier:", error);
+        res.status(500).json({ message: "Failed to update supplier" });
+    }
+};
+exports.updateSupplier = updateSupplier;
+const deleteSupplier = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const id = parseInt(req.params.id);
+        const existingSupplier = await prisma_1.prisma.supplier.findFirst({
+            where: { id, organizationId },
+        });
+        if (!existingSupplier) {
+            return res.status(404).json({ message: "Supplier not found" });
+        }
+        await prisma_1.prisma.supplier.update({
+            where: { id: existingSupplier.id },
+            data: { isActive: false }
+        });
+        await auditLogger_1.auditLogger.purchaseOrders(req, {
+            type: 'SUPPLIER_DELETE',
+            description: `Supplier "${existingSupplier.name}" archived successfully`,
+            entityType: 'Supplier',
+            entityId: id,
+        });
+        res.json({ message: "Supplier archived successfully" });
+    }
+    catch (error) {
+        console.error("Error deleting supplier:", error);
+        res.status(500).json({ message: "Failed to delete supplier" });
+    }
+};
+exports.deleteSupplier = deleteSupplier;
+/**
+ * Bulk import suppliers from Excel file
+ */
+const bulkImportSuppliers = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        if (!req.file) {
+            return res.status(400).json({ error: "Excel file is required" });
+        }
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet);
+        const suppliers = [];
+        const errors = [];
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            try {
+                const name = row.name || row.Name || row.NAME;
+                const email = row.email || row.Email || row.EMAIL;
+                const phone = row.phone || row.Phone || row.PHONE;
+                const address = row.address || row.Address || row.ADDRESS;
+                const contactPerson = row.contactPerson || row.ContactPerson || row.CONTACT_PERSON || row["Contact Person"];
+                if (!name || !email) {
+                    errors.push({
+                        row: i + 2,
+                        data: row,
+                        error: "Missing required fields: name and email",
+                    });
+                    continue;
+                }
+                const existing = await prisma_1.prisma.supplier.findFirst({
+                    where: {
+                        organizationId,
+                        email: String(email),
+                    },
+                });
+                if (existing) {
+                    errors.push({
+                        row: i + 2,
+                        data: row,
+                        error: `Supplier with email ${email} already exists`,
+                    });
+                    continue;
+                }
+                const supplier = await prisma_1.prisma.supplier.create({
+                    data: {
+                        name: String(name),
+                        email: String(email),
+                        phone: phone ? String(phone) : null,
+                        address: address ? String(address) : null,
+                        contactPerson: contactPerson ? String(contactPerson) : null,
+                        organizationId,
+                    },
+                });
+                suppliers.push(supplier);
+            }
+            catch (error) {
+                errors.push({
+                    row: i + 2,
+                    data: row,
+                    error: error.message || "Unknown error",
+                });
+            }
+        }
+        let errorFileBuffer = null;
+        if (errors.length > 0) {
+            const errorData = errors.map((e) => ({
+                Row: e.row,
+                Error: e.error,
+                ...e.data,
+            }));
+            const errorWorksheet = XLSX.utils.json_to_sheet(errorData);
+            const errorWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(errorWorkbook, errorWorksheet, "Errors");
+            errorFileBuffer = XLSX.write(errorWorkbook, { bookType: "xlsx", type: "buffer" });
+        }
+        await auditLogger_1.auditLogger.purchaseOrders(req, {
+            type: 'SUPPLIER_CREATE',
+            description: `Bulk imported ${suppliers.length} suppliers${errors.length > 0 ? ` (${errors.length} errors)` : ''}`,
+            entityType: 'Supplier',
+            entityId: 'bulk-import',
+            metadata: { imported: suppliers.length, errors: errors.length },
+        });
+        res.json({
+            success: true,
+            imported: suppliers.length,
+            errors: errors.length,
+            suppliers,
+            importErrors: errors.length > 0 ? errors : undefined,
+            errorFile: errorFileBuffer
+                ? `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${errorFileBuffer.toString('base64')}`
+                : null,
+        });
+    }
+    catch (error) {
+        console.error("Error bulk importing suppliers:", error);
+        res.status(500).json({ error: error.message || "Failed to import suppliers" });
+    }
+};
+exports.bulkImportSuppliers = bulkImportSuppliers;
+/**
+ * Preview supplier import - validates but does not save
+ */
+const previewImportSuppliers = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        const validRows = [];
+        const invalidRows = [];
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const validationResult = await (0, import_validation_service_1.validateSupplierRow)(row, i, data, organizationId);
+            if (validationResult.isValid) {
+                validRows.push({ ...validationResult.rowData, rowNumber: i + 2 });
+            }
+            else {
+                invalidRows.push({
+                    ...validationResult.rowData,
+                    rowNumber: i + 2,
+                    errors: validationResult.errors.map((e) => e.message).join("; "),
+                    errorDetails: validationResult.errors,
+                });
+            }
+        }
+        const importId = (0, preview_session_service_1.createPreviewSession)(organizationId, "supplier", validRows, invalidRows);
+        res.json({
+            importId,
+            validRows,
+            invalidRows,
+            summary: {
+                total: validRows.length + invalidRows.length,
+                valid: validRows.length,
+                invalid: invalidRows.length,
+            },
+        });
+    }
+    catch (error) {
+        console.error("[Preview Import Suppliers Error]:", error);
+        res.status(500).json({ error: error.message || "Failed to preview import" });
+    }
+};
+exports.previewImportSuppliers = previewImportSuppliers;
+/**
+ * Confirm supplier import - saves valid records
+ */
+const confirmImportSuppliers = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const { importId } = req.body;
+        const session = (0, preview_session_service_1.getPreviewSession)(importId);
+        if (!session || session.organizationId !== organizationId || session.entityType !== "supplier") {
+            return res.status(400).json({ error: "Invalid import session" });
+        }
+        const savedSuppliers = [];
+        await prisma_1.prisma.$transaction(async (tx) => {
+            for (const row of session.validRows) {
+                const supplier = await tx.supplier.create({
+                    data: {
+                        name: row.name,
+                        email: row.email,
+                        phone: row.phone,
+                        address: row.address,
+                        contactPerson: row.contactPerson,
+                        organizationId,
+                    },
+                });
+                savedSuppliers.push(supplier);
+            }
+        });
+        let errorFileBuffer = null;
+        if (session.invalidRows.length > 0) {
+            const errorData = session.invalidRows.map((row) => ({
+                Row: row.rowNumber,
+                Error: row.errors,
+                ...row,
+            }));
+            const errorWorksheet = XLSX.utils.json_to_sheet(errorData);
+            const errorWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(errorWorkbook, errorWorksheet, "Errors");
+            errorFileBuffer = XLSX.write(errorWorkbook, { bookType: "xlsx", type: "buffer" });
+        }
+        await auditLogger_1.auditLogger.purchaseOrders(req, {
+            type: "SUPPLIER_CREATE",
+            description: `Imported ${savedSuppliers.length} suppliers${session.invalidRows.length > 0 ? ` (${session.invalidRows.length} errors)` : ""}`,
+            entityType: "Supplier",
+            entityId: "bulk-import",
+            metadata: { imported: savedSuppliers.length, errors: session.invalidRows.length, importId },
+        });
+        (0, preview_session_service_1.deletePreviewSession)(importId);
+        res.json({
+            success: true,
+            imported: savedSuppliers.length,
+            errors: session.invalidRows.length,
+            suppliers: savedSuppliers,
+            errorFile: errorFileBuffer
+                ? `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${errorFileBuffer.toString("base64")}`
+                : null,
+        });
+    }
+    catch (error) {
+        console.error("[Confirm Import Suppliers Error]:", error);
+        res.status(500).json({ error: error.message || "Failed to confirm import" });
+    }
+};
+exports.confirmImportSuppliers = confirmImportSuppliers;
+const downloadSupplierErrorFile = async (req, res) => {
+    try {
+        const organizationId = parseInt(req.params.organizationId);
+        const { importId } = req.params;
+        const session = (0, preview_session_service_1.getPreviewSession)(importId);
+        if (!session || session.organizationId !== organizationId) {
+            return res.status(404).json({ error: "Import session not found" });
+        }
+        const errorData = session.invalidRows.map((row) => ({
+            Row: row.rowNumber,
+            Error: row.errors,
+            ...row,
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(errorData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Errors");
+        const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename=supplier-import-errors-${importId}.xlsx`);
+        res.send(buffer);
+    }
+    catch (error) {
+        console.error("Error downloading error file:", error);
+        res.status(500).json({ error: "Failed to download error file" });
+    }
+};
+exports.downloadSupplierErrorFile = downloadSupplierErrorFile;
+const downloadSupplierTemplate = async (req, res) => {
+    try {
+        const templateData = [{ name: "ABC Suppliers Ltd", email: "contact@abcsuppliers.com", phone: "+250788123456", address: "Kigali, Rwanda", contactPerson: "John Smith" }];
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Suppliers Template");
+        const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", "attachment; filename=suppliers-import-template.xlsx");
+        res.send(buffer);
+    }
+    catch (error) {
+        console.error("Error generating template:", error);
+        res.status(500).json({ error: "Failed to generate template" });
+    }
+};
+exports.downloadSupplierTemplate = downloadSupplierTemplate;

@@ -1,0 +1,67 @@
+meta {
+  name: VSDC saveStockItems
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{vsdcBaseUrl}}/stock/saveStockItems
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "sarNo": 1,
+    "orgSarNo": 0,
+    "regTyCd": "M",
+    "custTin": null,
+    "custNm": null,
+    "custBhfId": null,
+    "sarTyCd": "02",
+    "ocrnDt": "20261019",
+    "totItemCnt": 1,
+    "totTaxblAmt": 1000,
+    "totTaxAmt": 0,
+    "totAmt": 1000,
+    "remark": "debug",
+    "regrId": "Admin",
+    "regrNm": "Admin",
+    "modrId": "Admin",
+    "modrNm": "Admin",
+    "itemList": [
+      {
+        "itemSeq": 1,
+        "itemCd": "{{itemCd}}",
+        "itemClsCd": "{{itemClsCd}}",
+        "itemNm": "Test",
+        "pkgUnitCd": "CT",
+        "pkg": 1,
+        "qtyUnitCd": "U",
+        "qty": 1,
+        "prc": 1000,
+        "splyAmt": 1000,
+        "totDcAmt": 0,
+        "taxblAmt": 1000,
+        "taxTyCd": "B",
+        "taxAmt": 0,
+        "totAmt": 1000
+      }
+    ]
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

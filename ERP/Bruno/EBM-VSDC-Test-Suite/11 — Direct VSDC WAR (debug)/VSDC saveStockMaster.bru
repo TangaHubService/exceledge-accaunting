@@ -1,0 +1,37 @@
+meta {
+  name: VSDC saveStockMaster
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{vsdcBaseUrl}}/stockMaster/saveStockMaster
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "itemCd": "{{itemCd}}",
+    "rsdQty": 10,
+    "regrId": "Admin",
+    "regrNm": "Admin",
+    "modrId": "Admin",
+    "modrNm": "Admin"
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

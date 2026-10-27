@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const organizationAccess_middleware_1 = require("../middleware/organizationAccess.middleware");
+const device_controller_1 = require("../controllers/device.controller");
+const router = (0, express_1.Router)();
+const orgAccess = (0, organizationAccess_middleware_1.requireOrganizationAccess)();
+router.use(auth_middleware_1.authenticate);
+router.post('/:organizationId', orgAccess, device_controller_1.registerDeviceController);
+router.get('/:organizationId', orgAccess, (0, auth_middleware_1.authorize)('ADMIN', 'BRANCH_MANAGER'), device_controller_1.listDevicesController);
+router.put('/:organizationId/:id/deactivate', orgAccess, (0, auth_middleware_1.authorize)('ADMIN', 'BRANCH_MANAGER'), device_controller_1.deactivateDeviceController);
+exports.default = router;

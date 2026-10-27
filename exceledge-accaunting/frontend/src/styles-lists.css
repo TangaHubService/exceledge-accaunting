@@ -764,7 +764,7 @@
 }
 
 /* Modal Dialog for Select Transaction Type */
-.ee-modal-backdrop {
+.ee-select-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
@@ -776,7 +776,7 @@
   animation: eeFadeIn 0.2s ease-out;
 }
 
-.ee-modal-card {
+.ee-select-modal-card {
   width: 440px;
   max-width: 90vw;
   background: #ffffff;

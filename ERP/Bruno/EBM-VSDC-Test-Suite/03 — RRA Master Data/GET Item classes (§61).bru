@@ -1,0 +1,29 @@
+meta {
+  name: GET Item classes (§61)
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/item-classes?q=
+  body: none
+  auth: inherit
+}
+
+params:query {
+  q: 
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

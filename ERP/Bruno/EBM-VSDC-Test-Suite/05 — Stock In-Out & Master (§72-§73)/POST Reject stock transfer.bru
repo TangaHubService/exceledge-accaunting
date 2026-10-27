@@ -1,0 +1,31 @@
+meta {
+  name: POST Reject stock transfer
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/api/stock-transfers/{{organizationId}}/{{transferId}}/reject
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "reason": "Postman reject"
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

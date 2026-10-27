@@ -1,0 +1,29 @@
+meta {
+  name: Switch Organization
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/auth/switch-organization
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "organizationId": "{{organizationId}}"
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Switch to a different organization (for users in multiple organizations)
+}

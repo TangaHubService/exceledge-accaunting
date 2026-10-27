@@ -1,0 +1,23 @@
+meta {
+  name: Delete Product
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/inventory/:id
+  body: none
+  auth: inherit
+}
+
+params:path {
+  id: product-id
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Delete product from inventory
+}

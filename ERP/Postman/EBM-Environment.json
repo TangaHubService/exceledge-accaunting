@@ -1,0 +1,187 @@
+{
+  "id": "excledge-ebm-env",
+  "name": "Excledge EBM/VSDC Environment",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4500",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "vsdcBaseUrl",
+      "value": "http://localhost:8085",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "loginEmail",
+      "value": "enockiradukunda4@gmail.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "loginPassword",
+      "value": "Kigali@123",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "jwtToken",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "organizationId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "branchId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "toBranchId",
+      "value": "2",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "productId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "componentProductId",
+      "value": "2",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "componentId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "customerId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "customerTin",
+      "value": "999999992",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "purchaseId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "importId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "saleId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "outboxId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ledgerId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "transferId",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "noticeNo",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "itemCd",
+      "value": "RW2CTU0000001",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "itemClsCd",
+      "value": "5059690800",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ebmTin",
+      "value": "999945560",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ebmBhfId",
+      "value": "00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ebmDvcSrlNo",
+      "value": "excelwartest",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ebmSdcId",
+      "value": "SDC012000250",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "ebmMrcNo",
+      "value": "excelwartest",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "orgName",
+      "value": "Preview Pharmacy",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "orgAddress",
+      "value": "Test Address, Kigali",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

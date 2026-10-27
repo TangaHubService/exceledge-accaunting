@@ -1,0 +1,41 @@
+meta {
+  name: POST Ledger Stock IN (PURCHASE → sarTyCd 02)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/inventory/{{organizationId}}/ledger/in
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "productId": "{{productId}}",
+    "quantity": 5,
+    "movementType": "PURCHASE",
+    "branchId": "{{branchId}}",
+    "unitCost": 1000,
+    "reference": "PO-EBM-TEST",
+    "referenceType": "PURCHASE_ORDER",
+    "note": "Postman stock-in"
+  }
+}
+
+script:post-response {
+  test('created', () => expect(res.getStatus()).to.be.oneOf([200,201]));
+  const j = res.getBody();
+  const id = j?.ledgerEntry?.id || j?.data?.ledgerEntry?.id;
+  if (id) bru.setEnvVar('ledgerId', String(id));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

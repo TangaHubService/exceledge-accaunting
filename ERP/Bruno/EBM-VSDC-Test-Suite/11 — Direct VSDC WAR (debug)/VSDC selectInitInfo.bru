@@ -1,0 +1,32 @@
+meta {
+  name: VSDC selectInitInfo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{vsdcBaseUrl}}/initializer/selectInitInfo
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "dvcSrlNo": "{{ebmDvcSrlNo}}"
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

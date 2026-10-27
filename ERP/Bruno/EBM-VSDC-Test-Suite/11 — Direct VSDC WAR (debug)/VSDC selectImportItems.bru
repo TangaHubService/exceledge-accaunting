@@ -1,0 +1,35 @@
+meta {
+  name: VSDC selectImportItems
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{vsdcBaseUrl}}/imports/selectImportItems
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "lastReqDt": "20200101000000"
+  }
+}
+
+script:post-response {
+  test('response', () => expect(res.getStatus()).to.be.below(600));
+  const j = res.getBody();
+  const list = j?.data?.itemList || [];
+  if (list[0]) console.log('supplier', list[0].spplrNm, 'item', list[0].itemNm);
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

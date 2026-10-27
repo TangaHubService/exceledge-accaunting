@@ -1,0 +1,189 @@
+Columns in sales table: [
+  {
+    "column_name": "original_sale_id",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "isProforma",
+    "data_type": "boolean"
+  },
+  {
+    "column_name": "reprintCount",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "insuranceAmount",
+    "data_type": "numeric"
+  },
+  {
+    "column_name": "debtAmount",
+    "data_type": "numeric"
+  },
+  {
+    "column_name": "totalAmount",
+    "data_type": "numeric"
+  },
+  {
+    "column_name": "status",
+    "data_type": "USER-DEFINED"
+  },
+  {
+    "column_name": "refunded_at",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "paymentType",
+    "data_type": "USER-DEFINED"
+  },
+  {
+    "column_name": "cancelled_at",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "cashAmount",
+    "data_type": "numeric"
+  },
+  {
+    "column_name": "createdAt",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "updatedAt",
+    "data_type": "timestamp without time zone"
+  },
+  {
+    "column_name": "id",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "customerId",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "userId",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "organizationId",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "refunded_by",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "cancelled_by",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "invoice_number",
+    "data_type": "text"
+  },
+  {
+    "column_name": "refund_reason",
+    "data_type": "text"
+  },
+  {
+    "column_name": "cancellation_reason",
+    "data_type": "text"
+  },
+  {
+    "column_name": "saleNumber",
+    "data_type": "text"
+  }
+]
+Tables in database: [
+  {
+    "table_name": "ebm_queue"
+  },
+  {
+    "table_name": "expenses"
+  },
+  {
+    "table_name": "supplier_payments"
+  },
+  {
+    "table_name": "cash_balances"
+  },
+  {
+    "table_name": "_prisma_migrations"
+  },
+  {
+    "table_name": "ebm_transactions"
+  },
+  {
+    "table_name": "_CreatedOrders"
+  },
+  {
+    "table_name": "activity_logs"
+  },
+  {
+    "table_name": "customers"
+  },
+  {
+    "table_name": "debt_payments"
+  },
+  {
+    "table_name": "features"
+  },
+  {
+    "table_name": "notifications"
+  },
+  {
+    "table_name": "organization_invitations"
+  },
+  {
+    "table_name": "organizations"
+  },
+  {
+    "table_name": "payments"
+  },
+  {
+    "table_name": "products"
+  },
+  {
+    "table_name": "plan_features"
+  },
+  {
+    "table_name": "purchase_order_items"
+  },
+  {
+    "table_name": "purchase_orders"
+  },
+  {
+    "table_name": "sale_items"
+  },
+  {
+    "table_name": "sales"
+  },
+  {
+    "table_name": "stock_movements"
+  },
+  {
+    "table_name": "subscription_plans"
+  },
+  {
+    "table_name": "subscriptions"
+  },
+  {
+    "table_name": "suppliers"
+  },
+  {
+    "table_name": "user_organizations"
+  },
+  {
+    "table_name": "users"
+  },
+  {
+    "table_name": "warehouses"
+  },
+  {
+    "table_name": "inventory_ledger"
+  },
+  {
+    "table_name": "batches"
+  },
+  {
+    "table_name": "cost_price_history"
+  }
+]

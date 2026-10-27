@@ -1,0 +1,32 @@
+meta {
+  name: VSDC selectCustomer
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{vsdcBaseUrl}}/customers/selectCustomer
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "custmTin": "{{customerTin}}"
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

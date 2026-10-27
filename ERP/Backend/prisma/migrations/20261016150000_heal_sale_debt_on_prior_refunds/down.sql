@@ -1,0 +1,1 @@
+-- Irreversible data heal; no-op on rollback.

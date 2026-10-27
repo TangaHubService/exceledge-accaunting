@@ -1,0 +1,31 @@
+meta {
+  name: Update Organization
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/organizations/{{organizationId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Updated Organization Name",
+    "address": "456 New St, City",
+    "phone": "+0987654321"
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Update organization details (Admin only)
+}

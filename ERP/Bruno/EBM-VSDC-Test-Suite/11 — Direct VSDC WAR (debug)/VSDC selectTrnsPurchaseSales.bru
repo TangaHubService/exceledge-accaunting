@@ -1,0 +1,32 @@
+meta {
+  name: VSDC selectTrnsPurchaseSales
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{vsdcBaseUrl}}/trnsPurchase/selectTrnsPurchaseSales
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tin": "{{ebmTin}}",
+    "bhfId": "{{ebmBhfId}}",
+    "lastReqDt": "20200101000000"
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

@@ -260,13 +260,13 @@ export const SETTINGS_MEGA_MENU: SettingsMenuColumn[] = [
     items: [
       { label: "Manage workflows", to: "/workflows" },
       { label: "Reclassify transactions", to: "/banking/transactions" },
-      { label: "Import data", to: "/journal-import" },
-      { label: "Export data", to: "/reports/statements" },
+      { label: "Import data", to: "/import-data" },
+      { label: "Export data", to: "/export-data" },
       { label: "Reconcile", to: "/banking/reconciliation" },
       { label: "Budgeting", to: "/budgets" },
       { label: "Audit log", to: "/audit" },
-      { label: "Back up company", to: "/settings/advanced" },
-      { label: "Share screen" },
+      { label: "Back up company", to: "/backup-restore" },
+      { label: "Share screen", to: "share-screen" },
     ],
   },
   {

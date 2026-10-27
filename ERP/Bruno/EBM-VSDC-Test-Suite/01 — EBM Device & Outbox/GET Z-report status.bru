@@ -1,0 +1,29 @@
+meta {
+  name: GET Z-report status
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/z-report?branchId={{branchId}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  branchId: {{branchId}}
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

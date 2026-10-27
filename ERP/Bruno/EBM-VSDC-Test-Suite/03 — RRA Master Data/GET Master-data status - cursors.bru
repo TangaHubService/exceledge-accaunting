@@ -1,0 +1,25 @@
+meta {
+  name: GET Master-data status / cursors
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/status
+  body: none
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

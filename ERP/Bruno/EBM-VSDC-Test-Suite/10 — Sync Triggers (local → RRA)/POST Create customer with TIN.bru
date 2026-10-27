@@ -1,0 +1,36 @@
+meta {
+  name: POST Create customer with TIN
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/customers/{{organizationId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "name": "EBM B2B Customer",
+    "TIN": "{{customerTin}}",
+    "phone": "0780000000"
+  }
+}
+
+script:post-response {
+  test('created-ish', () => expect(res.getStatus()).to.be.below(500));
+  const j = res.getBody();
+  const id = j?.data?.id || j?.customer?.id || j?.id;
+  if (id) bru.setEnvVar('customerId', String(id));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

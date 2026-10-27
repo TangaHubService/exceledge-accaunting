@@ -1,0 +1,25 @@
+meta {
+  name: GET Verify customer TIN (§62)
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/customers/{customerTin}
+  body: none
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

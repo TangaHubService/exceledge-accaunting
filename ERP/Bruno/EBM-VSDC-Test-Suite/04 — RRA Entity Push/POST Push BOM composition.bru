@@ -1,0 +1,29 @@
+meta {
+  name: POST Push BOM composition
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/organizations/{{organizationId}}/rra/items/{productId}/composition/{componentId}/sync
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {}
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

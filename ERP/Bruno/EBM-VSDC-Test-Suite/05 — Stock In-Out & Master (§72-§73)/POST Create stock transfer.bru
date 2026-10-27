@@ -1,0 +1,42 @@
+meta {
+  name: POST Create stock transfer
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/stock-transfers/{{organizationId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "fromBranchId": "{{branchId}}",
+    "toBranchId": "{{toBranchId}}",
+    "items": [
+      {
+        "productId": "{{productId}}",
+        "quantity": 1
+      }
+    ],
+    "note": "Postman transfer"
+  }
+}
+
+script:post-response {
+  test('created-ish', () => expect(res.getStatus()).to.be.below(500));
+  const j = res.getBody();
+  const id = j?.data?.id || j?.id || j?.transfer?.id;
+  if (id) bru.setEnvVar('transferId', String(id));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

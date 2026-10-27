@@ -1,0 +1,32 @@
+meta {
+  name: PUT Update product (re-queues item sync)
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/inventory/{{organizationId}}/product/{{productId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{jwtToken}}
+}
+
+body:json {
+  {
+    "name": "EBM Test Product Updated",
+    "unitPrice": 1200
+  }
+}
+
+script:post-response {
+  test('2xx/expected', () => expect(res.getStatus()).to.be.below(600));
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

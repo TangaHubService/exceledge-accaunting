@@ -54,6 +54,7 @@ import { InboxDrawer } from "./ribbon/InboxDrawer";
 import { IntegrationsModal } from "./ribbon/IntegrationsModal";
 import { NotificationsPopover } from "./ribbon/NotificationsPopover";
 import { SettingsMegaMenu } from "./ribbon/SettingsMegaMenu";
+import { ScreenShareModal } from "./ribbon/ScreenShareModal";
 import { TasksDrawer } from "./ribbon/TasksDrawer";
 import { UserProfileMenu } from "./ribbon/UserProfileMenu";
 import { SearchWorkspace } from "./SearchWorkspace";
@@ -140,6 +141,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [customiseTab, setCustomiseTab] = useState<"navigation" | "bookmarks">("navigation");
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [screenShareOpen, setScreenShareOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<Array<{ label: string; to: string }>>([]);
   const [pinnedKeys, setPinnedKeys] = useState<string[]>(() => [...DEFAULT_PINNED_KEYS]);
   const [showNavLabels, setShowNavLabels] = useState(true);
@@ -758,10 +760,11 @@ export function Shell({ children }: { children: ReactNode }) {
       <InboxDrawer open={overlay === "inbox"} onClose={closeOverlay} />
       <IntegrationsModal open={overlay === "integrations"} onClose={closeOverlay} />
       <NotificationsPopover open={overlay === "notifications"} onClose={closeOverlay} anchorRef={notifBtnRef} />
-      <SettingsMegaMenu open={overlay === "settings"} onClose={closeOverlay} anchorRef={settingsBtnRef} />
+      <SettingsMegaMenu open={overlay === "settings"} onClose={closeOverlay} anchorRef={settingsBtnRef} onShareScreen={() => { closeOverlay(); setScreenShareOpen(true); }} />
       <UserProfileMenu open={overlay === "profile"} onClose={closeOverlay} anchorRef={profileBtnRef} />
 
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ScreenShareModal open={screenShareOpen} onClose={() => setScreenShareOpen(false)} />
     </div>
   );
 }
