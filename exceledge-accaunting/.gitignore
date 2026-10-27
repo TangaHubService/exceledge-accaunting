@@ -24,3 +24,5 @@ backend/dist
 frontend/dist
 backend/packages/domain/dist
 frontend/packages/domain/dist
+frontend/.vite/
+.vite/
