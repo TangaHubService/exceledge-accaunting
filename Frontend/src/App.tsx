@@ -1,205 +1,292 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Suspense } from "react";
-import { DashboardLayout } from "./layouts/DashboardLayout";
-import { Loading } from "./components/Loading";
-import { Dashboard } from "./pages/Dashboard";
-import Login from "./pages/auth/login";
-import AccountingHandoff from "./pages/auth/AccountingHandoff";
-import Signup from "./pages/auth/SignUp";
-import CreateOrganization from "./pages/CreateOrganization";
-import { InventoryManagement } from "./pages/dashboard/InventoryManagement";
-import { ProductionPage } from "./pages/dashboard/inventory/ProductionPage";
-import { ThemeProvider } from "./context/ThemeContext";
-import { TooltipProvider } from "./components/ui/tooltip";
-import { OrganizationProvider } from "./context/OrganizationContext";
-import { OrganizationSettingsProvider } from "./context/OrganizationSettingsContext";
-import { BranchProvider } from "./context/BranchContext";
-import { AuthProvider, useAuth } from "./context/AuthContext";
-import SelectOrganization from "./pages/auth/SelectOrganization";
-import { ToastProvider, ToastViewport } from "./components/ui/toast";
-import LowStock from "./pages/dashboard/inventory/LowStock";
-import ExpiringProducts from "./pages/dashboard/inventory/ExpiringProducts";
-import ExpiredProduct from "./pages/dashboard/inventory/ExpiredProduct";
-import { SalesReport } from "./pages/dashboard/reports/sells";
-import { InventoryReport } from "./pages/dashboard/reports/Inventory";
-import { PaidDebtReport } from "./pages/dashboard/reports/PaidDebtReport";
-import { CashFlowReport } from "./pages/dashboard/reports/CashFlowReport";
-import { StockReports } from "./pages/dashboard/reports/StockReports";
-import { OrganizationConfig } from "./pages/dashboard/organization/OrganizationConfig";
-import { CustomerManagement } from "./pages/dashboard/CustomerManagement";
-import { UserManagement } from "./pages/dashboard/users/UserManagement";
-import LedgerHistoryPage from "./pages/dashboard/inventory/LedgerHistoryPage";
-import InventorySummaryDashboard from "./pages/dashboard/inventory/InventorySummaryDashboard";
-import StockTransfersPage from "./pages/dashboard/inventory/StockTransfersPage";
-import WarehouseManagement from "./pages/dashboard/inventory/WarehouseManagement";
+import type { AccountingCapability } from "@exceledge/accounting-domain-web";
+import { type ReactNode, useCallback, useState } from "react";
+import { FeedbackProvider } from "./components/feedback";
+import { Shell } from "./components/Shell";
+import { erpLinks } from "./lib/config";
+import { EmptyState } from "./components/ui";
+import { CompanyProvider } from "./lib/company";
+import { Link, match, Redirect, useLocation } from "./lib/router";
+import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
+import { Accounts } from "./pages/Accounts";
+import { AgeingReportPage } from "./pages/Ageing";
+import { Approvals } from "./pages/Approvals";
+import { Assurance } from "./pages/Assurance";
+import { AuditLog } from "./pages/AuditLog";
+import { BankAccount } from "./pages/BankAccount";
+import { Banking } from "./pages/Banking";
+import { BankReconciliationDetail, BankReconciliations } from "./pages/BankReconciliations";
+import { BankTransactions } from "./pages/BankTransactions";
+import { Bills } from "./pages/Bills";
+import { Controls, Currencies, PeriodClose, Platform, Statements } from "./pages/Books";
+import { Budgets } from "./pages/Budgets";
+import { CashPosition } from "./pages/CashPosition";
+import { CustomerDetail } from "./pages/CustomerDetail";
+import { Customers } from "./pages/Customers";
+import { Employees } from "./pages/Employees";
+import { Dimensions } from "./pages/Dimensions";
+import { Lists } from "./pages/Lists";
+import { CustomFields } from "./pages/CustomFields";
+import { BankingRules } from "./pages/BankingRules";
+import { ProductsServices } from "./pages/ProductsServices";
+import { RecurringTxnTypes } from "./pages/RecurringTxnTypes";
+import { AttachmentsWorkspace } from "./pages/AttachmentsWorkspace";
+import { SelectForms } from "./pages/SelectForms";
+import { SingleTimeActivity } from "./components/team/SingleTimeActivity";
+import { WeeklyTimesheet } from "./components/team/WeeklyTimesheet";
+import { Exceptions } from "./pages/Exceptions";
+import { ExpenseCategories } from "./pages/ExpenseCategories";
+import { Expenses } from "./pages/Expenses";
+import { ExpensesList } from "./pages/ExpensesList";
+import { ExpensesRecurring } from "./pages/ExpensesRecurring";
+import { ExpensesReport } from "./pages/ExpensesReport";
+import { FaAssetDetail } from "./pages/FaAssetDetail";
+import { FaCategories } from "./pages/FaCategories";
+import { FaDepreciation } from "./pages/FaDepreciation";
+import { FaRegister } from "./pages/FaRegister";
+import { FixedAssets } from "./pages/FixedAssets";
+import { Inventory } from "./pages/Inventory";
+import { InventoryMovements } from "./pages/InventoryMovements";
+import { InventoryReconciliation } from "./pages/InventoryReconciliation";
+import { CostOfSalesReport, InventoryValuationReport, SlowMovingReport } from "./pages/InventoryReports";
+import { ImportSuppliers } from "./pages/ImportSuppliers";
+import { Invoices } from "./pages/Invoices";
+import { JournalNew } from "./pages/JournalNew";
+import { Journals } from "./pages/Journals";
+import { JournalImport, RecurringJournals } from "./pages/JournalTools";
+import { Ledger } from "./pages/Ledger";
+import { Notifications } from "./pages/Notifications";
+import { Overview } from "./pages/Overview";
+import { PurchasesBySupplierReport } from "./pages/PurchasesBySupplier";
+import { Branches } from "./pages/Branches";
+import { Setup } from "./pages/Setup";
+import { SupplierDetail } from "./pages/SupplierDetail";
+import { SupplierPayments } from "./pages/SupplierPayments";
+import { Suppliers } from "./pages/Suppliers";
+import { Tax } from "./pages/Tax";
+import { TaxFilings } from "./pages/TaxFilings";
+import { TaxFiscal } from "./pages/TaxFiscal";
+import { TaxLedgerPage } from "./pages/TaxLedger";
+import { TaxPayments } from "./pages/TaxPayments";
+import { TaxReconciliationPage } from "./pages/TaxReconciliation";
+import { TaxSettingsPage } from "./pages/TaxSettings";
+import { TaxVat } from "./pages/TaxVat";
+import { TrialBalance } from "./pages/TrialBalance";
+import { WithholdingTaxReport } from "./pages/WithholdingTax";
+import { Workflows } from "./pages/Workflows";
+import { ImportData } from "./pages/ImportData";
+import { ExportData } from "./pages/ExportData";
+import { BackupRestore } from "./pages/BackupRestore";
+import { SignIn } from "./SignIn";
+import { AddUser } from "./pages/AddUser";
+import { CustomFormStyles } from "./pages/CustomFormStyles";
+import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
+import { InviteFirm } from "./pages/InviteFirm";
+import { ManageUsers } from "./pages/ManageUsers";
+import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
+import { CompanySettings } from "./pages/settings/CompanySettings";
+import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
+import { InboxSettings } from "./pages/settings/InboxSettings";
+import { ReportsSettings } from "./pages/settings/ReportsSettings";
+import { SalesSettings } from "./pages/settings/SalesSettings";
+import { TimeSettings } from "./pages/settings/TimeSettings";
+import { UsageSettings } from "./pages/settings/UsageSettings";
+import { WalletSettings } from "./pages/settings/WalletSettings";
 
-import { AcceptInvitationPage } from "./pages/auth/AcceptInvitation";
-import { SuppliersPage } from "./pages/dashboard/suppliers/SuppliersPage";
-import { RraPurchasesPage } from "./pages/dashboard/purchases/RraPurchasesPage";
-import { ChangePasswordPage } from "./pages/auth/ChangePassword";
-import LandingPage from "./pages/LandingPage";
-import SalesPage from "./pages/dashboard/sales/sales";
-import ShiftSummaryPage from "./pages/dashboard/shifts/ShiftSummaryPage";
-import { SubscriptionProvider } from "./context/SubscriptionContext";
-import SubscriptionPage from "./pages/SubscriptionPage";
-import SubscriptionSuccess from "./pages/PaymentCompleted";
+type Route = { pattern: string; needs: AccountingCapability; render: (params: Record<string, string>) => ReactNode };
 
-import ActivityLogs from "./pages/dashboard/ActivityLogs";
-import { Profile } from "./pages/dashboard/Profile";
-import { SystemOwnerDashboard } from "./pages/SystemOwner";
-import VerificationPage from "./pages/auth/VerificationPage";
-import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
-import SalesForm from "./pages/dashboard/sales/pos";
-import { EbmOutboxDashboard } from "./pages/dashboard/ebm/EbmOutboxDashboard";
-import { FiscalReportsPage } from "./pages/dashboard/ebm/FiscalReportsPage";
-import InvoicePage from "./pages/dashboard/invoice/InvoicePage";
-import InvoicesListPage from "./pages/dashboard/invoice/InvoicesListPage";
-import DebtManagement from "./pages/dashboard/dept";
-import SubscriptionManagementPage from "./pages/billing/SubscriptionManagementPage";
-import BillingHistoryPage from "./pages/billing/BillingHistoryPage";
-import OrganizationsPage from "./pages/dashboard/organizations/OrganizationsPage";
-import { PesapalCallback } from "./pages/PesapalCallback";
-import ExpensesPage from "./pages/dashboard/expenses/ExpensesPage";
-import PayrollPage from "./pages/dashboard/payroll/PayrollPage";
-import { SupplierInvoicesPage } from "./pages/dashboard/inventory/SupplierInvoicesPage";
-import { ScanInvoicePage } from "./pages/dashboard/inventory/ScanInvoicePage";
+const ROUTES: Route[] = [
+  { pattern: "/", needs: "setup:view", render: () => <Overview /> },
+  { pattern: "/workflows", needs: "setup:view", render: () => <Workflows /> },
+  { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
+  { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
+  { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
+  { pattern: "/settings/sales", needs: "setup:view", render: () => <SalesSettings /> },
+  { pattern: "/settings/expenses", needs: "setup:view", render: () => <ExpensesSettings /> },
+  { pattern: "/settings/time", needs: "setup:view", render: () => <TimeSettings /> },
+  { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
+  { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
+  { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
+  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <CustomFields /> },
+  { pattern: "/settings/forms", needs: "setup:view", render: () => <SelectForms /> },
+  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <EditInvoiceStyle /> },
+  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <CustomFormStyles /> },
+  { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
+  { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
+  { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
+  { pattern: "/users/accounting-firms", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users/roles", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
+  { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
+  { pattern: "/employees", needs: "setup:view", render: () => <Employees /> },
+  { pattern: "/time/single", needs: "setup:view", render: () => <SingleTimeActivity /> },
+  { pattern: "/time/weekly", needs: "setup:view", render: () => <WeeklyTimesheet /> },
+  { pattern: "/invoices", needs: "ar:view", render: () => <Invoices /> },
+  { pattern: "/suppliers/import", needs: "ap:manage", render: () => <ImportSuppliers /> },
+  { pattern: "/suppliers", needs: "ap:view", render: () => <Suppliers /> },
+  { pattern: "/suppliers/:id", needs: "ap:view", render: (p) => <SupplierDetail id={p.id} /> },
+  { pattern: "/bills", needs: "ap:view", render: () => <Bills /> },
+  { pattern: "/supplier-payments", needs: "ap:view", render: () => <SupplierPayments /> },
+  { pattern: "/inventory", needs: "inventory:view", render: () => <Inventory /> },
+  { pattern: "/inventory/movements", needs: "inventory:view", render: () => <InventoryMovements /> },
+  { pattern: "/inventory/reconciliation", needs: "inventory:view", render: () => <InventoryReconciliation /> },
+  { pattern: "/lists", needs: "inventory:view", render: () => <Lists /> },
+  { pattern: "/products-services", needs: "inventory:view", render: () => <ProductsServices /> },
+  { pattern: "/banking", needs: "bank:view", render: () => <Banking /> },
+  { pattern: "/banking/accounts/:id", needs: "bank:view", render: (p) => <BankAccount key={p.id} id={p.id} /> },
+  { pattern: "/banking/transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/integration-transactions", needs: "bank:view", render: () => <BankTransactions /> },
+  { pattern: "/banking/rules", needs: "bank:view", render: () => <BankingRules /> },
+  { pattern: "/banking/recurring-transaction-types", needs: "bank:view", render: () => <RecurringTxnTypes /> },
+  { pattern: "/attachments", needs: "bank:view", render: () => <AttachmentsWorkspace /> },
+  { pattern: "/banking/reconciliation", needs: "bank:view", render: () => <BankReconciliations /> },
+  { pattern: "/banking/reconciliation/:id", needs: "bank:view", render: (p) => <BankReconciliationDetail key={p.id} id={p.id} /> },
+  { pattern: "/tax", needs: "tax:view", render: () => <Tax /> },
+  { pattern: "/tax/vat", needs: "tax:view", render: () => <TaxVat /> },
+  { pattern: "/tax/ledger", needs: "tax:view", render: () => <TaxLedgerPage /> },
+  { pattern: "/tax/payments", needs: "tax:view", render: () => <TaxPayments /> },
+  { pattern: "/tax/filings", needs: "tax:view", render: () => <TaxFilings /> },
+  { pattern: "/tax/settings", needs: "tax:view", render: () => <TaxSettingsPage /> },
+  { pattern: "/tax/reconciliation", needs: "tax:view", render: () => <TaxReconciliationPage /> },
+  { pattern: "/tax/fiscal", needs: "tax:view", render: () => <TaxFiscal /> },
+  { pattern: "/expenses", needs: "expense:view", render: () => <Expenses /> },
+  { pattern: "/expenses/list", needs: "expense:view", render: () => <ExpensesList /> },
+  { pattern: "/expenses/recurring", needs: "expense:view", render: () => <ExpensesRecurring /> },
+  { pattern: "/expenses/categories", needs: "expense:view", render: () => <ExpenseCategories /> },
+  { pattern: "/expenses/report", needs: "expense:view", render: () => <ExpensesReport /> },
+  { pattern: "/fixed-assets", needs: "fa:view", render: () => <FixedAssets /> },
+  { pattern: "/fixed-assets/register", needs: "fa:view", render: () => <FaRegister /> },
+  { pattern: "/fixed-assets/depreciation", needs: "fa:view", render: () => <FaDepreciation /> },
+  { pattern: "/fixed-assets/categories", needs: "fa:view", render: () => <FaCategories /> },
+  { pattern: "/fixed-assets/assets/:id", needs: "fa:view", render: (p) => <FaAssetDetail key={p.id} id={p.id} /> },
+  { pattern: "/journals", needs: "journal:view", render: () => <Journals /> },
+  { pattern: "/journals/new", needs: "journal:create", render: () => <JournalNew /> },
+  { pattern: "/journals/:id/edit", needs: "journal:create", render: (p) => <JournalNew key={p.id} id={p.id} /> },
+  { pattern: "/accounting/revenue-recognition", needs: "journal:view", render: () => <Journals /> },
+  { pattern: "/approvals", needs: "journal:view", render: () => <Approvals /> },
+  { pattern: "/notifications", needs: "setup:view", render: () => <Notifications /> },
+  { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
+  { pattern: "/accounting/chart-of-accounts", needs: "coa:view", render: () => <Accounts /> },
+  { pattern: "/accounts", needs: "coa:view", render: () => <Redirect to="/accounting/chart-of-accounts" /> },
+  { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringTxnTypes /> },
+  { pattern: "/recurring-journals", needs: "journal:view", render: () => <Redirect to="/accounting/recurring-transactions" /> },
+  { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
+  { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
+  { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
+  { pattern: "/reports/trial-balance", needs: "report:view", render: () => <TrialBalance /> },
+  { pattern: "/dimensions", needs: "report:view", render: () => <Dimensions /> },
+  { pattern: "/reports/statements", needs: "report:view", render: () => <Statements /> },
+  { pattern: "/close", needs: "close:view", render: () => <PeriodClose /> },
+  { pattern: "/budgets", needs: "budget:view", render: () => <Budgets /> },
+  { pattern: "/currencies", needs: "report:view", render: () => <Currencies /> },
+  { pattern: "/controls", needs: "control:view", render: () => <Controls /> },
+  { pattern: "/platform", needs: "platform:view", render: () => <Platform /> },
+  { pattern: "/assurance", needs: "platform:view", render: () => <Assurance /> },
+  { pattern: "/reports/ageing", needs: "ar:view", render: () => <AgeingReportPage kind="ar" /> },
+  { pattern: "/reports/payables-ageing", needs: "ap:view", render: () => <AgeingReportPage kind="ap" /> },
+  { pattern: "/reports/withholding-tax", needs: "ap:view", render: () => <WithholdingTaxReport /> },
+  { pattern: "/reports/purchases-by-supplier", needs: "ap:view", render: () => <PurchasesBySupplierReport /> },
+  { pattern: "/reports/inventory-valuation", needs: "inventory:view", render: () => <InventoryValuationReport /> },
+  { pattern: "/reports/cost-of-sales", needs: "inventory:view", render: () => <CostOfSalesReport /> },
+  { pattern: "/reports/slow-moving", needs: "inventory:view", render: () => <SlowMovingReport /> },
+  { pattern: "/reports/cash-position", needs: "bank:view", render: () => <CashPosition /> },
+  { pattern: "/setup", needs: "setup:view", render: () => <Setup /> },
+  { pattern: "/branches", needs: "setup:view", render: () => <Branches /> },
+  { pattern: "/exceptions", needs: "exceptions:view", render: () => <Exceptions /> },
+  { pattern: "/audit", needs: "audit:view", render: () => <AuditLog /> },
+  { pattern: "/import-data", needs: "setup:view", render: () => <ImportData /> },
+  { pattern: "/export-data", needs: "setup:view", render: () => <ExportData /> },
+  { pattern: "/backup-restore", needs: "setup:view", render: () => <BackupRestore /> },
+];
 
-// Protected Route for System Owners
-const ProtectedSystemOwnerRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isSystemOwner, isAuthenticated } = useAuth();
+export function App() {
+  const [token, setToken] = useState(readInitialToken);
+  const [notice, setNotice] = useState("");
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  const signOut = useCallback((reason?: "expired") => {
+    clearToken();
+    setToken("");
+    setNotice(reason === "expired" ? "Your session ended. Sign in again to continue." : "");
+  }, []);
+
+  function signIn(next: string, remember = true, refreshToken?: string) {
+    storeToken(next, remember, refreshToken);
+    setNotice("");
+    setToken(next);
   }
 
-  if (!isSystemOwner()) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  if (!token) return <SignIn onSignedIn={signIn} notice={notice} />;
 
-  return <>{children}</>;
-};
-
-
-function App() {
   return (
-    <TooltipProvider>
-    <ThemeProvider>
-      <AuthProvider>
-        <OrganizationProvider>
-          <OrganizationSettingsProvider>
-          <BranchProvider>
-            <SubscriptionProvider>
-              <BrowserRouter>
-                <Suspense fallback={<Loading />}>
-                  <Routes>
-                    {/* Public / Unprotected routes — the landing page is always shown at
-                        "/" for both signed-in and signed-out visitors, no auth redirect. */}
-                    <Route path="/" element={<LandingPage />} />
-                    <Route path="/landing" element={<LandingPage />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/accounting-handoff" element={<AccountingHandoff />} />
-                    <Route path="/signup" element={<Signup />} />
-                    <Route path="/verify" element={<VerificationPage />} />
-                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                    <Route path="/reset-password" element={<ResetPasswordPage />} />
-                    <Route path="/change-password" element={<ChangePasswordPage />} />
-                    <Route
-                      path="/create-organization"
-                      element={<CreateOrganization />}
-                    />
-                    <Route
-                      path="/select-organization"
-                      element={<SelectOrganization />}
-                    />
-                    <Route path="/subscription" element={<SubscriptionPage />} />
-                    <Route path="/accept-invite" element={<AcceptInvitationPage />} />
-                    <Route path="/subscription/success" element={<SubscriptionSuccess />} />
-                    <Route path="/subscription/callback" element={<PesapalCallback />} />
-
-                    {/* Redirect old system owner routes to new dashboard routes */}
-                    <Route path="/my-system" element={<Navigate to="/dashboard/system-owner" replace />} />
-                    <Route path="/my-system/overview" element={<Navigate to="/dashboard/system-owner/overview" replace />} />
-                    <Route path="/my-system/organizations" element={<Navigate to="/dashboard/system-owner/subscriptions" replace />} />
-                    <Route path="/my-system/subscriptions" element={<Navigate to="/dashboard/system-owner/subscriptions" replace />} />
-                    <Route path="/my-system/payments" element={<Navigate to="/dashboard/system-owner/payments" replace />} />
-                    <Route path="/my-system/analytics" element={<Navigate to="/dashboard/system-owner/analytics" replace />} />
-
-                    {/* Protected / Dashboard routes */}
-                    <Route path="dashboard" element={<DashboardLayout />}>
-                      <Route index element={<Dashboard />} />
-                      <Route path="customers" element={<CustomerManagement />} />
-                      <Route path="inventory-all" element={<InventoryManagement />} />
-                      <Route path="low-stock" element={<LowStock />} />
-                      <Route path="expiring-products" element={<ExpiringProducts />} />
-                      <Route path="expired" element={<ExpiredProduct />} />
-                      <Route path="sales-reports" element={<SalesReport />} />
-                      <Route path="inventory-reports" element={<InventoryReport />} />
-                      <Route path="debt-payments-report" element={<PaidDebtReport />} />
-                      <Route path="cash-flow-report" element={<CashFlowReport />} />
-                      <Route path="stock-reports" element={<StockReports />} />
-                      <Route path="purchases-report" element={<Navigate to="/dashboard/fiscal-reports?tab=detail" replace />} />
-                      <Route path="ledger-history" element={<LedgerHistoryPage />} />
-                      <Route path="inventory-summary" element={<InventorySummaryDashboard />} />
-                      <Route path="stock-transfers" element={<StockTransfersPage />} />
-                      <Route path="warehouses" element={<WarehouseManagement />} />
-                      <Route path="sales" element={<SalesPage />} />
-                      <Route path="sales/:id" element={<Navigate to="/dashboard/sales" replace />} />
-                      <Route path="invoices" element={<InvoicesListPage />} />
-                      <Route path="shifts" element={<ShiftSummaryPage />} />
-                      <Route path="open-shift" element={<Navigate to="shifts" replace />} />
-                      <Route path="organization-config" element={<OrganizationConfig />} />
-
-                      {/* Redirect legacy routes */}
-                      <Route path="branches" element={<Navigate to="../organization-config" replace />} />
-                      <Route path="settings" element={<Navigate to="../organization-config" replace />} />
-                      <Route path="pos" element={<SalesForm />} />
-                      <Route path="invoice/:id" element={<InvoicePage />} />
-                      <Route path="users" element={<UserManagement />} />
-                      <Route path="activity-logs" element={<ActivityLogs />} />
-                      <Route path="ebm-outbox" element={<EbmOutboxDashboard />} />
-                      <Route path="fiscal-reports" element={<FiscalReportsPage />} />
-                      <Route path="profile" element={<Profile />} />
-                      <Route path="suppliers" element={<SuppliersPage />} />
-                      <Route path="purchases" element={<RraPurchasesPage />} />
-                      <Route path="import-declarations" element={<Navigate to="/dashboard/fiscal-reports?tab=imports" replace />} />
-                      <Route path="orders" element={<Navigate to="/dashboard/purchases" replace />} />
-                      <Route path="orders/*" element={<Navigate to="/dashboard/purchases" replace />} />
-                      <Route path="debt" element={<DebtManagement />} />
-                      <Route path="expenses" element={<ExpensesPage />} />
-                      <Route path="payroll" element={<PayrollPage />} />
-                      <Route path="organizations" element={<OrganizationsPage />} />
-                      <Route path="supplier-invoices" element={<SupplierInvoicesPage />} />
-                      <Route path="scan-invoice" element={<ScanInvoicePage />} />
-                      <Route path="scan-invoice/:id" element={<ScanInvoicePage />} />
-                      <Route path="production" element={<ProductionPage />} />
-
-                      <Route path="subscription" element={<SubscriptionManagementPage />} />
-                      <Route path="history" element={<BillingHistoryPage />} />
-
-                      {/* System Owner Routes - Only accessible to system owners */}
-                      <Route path="system-owner/*" element={
-                        <ProtectedSystemOwnerRoute>
-                          <Suspense fallback={<Loading />}>
-                            <SystemOwnerDashboard />
-                          </Suspense>
-                        </ProtectedSystemOwnerRoute>
-                      } />
-                    </Route>
-                  </Routes>
-                  <ToastProvider>
-                    <ToastViewport />
-                  </ToastProvider>
-                </Suspense>
-              </BrowserRouter>
-            </SubscriptionProvider>
-          </BranchProvider>
-          </OrganizationSettingsProvider>
-        </OrganizationProvider>
-      </AuthProvider>
-    </ThemeProvider>
-      </TooltipProvider>
+    <SessionProvider token={token} onSignOut={signOut} onTokenRefreshed={setToken}>
+      <FeedbackProvider>
+        <Gate />
+      </FeedbackProvider>
+    </SessionProvider>
   );
 }
 
-export default App;
+function Gate() {
+  const { can, signOut } = useSession();
+  if (!can("setup:view") && !can("ar:view") && !can("ap:view") && !can("inventory:view") && !can("bank:view") && !can("tax:view") && !can("expense:view") && !can("fa:view") && !can("journal:view") && !can("report:view")) {
+    return (
+      <div className="center-screen">
+        <div className="panel" style={{ maxWidth: 440 }}>
+          <EmptyState
+            title="Accounting isn't available for your role"
+            body="Your Excel Edge role doesn't include access to the accounting books. Ask an administrator or accountant if you need access."
+            action={
+              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                <a className="btn btn-primary" href={erpLinks.home}>
+                  Back to Excel Edge
+                </a>
+                <button type="button" className="btn" onClick={signOut}>
+                  Sign out
+                </button>
+              </div>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <CompanyProvider>
+      <RoutedShell />
+    </CompanyProvider>
+  );
+}
+
+function RoutedShell() {
+  const { path } = useLocation();
+  const page = <Routes />;
+  // Full-page chrome (not the main app Shell).
+  if (path.startsWith("/settings/form-styles/edit")) return page;
+  if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
+  if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
+  if (path.startsWith("/suppliers/import")) return page;
+  if (path.startsWith("/time/")) return page;
+  return <Shell>{page}</Shell>;
+}
+
+function Routes() {
+  const { path } = useLocation();
+  const { can } = useSession();
+  for (const route of ROUTES) {
+    const params = match(route.pattern, path);
+    if (!params) continue;
+    if (!can(route.needs)) {
+      return (
+        <div className="panel">
+          <EmptyState title="You don't have access to this page" body="Your role doesn't include this part of Accounting." />
+        </div>
+      );
+    }
+    return <>{route.render(params)}</>;
+  }
+  return (
+    <div className="panel">
+      <EmptyState title="Page not found" body="The page you're looking for doesn't exist." action={<Link to="/" className="btn">Go to overview</Link>} />
+    </div>
+  );
+}

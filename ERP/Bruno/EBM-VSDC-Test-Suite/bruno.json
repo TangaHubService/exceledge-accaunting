@@ -1,9 +1,0 @@
-{
-  "version": "1",
-  "name": "Excledge EBM/VSDC Test Suite — ALL endpoints",
-  "type": "collection",
-  "ignore": [
-    "node_modules",
-    ".git"
-  ]
-}

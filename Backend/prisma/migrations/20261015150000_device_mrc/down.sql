@@ -1,2 +1,0 @@
-ALTER TABLE "branches" DROP COLUMN IF EXISTS "mrcNo";
-ALTER TABLE "organizations" DROP COLUMN IF EXISTS "mrcNo";

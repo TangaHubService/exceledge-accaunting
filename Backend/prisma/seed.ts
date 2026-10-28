@@ -1,1378 +1,459 @@
-import {
-  PrismaClient,
-  Prisma,
-  UserRole,
-  CustomerType,
-  SalePaymentType,
-  ActivityType,
-  LogModule,
-  LogStatus,
-  StockMovementType,
-  StockTransferStatus,
-  EbmSubmissionStatus,
-  InvitationStatus,
-  MeasurementUnit,
-  RraTaxCode,
-  TaxCategory,
-  ItemType,
-} from "@prisma/client"
-import bcrypt from "bcryptjs"
-import crypto from "crypto"
-import {
-  createBatch,
-  selectBatchesForSale,
-  updateBatchQuantity,
-} from "../src/services/batch.service"
-import { removeStock, addStock } from "../src/services/inventory-ledger.service"
-import { TaxService } from "../src/services/tax.service"
-import { generateInvoiceNumber, walkInCustTin } from "../src/services/rra-ebm.service"
-import {
-  allocateItemCd,
-  DEFAULT_ITEM_CLASSIFICATION_CD,
-  deriveQtyUnitCd,
-} from "../src/services/item-code.service"
-import { generateValidPurchaseCodes } from "../src/services/purchase-code.checksum"
-
-const prisma = new PrismaClient()
-
-/** Demo login password for all seeded users (development only). */
-export const DEMO_PASSWORD = "TestDemo#123"
-
-const DEMO_ADMIN_EMAIL = "demo.admin@exceledge.test"
-
-const baseFeatures = [
-  "Inventory Management",
-  "Sales & POS",
-  "Purchase order",
-  "24/7 support",
-]
-
-const subscriptionPlans = [
-  {
-    title: "Simple Starter",
-    price: 15000,
-    period: "MONTHLY",
-    isActive: true,
-    popular: true,
-    description: "More power for growing teams — daily backups, priority features, and room to scale.",
-    features: [
-      "1 user account",
-      ...baseFeatures,
-    ],
-  },
-  {
-    title: "Essential",
-    price: 40000,
-    period: "MONTHLY",
-    isActive: true,
-    description: "Everything you need to get started with inventory, sales, and reporting.",
-    features: [
-      "4 user accounts",
-      ...baseFeatures,
-      "Tax declaration service",
-      "Quarterly visit",
-    ],
-  },
-  {
-    title: "Professional",
-    price: 100000,
-    period: "MONTHLY",
-    isActive: true,
-    description: "Everything you need to get started with inventory, sales, and reporting.",
-    features: [
-      "10 user accounts",
-      ...baseFeatures,
-      "Payroll management",
-      "Tax declaration service",
-      "Monthly visit",
-    ],
-  },
-  {
-    title: "Advanced",
-    price: 500000,
-    period: "MONTHLY",
-    isActive: true,
-    description: "Everything you need to get started with inventory, sales, and reporting.",
-    features: [
-      "Unlimited user accounts",
-      ...baseFeatures,
-      "Payroll management",
-      "Tax declaration service",
-      "QuickBooks Async",
-      "Accounting service",
-      "Compliance advisory",
-      "2 visits a month",
-    ],
-  },
-  {
-    // Auto-assigned to every newly registered organization (see
-    // organization.controller.ts#createOrganization), which requires a plan
-    // named exactly "Free Trial" to exist. Excluded from the public pricing
-    // page by name in subscription.controller.ts#getPlans.
-    title: "Free Trial",
-    price: 0,
-    period: "MONTHLY",
-    isActive: true,
-    description: "Try all features free for 7 days.",
-    features: [
-      "1 user account",
-      ...baseFeatures,
-    ],
-  },
-  {
-    // Dev-only plan for exercising the real payment rails (Paypack/Pesapal)
-    // end-to-end without charging a real plan price. Excluded from the public
-    // pricing page by name in subscription.controller.ts#getPlans, but still
-    // purchasable directly via its plan ID like any other active plan.
-    title: "Dev Test Plan",
-    price: 100,
-    period: "MONTHLY",
-    isActive: true,
-    description: "Internal use only — for testing the payment flow.",
-    features: [
-      "1 user account",
-      ...baseFeatures,
-    ],
-  },
-]
-
-function extractMaxUsers(features: string[]): number {
-  const userFeature = features.find((f) => /user account/i.test(f))
-  if (!userFeature) return 0
-  if (/unlimited/i.test(userFeature)) return 0
-  const match = userFeature.match(/\d+/)
-  return match ? parseInt(match[0], 10) : 0
-}
-
-async function seedSubscriptionPlans() {
-  const allFeatures = new Set<string>()
-  subscriptionPlans.forEach((plan) => {
-    plan.features.forEach((feature) => allFeatures.add(feature))
-  })
-
-  const featureMap: Record<string, { id: number; key: string }> = {}
-  for (const featureName of allFeatures) {
-    const key = featureName.toLowerCase().replace(/\s+/g, "_")
-    const feature = await prisma.feature.upsert({
-      where: { key },
-      update: {},
-      create: {
-        name: featureName,
-        key,
-        description: featureName,
-      },
-    })
-    featureMap[featureName] = feature
-  }
-
-  for (const plan of subscriptionPlans) {
-    const dbPlan = await prisma.subscriptionPlan.upsert({
-      where: { name: plan.title },
-      update: {
-        description: plan.description,
-        price: plan.price,
-        currency: "RWF",
-        billingCycle: plan.period,
-        isActive: plan.isActive,
-        maxUsers: extractMaxUsers(plan.features),
-      },
-      create: {
-        name: plan.title,
-        description: plan.description,
-        price: plan.price,
-        currency: "RWF",
-        billingCycle: plan.period,
-        isActive: plan.isActive,
-        maxUsers: extractMaxUsers(plan.features),
-      },
-    })
-
-    // Re-sync features in array order on every run (create AND update), since
-    // upsert's update branch doesn't touch relations and row order otherwise
-    // reflects whenever the plan was first seeded rather than the array above.
-    await prisma.planFeature.deleteMany({ where: { planId: dbPlan.id } })
-    for (const featureName of plan.features) {
-      await prisma.planFeature.create({
-        data: {
-          planId: dbPlan.id,
-          featureId: featureMap[featureName].id,
-        },
-      })
-    }
-    console.log(`Processed plan: ${plan.title}`)
-  }
-}
-
-const SUPER_ADMIN_EMAIL = "admin@example.com"
-
 /**
- * Idempotent by email: only creates the Super Admin account the first time
- * this seed runs. Reuses the existing SYSTEM_OWNER role (rather than a new
- * SUPER_ADMIN enum value) — SYSTEM_OWNER already bypasses every org-scoped
- * check in the app (see requireSystemOwner / requireOrganizationAccess /
- * requireActiveSubscription), so it needs no organization membership.
+ * Demo seed for the Accounting module.
+ *
+ * API-driven (not raw SQL): every record goes through the real service layer,
+ * so journals, GL entries, allocations, VAT and audit trails are all posted
+ * exactly as the UI would create them.
+ *
+ * Usage (API server must be running):
+ *   npm run prisma:seed
+ *   SEED_ORG_ID=1 SEED_API_URL=http://localhost:4600 npm run prisma:seed
+ *
+ * Env:
+ *   SEED_API_URL   Accounting API base (default http://localhost:4600)
+ *   SEED_ORG_ID    ERP organization to seed (default 1)
+ *   JWT_SECRET     Used to mint an ADMIN token (loaded from root .env)
+ *   INTEGRATION_API_KEY  For ERP inventory webhooks (loaded from root .env)
+ *
+ * Idempotent: each section checks for its demo records first and skips when
+ * they already exist, so re-running is safe.
  */
-async function seedSuperAdmin() {
-  const existing = await prisma.user.findUnique({ where: { email: SUPER_ADMIN_EMAIL } })
-  if (existing) {
-    console.log(`Super Admin already exists (${SUPER_ADMIN_EMAIL}), skipping.`)
-    return
-  }
+import { config as loadEnv } from "dotenv";
+import jwt from "jsonwebtoken";
+import path from "path";
+import { fileURLToPath } from "url";
+import { PrismaClient } from "@prisma/client";
 
-  // NOTE: the User model has no separate "username" column — email is the
-  // sole login identifier throughout this app (see auth.controller.ts login),
-  // so the spec's "Username: superadmin" is captured via the display name only.
-  const hashedPassword = await bcrypt.hash("ChangeMe123!", 10)
-  await prisma.user.create({
-    data: {
-      email: SUPER_ADMIN_EMAIL,
-      password: hashedPassword,
-      name: "Super Admin",
-      role: "SYSTEM_OWNER",
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
-  console.log(`Created Super Admin account (${SUPER_ADMIN_EMAIL})`)
+// Resolve .env relative to this file (not cwd — `npx` may run from anywhere).
+// Precedence matches the API server (src/config/env.ts): monorepo root .env
+// wins over apps/api/.env, so the minted token verifies against the server.
+const here = path.dirname(fileURLToPath(import.meta.url)); // apps/api/prisma
+loadEnv({ path: path.resolve(here, "../../.env") }); // apps/api/.env first…
+loadEnv({ path: path.resolve(here, "../../../.env"), override: true }); // …root .env wins
+if (!process.env.JWT_SECRET) {
+  // eslint-disable-next-line no-console
+  console.warn("[seed] warning: JWT_SECRET not found in .env files; set it explicitly");
 }
 
-type DemoIds = {
-  orgId: number
-  mainBranchId: number
-  eastBranchId: number
-  adminId: number
-  sellerId: number
+const API = (process.env.SEED_API_URL ?? "http://localhost:4600").replace(/\/+$/, "");
+const ORG_ID = process.env.SEED_ORG_ID ?? "1";
+const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret";
+const INTEGRATION_KEY = process.env.INTEGRATION_API_KEY ?? "dev-integration-key";
+
+const adminHeaders = {
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${jwt.sign(
+    { userId: 1, email: "seed@demo.local", role: "ADMIN", activeOrganizationId: Number(ORG_ID), organizationIds: [Number(ORG_ID)] },
+    JWT_SECRET,
+    { expiresIn: "15m" },
+  )}`,
+};
+const integrationHeaders = { "Content-Type": "application/json", "x-integration-key": INTEGRATION_KEY };
+
+type Res = { status: number; body: any };
+
+async function api(method: string, route: string, body?: unknown, headers: Record<string, string> = adminHeaders): Promise<Res> {
+  const res = await fetch(`${API}${route}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  return { status: res.status, body: data };
 }
 
-async function createSaleInTransaction(
-  ctx: DemoIds,
-  input: {
-    saleNumber: string
-    customerId: number
-    userId: number
-    branchId: number
-    paymentType: SalePaymentType
-    cashAmount: number
-    insuranceAmount: number
-    debtAmount: number
-    items: { productId: number; quantity: number; unitPrice: number }[]
-    isProforma?: boolean
+function expect(res: Res, ok: number[], what: string) {
+  if (!ok.includes(res.status)) {
+    throw new Error(`${what} → ${res.status}: ${JSON.stringify(res.body)?.slice(0, 400)}`);
   }
-) {
-  const {
-    saleNumber,
-    customerId,
-    userId,
-    branchId,
-    paymentType,
-    cashAmount,
-    insuranceAmount,
-    debtAmount,
-    items,
-    isProforma,
-  } = input
-  const { orgId } = ctx
-
-  let totalAmount = 0
-  for (const item of items) {
-    totalAmount += item.quantity * item.unitPrice
-  }
-
-  const { invoiceNumber, vsdcInvcNo } = await generateInvoiceNumber(orgId, branchId)
-  const taxSummary = await TaxService.calculateSaleTax(orgId, items)
-
-  return prisma.$transaction(
-    async (tx) => {
-      const saleItemsData: Record<string, unknown>[] = []
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        const productId = item.productId
-        const quantity = item.quantity
-        const unitPrice = item.unitPrice
-        const itemTax = taxSummary.items[i]
-
-        let batchId: number | null = null
-        let costPrice = 0
-
-        const selectedBatches = await selectBatchesForSale(
-          {
-            productId,
-            organizationId: orgId,
-            quantity,
-            method: "FIFO",
-            branchId,
-          },
-          tx
-        )
-
-        if (selectedBatches.length > 0) {
-          batchId = selectedBatches[0].batchId
-          costPrice = selectedBatches[0].unitCost
-          for (const batch of selectedBatches) {
-            await updateBatchQuantity(batch.batchId, batch.quantity, orgId, tx)
-          }
-        }
-
-        const profit = (unitPrice - costPrice) * quantity
-        const row: Record<string, unknown> = {
-          quantity,
-          unitPrice,
-          totalPrice: quantity * unitPrice,
-          costPrice,
-          profit,
-          taxRate: itemTax.taxRate,
-          taxAmount: itemTax.taxAmount,
-          taxCode: itemTax.taxCode,
-          product: { connect: { id: productId } },
-        }
-        if (batchId !== null) {
-          row.batch = { connect: { id: batchId } }
-        }
-        saleItemsData.push(row)
-      }
-
-      const newSale = await tx.sale.create({
-        data: {
-          saleNumber,
-          invoiceNumber,
-          vsdcInvcNo,
-          customerId,
-          userId,
-          organizationId: orgId,
-          branchId,
-          paymentType,
-          cashAmount,
-          insuranceAmount,
-          debtAmount,
-          totalAmount,
-          vatAmount: taxSummary.vatAmount,
-          taxableAmount: taxSummary.taxableAmount,
-          status: "COMPLETED",
-          isProforma: isProforma ?? false,
-          saleItems: { create: saleItemsData as Prisma.SaleItemCreateWithoutSaleInput[] },
-        },
-        include: { saleItems: true },
-      })
-
-      for (const item of items) {
-        const saleItem = newSale.saleItems.find((si) => si.productId === item.productId)
-        await removeStock({
-          organizationId: orgId,
-          productId: item.productId,
-          userId,
-          quantity: item.quantity,
-          movementType: "SALE",
-          branchId,
-          reference: saleNumber,
-          referenceType: "SALE",
-          note: `Sale #${saleNumber}`,
-          batchId: saleItem?.batchId ?? null,
-          tx,
-        })
-      }
-
-      const remainingDebt = totalAmount - cashAmount - insuranceAmount
-      if (remainingDebt > 0) {
-        await tx.customer.update({
-          where: { id: customerId },
-          data: { balance: { increment: remainingDebt } },
-        })
-      }
-
-      return newSale
-    },
-    { maxWait: 30000, timeout: 60000 }
-  )
+  return res.body?.data;
 }
 
-async function seedDemoDataset() {
-  const existing = await prisma.user.findUnique({
-    where: { email: DEMO_ADMIN_EMAIL },
-  })
-  if (existing) {
-    console.log("Demo dataset already seeded (skip). Delete demo users to re-seed.")
-    return
+function log(section: string, msg: string) {
+  // eslint-disable-next-line no-console
+  console.log(`[seed:${section}] ${msg}`);
+}
+
+async function findAccount(code: string): Promise<string> {
+  const res = await api("GET", `/api/v1/coa?q=${code}`);
+  expect(res, [200], `find account ${code}`);
+  const hit = (res.body.data as any[]).find((a) => a.code === code) ?? res.body.data[0];
+  if (!hit) throw new Error(`GL account ${code} not found`);
+  return hit.id as string;
+}
+
+/* ── Setup & activation ─────────────────────────────────────────── */
+
+async function ensureSetup() {
+  const dash = await api("GET", "/api/v1/setup/dashboard");
+  expect(dash, [200], "setup dashboard");
+  if (dash.body.data.activationStatus === "ACTIVATED") {
+    log("setup", "books already activated, skipping setup");
+    return;
   }
-
-  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10)
-
-  const plan = await prisma.subscriptionPlan.findFirst({
-    where: { name: "Professional" },
-  })
-  if (!plan) {
-    throw new Error('Subscription plan "Professional" not found. Run plan seed first.')
+  log("setup", "activating books for demo company…");
+  const put = async (route: string, body: unknown) => {
+    const r = await api("PUT", route, body);
+    if (r.status !== 200) log("setup", `note: PUT ${route} → ${r.status}`);
+  };
+  await put("/api/v1/setup/profile", { registeredName: "Demo Trading Co", taxIdentificationNumber: "100000001", country: "RW", tradingName: "Demo Trading" });
+  await put("/api/v1/setup/business-info", { accountingBasis: "ACCRUAL", reportingFramework: "IFRS_SME" });
+  const fy = await api("POST", "/api/v1/setup/financial-years", { name: "FY 2026", startDate: "2026-01-01", endDate: "2026-12-31", periodFrequency: "MONTHLY" });
+  if (![200, 201, 400].includes(fy.status)) throw new Error(`FY create → ${fy.status}`);
+  await put("/api/v1/setup/currency", { functionalCurrency: "RWF" });
+  await put("/api/v1/setup/policies", { inventoryValuationMethod: "WEIGHTED_AVERAGE" });
+  await put("/api/v1/setup/localization", { countryOfRegistration: "RW", localizationPackage: "RW", taxAuthority: "RRA" });
+  await api("POST", "/api/v1/setup/default-accounts/ensure", {});
+  await put("/api/v1/setup/inventory-settings", {});
+  await put("/api/v1/setup/party-defaults", {});
+  await put("/api/v1/setup/banking", {});
+  await api("POST", "/api/v1/setup/numbering/ensure", {});
+  await put("/api/v1/setup/approvals", { approvalLevels: 1 });
+  for (const key of ["FINANCIAL_YEAR_PERIODS", "CURRENCY", "ACCOUNTING_POLICIES"]) {
+    await api("POST", `/api/v1/setup/sections/${key}/approve`, {});
   }
+  const act = await api("POST", "/api/v1/setup/activation/activate", {});
+  expect(act, [200], "activate books");
+  log("setup", "books activated");
+}
 
-  const org = await prisma.organization.create({
-    data: {
-      name: "Exceledge Demo Pharmacy",
-      businessType: "PHARMACY",
-      currency: "RWF",
-      // RRA VSDC test TIN (matches Backend/.env test creds: tin 999945560)
-      TIN: "999945560",
-      address: "KG 123 St, Kigali",
-      phone: "+250788000000",
-      email: "demo.shop@exceledge.test",
-      isActive: true,
-    },
-  })
+/* ── Open past periods ────────────────────────────────────────────
+   Activation opens only the first period, so backdated demo entries (July /
+   August overdue bills & invoices) would be rejected. Open every period up
+   to today via Prisma — demo convenience, clearly logged. */
+async function openPeriods() {
+  const prisma = new PrismaClient();
+  try {
+    const company = await prisma.company.findUniqueOrThrow({ where: { externalErpOrganizationId: ORG_ID } });
+    const r = await prisma.accountingPeriod.updateMany({
+      where: { financialYear: { companyId: company.id }, status: "FUTURE", startDate: { lte: new Date() } },
+      data: { status: "OPEN" },
+    });
+    log("setup", `opened ${r.count} past period(s) up to today`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
 
-  await prisma.taxConfiguration.create({
-    data: {
-      organizationId: org.id,
-      vatRate: new Prisma.Decimal("18.00"),
-      effectiveDate: new Date("2020-01-01"),
-    },
-  })
+/* ── Receivables ────────────────────────────────────────────────── */
 
-  const subscription = await prisma.subscription.create({
-    data: {
-      organizationId: org.id,
-      planId: plan.id,
-      status: "ACTIVE",
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      paymentMethod: "TRIAL",
-      autoRenew: true,
-    },
-  })
+async function seedReceivables() {
+  const list = await api("GET", "/api/v1/ar/customers");
+  expect(list, [200], "list customers");
+  const existing = list.body.data as any[];
+  const findCustomer = (name: string) => existing.find((c) => c.name === name)?.id as string | undefined;
+  const mkCustomer = async (body: any) => {
+    const hit = findCustomer(body.name);
+    if (hit) return hit;
+    return expect(await api("POST", "/api/v1/ar/customers", body), [201], "create customer").id as string;
+  };
+  const retail = await mkCustomer({ name: "Kigali Retail Demo", customerType: "CREDIT", creditLimit: 50_000_000, creditPeriodDays: 30, tin: "100111222" });
+  const wholesale = await mkCustomer({ name: "Upcountry Wholesale Demo", customerType: "CREDIT", creditLimit: 20_000_000, creditPeriodDays: 14, tin: "100333444" });
+  await mkCustomer({ name: "Walk-in Cash Demo", customerType: "CASH" });
 
-  await prisma.payment.create({
-    data: {
-      subscriptionId: subscription.id,
-      amount: 0,
-      currency: "RWF",
-      paymentMethod: "TRIAL",
-      status: "COMPLETED",
-      processedAt: new Date(),
-    },
-  })
+  const ledger = await api("GET", `/api/v1/ar/customers/${retail}/ledger`);
+  if (ledger.status === 200 && (ledger.body.data?.entries?.length ?? 0) > 0) {
+    log("ar", "demo invoices exist, skipping transactions");
+    return;
+  }
+  log("ar", "seeding invoices, receipt, deposit…");
 
-  const mainBranch = await prisma.branch.create({
-    data: {
-      organizationId: org.id,
-      name: "Main Store",
-      code: "MAIN",
-      location: "Kigali City Center",
-      status: "ACTIVE",
-      isDefault: true,
-      // RRA VSDC test device (matching working demo org): bhfId "00", serial "excelwartest"
-      bhfId: "00",
-      ebmSerialNo: "excelwartest",
-    },
-  })
+  const mkInvoice = async (body: unknown) => expect(await api("POST", "/api/v1/ar/invoices", body), [201], "create invoice");
+  // Overdue (14-day terms → due 2026-09-19)
+  await mkInvoice({ customerId: wholesale, invoiceDate: "2026-09-05", net: 2_500_000, tax: 450_000, description: "Early September demo supply" });
+  // Partially paid
+  const inv2 = await mkInvoice({ customerId: retail, invoiceDate: "2026-09-20", net: 1_200_000, tax: 216_000, description: "September demo supply" });
+  await api("POST", "/api/v1/ar/receipts", {
+    customerId: retail, receiptDate: "2026-09-25", method: "BANK", amount: 1_000_000,
+    allocations: [{ invoiceId: inv2.id, amount: 1_000_000 }],
+  }).then((r) => expect(r, [201], "create receipt"));
+  // Current
+  await mkInvoice({ customerId: retail, invoiceDate: "2026-09-28", net: 800_000, tax: 144_000, description: "Late September demo supply" });
+  // Deposit held
+  await api("POST", "/api/v1/ar/deposits", { customerId: retail, depositDate: "2026-09-10", method: "CASH", amount: 300_000, reference: "DEMO-DEP-1" })
+    .then((r) => expect(r, [201], "create deposit"));
+  log("ar", "done: 3 customers, 3 invoices (overdue/partial/current), 1 receipt, 1 deposit");
+}
 
-  const eastBranch = await prisma.branch.create({
-    data: {
-      organizationId: org.id,
-      name: "East Branch",
-      code: "KGL-E",
-      location: "Remera",
-      status: "ACTIVE",
-    },
-  })
+/* ── Payables ───────────────────────────────────────────────────── */
 
-  await prisma.warehouse.create({
-    data: {
-      organizationId: org.id,
-      name: "Central Warehouse",
-      code: "WH-01",
-      isDefault: true,
-      isActive: true,
-    },
-  })
+async function seedPayables() {
+  const list = await api("GET", "/api/v1/ap/suppliers");
+  expect(list, [200], "list suppliers");
+  const existing = list.body.data as any[];
+  const mkSupplier = async (body: any) => {
+    const hit = existing.find((s) => s.name === body.name)?.id as string | undefined;
+    if (hit) return hit;
+    return expect(await api("POST", "/api/v1/ap/suppliers", body), [201], "create supplier").id as string;
+  };
+  const foods = await mkSupplier({ name: "Nyarugenge Foods Demo", category: "INVENTORY", tin: "200111222", creditPeriodDays: 30 });
+  const logistics = await mkSupplier({ name: "Musanze Logistics Demo", category: "SERVICES", tin: "200333444", creditPeriodDays: 14, whtRate: 15 });
+  const utilities = await mkSupplier({ name: "Kigali Utilities Demo", category: "OVERHEADS", tin: "200555666", creditPeriodDays: 30 });
 
-  const adminUser = await prisma.user.create({
-    data: {
-      email: DEMO_ADMIN_EMAIL,
-      password: passwordHash,
-      name: "Demo Admin",
-      phone: "+250788000001",
-      role: UserRole.ADMIN,
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
+  const billsRes = await api("GET", "/api/v1/ap/bills?status=ALL");
+  expect(billsRes, [200], "list bills");
+  const billsByNo = new Map((billsRes.body.data as any[]).map((b) => [b.supplierInvoiceNumber, b]));
+  log("ap", "seeding bills, payment with WHT, advance…");
 
-  const managerUser = await prisma.user.create({
-    data: {
-      email: "demo.manager@exceledge.test",
-      password: passwordHash,
-      name: "Demo Branch Manager",
-      phone: "+250788000002",
-      role: UserRole.BRANCH_MANAGER,
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
+  const mkBill = async (body: any) => {
+    const hit = billsByNo.get(body.supplierInvoiceNumber);
+    if (hit) return hit;
+    const created = expect(await api("POST", "/api/v1/ap/bills", body), [201], "create bill");
+    billsByNo.set(body.supplierInvoiceNumber, created);
+    return created;
+  };
+  // Overdue (30-day terms → due 2026-08-14)
+  const bill1 = await mkBill({ supplierId: foods, supplierInvoiceNumber: "DEMO-778", billDate: "2026-07-15", net: 3_000_000, tax: 540_000 });
+  // Paid with 5% withholding: 855,000 cash + 45,000 WHT = 900,000
+  const bill2 = await mkBill({ supplierId: logistics, supplierInvoiceNumber: "DEMO-779", billDate: "2026-09-08", net: 900_000 });
+  const payments = expect(await api("GET", "/api/v1/ap/payments"), [200], "list payments") as any[];
+  if (!payments.some((p) => p.reference === "DEMO-EFT-1") && Number(bill2.outstanding ?? bill2.gross ?? 0) > 0) {
+    await api("POST", "/api/v1/ap/payments", {
+      supplierId: logistics, paymentDate: "2026-09-18", method: "EFT", amount: 855_000,
+      withholdingTax: 45_000, reference: "DEMO-EFT-1", allocations: [{ billId: bill2.id, amount: 900_000 }],
+    }).then((r) => expect(r, [201], "create payment"));
+  }
+  // Due soon
+  await mkBill({ supplierId: utilities, supplierInvoiceNumber: "DEMO-780", billDate: "2026-09-22", net: 450_000, tax: 81_000 });
+  // Advance applied to the overdue bill (same supplier as the bill)
+  const advances = expect(await api("GET", "/api/v1/ap/advances"), [200], "list advances") as any[];
+  if (!advances.some((a) => a.supplierId === foods && Number(a.amount ?? a.gross ?? 0) === 500_000)) {
+    const adv = await api("POST", "/api/v1/ap/advances", { supplierId: foods, advanceDate: "2026-09-01", method: "BANK", amount: 500_000 })
+      .then((r) => expect(r, [201], "create advance"));
+    await api("POST", `/api/v1/ap/advances/${adv.id}/allocate`, { billId: bill1.id, amount: 500_000, allocationDate: "2026-09-02" })
+      .then((r) => expect(r, [200], "allocate advance"));
+  }
+  log("ap", "done: 3 suppliers, 3 bills (overdue/paid/due-soon), 1 payment, 1 advance");
+}
 
-  const sellerUser = await prisma.user.create({
-    data: {
-      email: "demo.seller@exceledge.test",
-      password: passwordHash,
-      name: "Demo Seller",
-      phone: "+250788000003",
-      role: UserRole.SELLER,
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
+/* ── Banking ────────────────────────────────────────────────────── */
 
-  const accountantUser = await prisma.user.create({
-    data: {
-      email: "demo.accountant@exceledge.test",
-      password: passwordHash,
-      name: "Demo Accountant",
-      phone: "+250788000004",
-      role: UserRole.ACCOUNTANT,
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
+async function seedBanking() {
+  const list = await api("GET", "/api/v1/banking/accounts");
+  expect(list, [200], "list bank accounts");
+  if ((list.body.data as any[]).some((a) => a.name === "Demo Main Bank")) {
+    log("bank", "demo accounts exist, skipping");
+    return;
+  }
+  log("bank", "seeding bank/cash/petty accounts and transactions…");
+  const mkAccount = async (body: unknown) => expect(await api("POST", "/api/v1/banking/accounts", body), [201], "create financial account");
+  const bank = await mkAccount({ kind: "BANK", name: "Demo Main Bank", bankName: "Bank of Kigali", accountNumber: "100-001-002", openingBalance: 10_000_000, dateOpened: "2026-01-01" });
+  const cash = await mkAccount({ kind: "CASH", name: "Demo Till", glAccountId: await findAccount("1100"), dateOpened: "2026-01-01", custodian: "Demo Cashier" });
+  await mkAccount({ kind: "PETTY_CASH", name: "Demo Petty Float", dateOpened: "2026-01-01" });
 
-  const eastSellerUser = await prisma.user.create({
-    data: {
-      email: "demo.eastseller@exceledge.test",
-      password: passwordHash,
-      name: "Demo East Seller",
-      phone: "+250788000005",
-      role: UserRole.SELLER,
-      isActive: true,
-      isEmailVerified: true,
-    },
-  })
+  const suspense = await findAccount("1900");
+  const salaries = await findAccount("6100");
+  const post = async (route: string, body: unknown) => expect(await api("POST", `/api/v1/banking${route}`, body), [201], `bank ${route}`);
+  await post("/receipts", { financialAccountId: bank.id, transactionDate: "2026-09-26", reference: "DEMO-RC-1", partyType: "CUSTOMER", partyName: "Demo customer", lines: [{ accountId: suspense, amount: 250_000 }] });
+  await post("/payments", { financialAccountId: bank.id, transactionDate: "2026-09-27", partyName: "Demo landlord", method: "EFT", lines: [{ accountId: salaries, amount: 600_000, description: "September rent" }] });
+  await post("/transfers", { fromAccountId: bank.id, toAccountId: cash.id, transactionDate: "2026-09-28", amount: 1_000_000 });
+  log("bank", "done: 3 accounts, receipt, payment, withdrawal");
+}
 
-  await prisma.userOrganization.createMany({
-    data: [
-      {
-        userId: adminUser.id,
-        organizationId: org.id,
-        role: UserRole.ADMIN,
-        isOwner: true,
-      },
-      {
-        userId: managerUser.id,
-        organizationId: org.id,
-        role: UserRole.BRANCH_MANAGER,
-        isOwner: false,
-      },
-      {
-        userId: sellerUser.id,
-        organizationId: org.id,
-        role: UserRole.SELLER,
-        isOwner: false,
-      },
-      {
-        userId: eastSellerUser.id,
-        organizationId: org.id,
-        role: UserRole.SELLER,
-        isOwner: false,
-      },
-      {
-        userId: accountantUser.id,
-        organizationId: org.id,
-        role: UserRole.ACCOUNTANT,
-        isOwner: false,
-      },
-    ],
-  })
+/* ── Expenses ───────────────────────────────────────────────────── */
 
-  await prisma.userBranch.createMany({
-    data: [
-      { userId: adminUser.id, branchId: mainBranch.id, isPrimary: true },
-      { userId: adminUser.id, branchId: eastBranch.id, isPrimary: false },
-      { userId: managerUser.id, branchId: eastBranch.id, isPrimary: true },
-      { userId: sellerUser.id, branchId: mainBranch.id, isPrimary: true },
-      { userId: eastSellerUser.id, branchId: eastBranch.id, isPrimary: true },
-      { userId: accountantUser.id, branchId: mainBranch.id, isPrimary: true },
-      { userId: accountantUser.id, branchId: eastBranch.id, isPrimary: false },
-    ],
-  })
-
-  const supplierA = await prisma.supplier.create({
-    data: {
-      organizationId: org.id,
-      name: "Kigali Medical Supplies Ltd",
-      email: "orders@kms.test",
-      phone: "+250788111111",
-      address: "Nyarugenge",
-      contactPerson: "Jean Supplier",
-    },
-  })
-
-  const supplierB = await prisma.supplier.create({
-    data: {
-      organizationId: org.id,
-      name: "East Africa Wholesale",
-      email: "sales@eaw.test",
-      phone: "+250788222222",
-      contactPerson: "Mary Wholesale",
-    },
-  })
-
-  // VSDC §4.3 item types + §4.17 origin (orgnNatCd) must vary in demo data:
-  // 1=RAW_MATERIAL, 2=PRODUCT (finished), 3=SERVICE — each from different countries.
-  const products = await prisma.$transaction(async (tx) => {
-    const defs: Array<{
-      name: string
-      sku: string
-      category: string
-      description?: string
-      unitPrice: string
-      minStock: number
-      taxCategory: TaxCategory
-      taxCode: RraTaxCode
-      measurementUnit: MeasurementUnit
-      barcode: string
-      itemClsCd: string
-      itemType: ItemType
-      origin: string
-      supplierId: number | null
-      initialQty: number
-    }> = [
-      // ── Finished products (itemTyCd=2) ──
-      {
-        name: "Paracetamol 500mg Tablets",
-        sku: "PARA-500",
-        category: "Pain relief",
-        description: "Blister 20 tablets — finished product (RW)",
-        unitPrice: "150.00",
-        minStock: 20,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000001",
-        itemClsCd: "5059690800",
-        itemType: ItemType.PRODUCT,
-        origin: "RW",
-        supplierId: supplierA.id,
-        initialQty: 100,
-      },
-      {
-        name: "Amoxicillin 250mg",
-        sku: "AMOX-250",
-        category: "Antibiotics",
-        description: "Finished product imported from Kenya",
-        unitPrice: "800.00",
-        minStock: 10,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000002",
-        itemClsCd: "5059690800",
-        itemType: ItemType.PRODUCT,
-        origin: "KE",
-        supplierId: supplierA.id,
-        initialQty: 100,
-      },
-      {
-        name: "Vitamin C 1000mg",
-        sku: "VIT-C-1K",
-        category: "Vitamins",
-        description: "Finished product from Uganda",
-        unitPrice: "3500.00",
-        minStock: 5,
-        taxCategory: TaxCategory.ZERO_RATED,
-        taxCode: RraTaxCode.B,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000003",
-        itemClsCd: "5059690800",
-        itemType: ItemType.PRODUCT,
-        origin: "UG",
-        supplierId: supplierB.id,
-        initialQty: 100,
-      },
-      {
-        name: "Hand Sanitizer 500ml",
-        sku: "SAN-500",
-        category: "Hygiene",
-        description: "Finished product from China",
-        unitPrice: "2500.00",
-        minStock: 15,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000004",
-        itemClsCd: "5059690800",
-        itemType: ItemType.PRODUCT,
-        origin: "CN",
-        supplierId: supplierB.id,
-        initialQty: 100,
-      },
-      {
-        name: "Cotton Roll 500g",
-        sku: "COT-500",
-        category: "Supplies",
-        description: "Finished product from Tanzania",
-        unitPrice: "4200.00",
-        minStock: 8,
-        taxCategory: TaxCategory.EXEMPT,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000005",
-        itemClsCd: "5059690800",
-        itemType: ItemType.PRODUCT,
-        origin: "TZ",
-        supplierId: supplierA.id,
-        initialQty: 100,
-      },
-      {
-        name: "Digital Thermometer",
-        sku: "THERM-D1",
-        category: "Devices",
-        description: "Finished product from India",
-        unitPrice: "12000.00",
-        minStock: 3,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.B,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000006",
-        itemClsCd: "3026530200",
-        itemType: ItemType.PRODUCT,
-        origin: "IN",
-        supplierId: supplierA.id,
-        initialQty: 100,
-      },
-      // ── Raw materials (itemTyCd=1) ──
-      {
-        name: "API Paracetamol Powder",
-        sku: "RM-PARA-API",
-        category: "Raw materials",
-        description: "Active pharmaceutical ingredient from India",
-        unitPrice: "45000.00",
-        minStock: 5,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.KG,
-        barcode: "8901000000011",
-        itemClsCd: "5059690800",
-        itemType: ItemType.RAW_MATERIAL,
-        origin: "IN",
-        supplierId: supplierA.id,
-        initialQty: 50,
-      },
-      {
-        name: "Empty Blister Packs",
-        sku: "RM-BLISTER",
-        category: "Raw materials",
-        description: "Packaging component from China",
-        unitPrice: "200.00",
-        minStock: 100,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000012",
-        itemClsCd: "5059690800",
-        itemType: ItemType.RAW_MATERIAL,
-        origin: "CN",
-        supplierId: supplierB.id,
-        initialQty: 500,
-      },
-      {
-        name: "Ethanol 96%",
-        sku: "RM-ETH-96",
-        category: "Raw materials",
-        description: "Solvent / sanitizer base from Kenya",
-        unitPrice: "8000.00",
-        minStock: 10,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.LTR,
-        barcode: "8901000000013",
-        itemClsCd: "5059690800",
-        itemType: ItemType.RAW_MATERIAL,
-        origin: "KE",
-        supplierId: supplierB.id,
-        initialQty: 80,
-      },
-      {
-        name: "Glycerin USP",
-        sku: "RM-GLYCERIN",
-        category: "Raw materials",
-        description: "Excipient from Uganda",
-        unitPrice: "5500.00",
-        minStock: 8,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.LTR,
-        barcode: "8901000000014",
-        itemClsCd: "5059690800",
-        itemType: ItemType.RAW_MATERIAL,
-        origin: "UG",
-        supplierId: supplierA.id,
-        initialQty: 40,
-      },
-      // ── Services (itemTyCd=3) — no stock ──
-      {
-        name: "Pharmacy Consultation",
-        sku: "SVC-CONSULT",
-        category: "Services",
-        description: "In-store pharmacist consultation (Rwanda)",
-        unitPrice: "5000.00",
-        minStock: 0,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000021",
-        itemClsCd: "5059690800",
-        itemType: ItemType.SERVICE,
-        origin: "RW",
-        supplierId: null,
-        initialQty: 0,
-      },
-      {
-        name: "Home Delivery Fee",
-        sku: "SVC-DELIVER",
-        category: "Services",
-        description: "Last-mile delivery service (Burundi origin code for demo)",
-        unitPrice: "2000.00",
-        minStock: 0,
-        taxCategory: TaxCategory.STANDARD,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000022",
-        itemClsCd: "5059690800",
-        itemType: ItemType.SERVICE,
-        origin: "BI",
-        supplierId: null,
-        initialQty: 0,
-      },
-      {
-        name: "Prescription Review",
-        sku: "SVC-RX-REV",
-        category: "Services",
-        description: "Prescription validation service (DRC)",
-        unitPrice: "3000.00",
-        minStock: 0,
-        taxCategory: TaxCategory.EXEMPT,
-        taxCode: RraTaxCode.A,
-        measurementUnit: MeasurementUnit.PCS,
-        barcode: "8901000000023",
-        itemClsCd: "5059690800",
-        itemType: ItemType.SERVICE,
-        origin: "CD",
-        supplierId: null,
-        initialQty: 0,
-      },
-    ]
-
-    const created = []
-    for (const def of defs) {
-      const pkgUnitCd = "NT"
-      const qtyUnitCd = deriveQtyUnitCd(def.measurementUnit)
-      const itemCd = await allocateItemCd(org.id, def.itemType, pkgUnitCd, qtyUnitCd, def.origin, tx)
-      const product = await tx.product.create({
-        data: {
-          organizationId: org.id,
-          supplierId: def.supplierId,
-          name: def.name,
-          sku: def.sku,
-          category: def.category,
-          description: def.description,
-          quantity: def.initialQty,
-          unitPrice: new Prisma.Decimal(def.unitPrice),
-          minStock: def.minStock,
-          taxCategory: def.taxCategory,
-          taxCode: def.taxCode,
-          measurementUnit: def.measurementUnit,
-          barcode: def.barcode,
-          itemType: def.itemType,
-          origin: def.origin,
-          pkgUnitCd,
-          qtyUnitCd,
-          itemClsCd: def.itemClsCd || DEFAULT_ITEM_CLASSIFICATION_CD,
-          itemCd,
-          ebmSyncStatus: "PENDING",
-        },
-      })
-      created.push(product)
+async function seedExpenses() {
+  const list = await api("GET", "/api/v1/expenses?from=2026-01-01&to=2026-12-31");
+  if (list.status === 200 && (list.body.data?.rows ?? list.body.data ?? []).length > 0) {
+    const rows = (list.body.data?.rows ?? list.body.data) as any[];
+    if (rows.some((e) => (e.description ?? "").includes("demo") || (e.payeeName ?? "").includes("Demo"))) {
+      log("exp", "demo expenses exist, skipping");
+      return;
     }
-    return created
-  })
-
-  const finished = products.filter((p) => p.itemType === ItemType.PRODUCT)
-  const rawMaterials = products.filter((p) => p.itemType === ItemType.RAW_MATERIAL)
-  const services = products.filter((p) => p.itemType === ItemType.SERVICE)
-  const [p1, p2, p3, p4, p5, p6] = finished
-  const [rm1, rm2] = rawMaterials
-  console.log(
-    `Seeded ${products.length} items: ${finished.length} finished / ${rawMaterials.length} raw / ${services.length} service (mixed origins)`,
-  )
-
-  // Stock batches only for finished + raw materials (services have no inventory).
-  const stockable = [...finished, ...rawMaterials]
-  for (const p of stockable) {
-    const isVitC = p.sku === "VIT-C-1K"
-    await createBatch({
-      productId: p.id,
-      organizationId: org.id,
-      branchId: mainBranch.id,
-      userId: adminUser.id,
-      batchNumber: isVitC ? "B-VIT-C-MAIN-1" : `B-${p.sku}-MAIN-1`,
-      quantity: isVitC ? 80 : 200,
-      unitCost: isVitC ? 1200 : Number(p.unitPrice) * 0.55,
-      expiryDate: new Date(Date.now() + (isVitC ? 180 : 365) * 24 * 60 * 60 * 1000),
-    })
   }
+  log("exp", "seeding expenses…");
+  const cats = expect(await api("GET", "/api/v1/expenses/categories"), [200], "expense categories") as any[];
+  const fuel = cats.find((c) => c.code === "FUEL") ?? cats[0];
+  const rent = cats.find((c) => c.code === "RENT") ?? cats[1] ?? cats[0];
+  const bankGl = await findAccount("1110");
+  const base = "/api/v1/expenses";
+  const post = async (route: string, body: unknown, status = 201) => expect(await api("POST", `${base}${route}`, body), [status], `expense ${route}`);
 
-  for (const p of stockable) {
-    await createBatch({
-      productId: p.id,
-      organizationId: org.id,
-      branchId: eastBranch.id,
-      userId: adminUser.id,
-      batchNumber: `B-${p.sku}-EAST-1`,
-      quantity: p.itemType === ItemType.RAW_MATERIAL ? 30 : 50,
-      unitCost: Number(p.unitPrice) * 0.5,
-      expiryDate: new Date(Date.now() + 300 * 24 * 60 * 60 * 1000),
-    })
+  const immediate = await post("/", {
+    expenseDate: "2026-09-15", categoryId: fuel.id, paymentMode: "IMMEDIATE", payeeName: "Demo Fuel Station",
+    description: "Demo delivery van fuel", net: 120_000, tax: 21_600, creditAccountId: bankGl,
+    allocations: [{ department: "Logistics", amount: 100_000 }, { department: "Sales", amount: 41_600 }],
+  });
+  await post(`/${immediate.id}/submit`, {}, 200);
+  await post(`/${immediate.id}/approve`, {}, 200);
+
+  const claim = await post("/", {
+    expenseDate: "2026-09-16", categoryId: fuel.id, paymentMode: "REIMBURSEMENT", employeeName: "Demo Employee",
+    description: "Demo client visit taxi", net: 45_000, submit: true,
+  });
+  await post(`/${claim.id}/approve`, {}, 200);
+
+  const recurring = await post("/recurring", {
+    name: "Demo office rent", categoryId: rent.id, frequency: "MONTHLY", amount: 350_000,
+    payeeName: "Demo Landlord", startDate: "2026-09-01", autoPost: true, creditAccountId: bankGl,
+  });
+  await post(`/recurring/${recurring.id}/run`, {}, 200);
+  log("exp", "done: posted fuel expense, reimbursement claim, monthly rent + run");
+}
+
+/* ── Tax ────────────────────────────────────────────────────────── */
+
+async function seedTax() {
+  const filings = await api("GET", "/api/v1/tax/filings");
+  if (filings.status === 200 && (filings.body.data as any[]).some((f) => (f.filingReference ?? "").startsWith("DEMO-"))) {
+    log("tax", "demo filing exists, skipping");
+    return;
   }
+  log("tax", "seeding VAT payment and filing…");
+  const bankGl = await findAccount("1110");
+  const base = "/api/v1/tax";
+  const payment = expect(
+    await api("POST", `${base}/payments`, {
+      paymentDate: "2026-09-28", taxType: "OUTPUT_VAT", bankAccountId: bankGl, amount: 200_000,
+      periodFrom: "2026-09-01", periodTo: "2026-09-30", reference: "DEMO-RRA-SEP",
+    }),
+    [201], "tax payment",
+  );
+  log("tax", `payment ${payment.number}`);
+  const filing = expect(
+    await api("POST", `${base}/filings`, { kind: "VAT", periodFrom: "2026-09-01", periodTo: "2026-09-30", dueDate: "2026-10-15" }),
+    [201], "tax filing",
+  );
+  expect(await api("POST", `${base}/filings/${filing.id}/file`, { filingReference: "DEMO-RRA-FILE-09" }), [200], "file return");
+  log("tax", "done: payment DEMO-RRA-SEP, September VAT filed");
+}
 
-  // BOM: 1× Paracetamol finished uses API powder + blister packs (RRA composition).
-  if (p1 && rm1 && rm2) {
-    await prisma.bomComponent.createMany({
-      data: [
-        {
-          organizationId: org.id,
-          parentProductId: p1.id,
-          componentProductId: rm1.id,
-          quantity: new Prisma.Decimal("0.010"),
-          unit: "KG",
-        },
-        {
-          organizationId: org.id,
-          parentProductId: p1.id,
-          componentProductId: rm2.id,
-          quantity: new Prisma.Decimal("1"),
-          unit: "PCS",
-        },
+/* ── Fixed assets ───────────────────────────────────────────────── */
+
+async function seedFixedAssets() {
+  const list = await api("GET", "/api/v1/fixed-assets/assets");
+  if (list.status === 200 && (list.body.data as any[]).some((a) => (a.name ?? "").includes("Demo"))) {
+    log("fa", "demo assets exist, skipping");
+    return;
+  }
+  log("fa", "seeding assets, capitalization, depreciation…");
+  const cats = expect(await api("GET", "/api/v1/fixed-assets/categories"), [200], "fa categories") as any[];
+  const it = cats.find((c) => c.code === "IT") ?? cats[0];
+  const vehicle = cats.find((c) => c.code === "VEHICLE") ?? cats[1] ?? cats[0];
+  const bankGl = await findAccount("1110");
+  const base = "/api/v1/fixed-assets";
+  const post = async (route: string, body: unknown, status = 201) => expect(await api("POST", `${base}${route}`, body), [status], `fa ${route}`);
+
+  const laptop = await post("/assets", {
+    name: "Demo HP Laptop", categoryId: it.id, acquisitionCost: 1_500_000, purchaseDate: "2026-06-10",
+    serialNumber: "DEMO-IT-01", branch: "Kigali HQ", location: "Finance office",
+  });
+  await post(`/assets/${laptop.id}/capitalize`, { capitalizationDate: "2026-06-10", creditAccountId: bankGl }, 200);
+  await post("/assets", {
+    name: "Demo Toyota Hiace", categoryId: vehicle.id, acquisitionCost: 28_000_000, residualValue: 2_800_000,
+    purchaseDate: "2026-02-01", capitalize: true, creditAccountId: bankGl, capitalizationDate: "2026-02-01",
+    branch: "Kigali HQ", location: "Demo Yard",
+  });
+  await post("/depreciation/run", { period: "2026-09" });
+  log("fa", "done: laptop + van capitalized, September depreciation posted");
+}
+
+/* ── Manual journal ─────────────────────────────────────────────── */
+
+async function seedJournal() {
+  const list = await api("GET", "/api/v1/journals");
+  if (list.status === 200 && (list.body.data as any[]).some((j) => (j.description ?? "").includes("Demo"))) {
+    log("gl", "demo journal exists, skipping");
+    return;
+  }
+  log("gl", "posting demo adjustment journal…");
+  const salaries = await findAccount("6100");
+  const suspense = await findAccount("1900");
+  const draft = expect(
+    await api("POST", "/api/v1/journals", {
+      journalDate: "2026-09-30", description: "Demo accrual adjustment",
+      lines: [
+        { accountId: salaries, debit: 100_000, credit: 0 },
+        { accountId: suspense, debit: 0, credit: 100_000 },
       ],
-    })
-    console.log(`Seeded BOM for ${p1.name}: ${rm1.name} + ${rm2.name}`)
-  }
-
-  const walkIn = await prisma.customer.create({
-    data: {
-      organizationId: org.id,
-      name: "Walk-in Customer",
-      phone: "+250788333001",
-      customerType: CustomerType.INDIVIDUAL,
-      balance: new Prisma.Decimal("0"),
-    },
-  })
-
-  const creditCustomer = await prisma.customer.create({
-    data: {
-      organizationId: org.id,
-      name: "Credit Wholesale Ltd",
-      phone: "+250788333002",
-      email: "accounts@creditwholesale.test",
-      customerType: CustomerType.CORPORATE,
-      // Valid RRA VSDC test TIN (1-prefix; v3.0.2 sandbox rejects 7-prefix with
-      // 910). The RRA purchase code below is required for this B2B buyer.
-      TIN: "100000000",
-      prcOrdCd: "010301",
-      balance: new Prisma.Decimal("0"),
-    },
-  })
-
-  const insuranceCustomer = await prisma.customer.create({
-    data: {
-      organizationId: org.id,
-      name: "RSSB Insurance",
-      phone: "+250788333003",
-      customerType: CustomerType.INSURANCE,
-      // VSDC BhfInsuranceSaveReq sample (§3.3.3.3)
-      isrccCd: "ISRCC01",
-      isrcRt: new Prisma.Decimal("20"),
-      TIN: "100000001",
-      balance: new Prisma.Decimal("0"),
-    },
-  })
-
-  // Org-level RRA purchase-code pools (buyer-scoped checksum). Seed enough for
-  // walk-in B2C (placeholder TIN) + the B2B corporate buyer + insurer.
-  const walkInBuyerTin = walkInCustTin(walkIn.id)
-  const sellerTin = org.TIN!.trim()
-  const purchasePools: Array<{ buyerTin: string; count: number }> = [
-    { buyerTin: "100000000", count: 30 },
-    { buyerTin: walkInBuyerTin, count: 40 },
-    { buyerTin: "100000001", count: 10 },
-  ]
-  // Codes are unique per org (not per buyer), so share the exclusion set
-  // across pools to avoid P2002 collisions.
-  const usedCodes = new Set<string>()
-  for (const pool of purchasePools) {
-    const codes = generateValidPurchaseCodes(pool.buyerTin, sellerTin, pool.count, usedCodes)
-    for (const code of codes) {
-      await prisma.organizationPurchaseCode.create({
-        data: { organizationId: org.id, code, buyerTin: pool.buyerTin },
-      })
-      usedCodes.add(code)
-    }
-    console.log(`Seeded ${codes.length} purchase codes for buyer TIN ${pool.buyerTin}`)
-  }
-
-  const ctx: DemoIds = {
-    orgId: org.id,
-    mainBranchId: mainBranch.id,
-    eastBranchId: eastBranch.id,
-    adminId: adminUser.id,
-    sellerId: sellerUser.id,
-  }
-
-  const cashSale = await createSaleInTransaction(ctx, {
-    saleNumber: `SEED-SALE-CASH-${Date.now()}`,
-    customerId: walkIn.id,
-    userId: sellerUser.id,
-    branchId: mainBranch.id,
-    paymentType: SalePaymentType.CASH,
-    cashAmount: 150 * 4 + 800 * 2,
-    insuranceAmount: 0,
-    debtAmount: 0,
-    items: [
-      { productId: p1.id, quantity: 4, unitPrice: 150 },
-      { productId: p2.id, quantity: 2, unitPrice: 800 },
-    ],
-  })
-
-  const debtSale = await createSaleInTransaction(ctx, {
-    saleNumber: `SEED-SALE-DEBT-${Date.now()}`,
-    customerId: creditCustomer.id,
-    userId: sellerUser.id,
-    branchId: mainBranch.id,
-    paymentType: SalePaymentType.MIXED,
-    cashAmount: 5000,
-    insuranceAmount: 0,
-    debtAmount: 19000,
-    items: [{ productId: p4.id, quantity: 10, unitPrice: 2400 }],
-  })
-
-  await prisma.debtPayment.create({
-    data: {
-      saleId: debtSale.id,
-      customerId: creditCustomer.id,
-      organizationId: org.id,
-      recordedById: accountantUser.id,
-      amount: new Prisma.Decimal("5000.00"),
-      paymentMethod: "MOBILE_MONEY",
-      reference: "SEED-DEBT-PAY-1",
-      notes: "Partial payment on seeded credit sale",
-    },
-  })
-
-  await prisma.customer.update({
-    where: { id: creditCustomer.id },
-    data: { balance: { decrement: new Prisma.Decimal("5000.00") } },
-  })
-
-  const insuranceTotal = 3500 * 3
-  await createSaleInTransaction(ctx, {
-    saleNumber: `SEED-SALE-INS-${Date.now()}`,
-    customerId: insuranceCustomer.id,
-    userId: sellerUser.id,
-    branchId: mainBranch.id,
-    paymentType: SalePaymentType.INSURANCE,
-    cashAmount: 0,
-    insuranceAmount: insuranceTotal,
-    debtAmount: 0,
-    items: [{ productId: p3.id, quantity: 3, unitPrice: 3500 }],
-  })
-
-  await createSaleInTransaction(ctx, {
-    saleNumber: `SEED-SALE-PRO-${Date.now()}`,
-    customerId: walkIn.id,
-    userId: sellerUser.id,
-    branchId: mainBranch.id,
-    paymentType: SalePaymentType.CASH,
-    cashAmount: 12000,
-    insuranceAmount: 0,
-    debtAmount: 0,
-    items: [{ productId: p6.id, quantity: 1, unitPrice: 12000 }],
-    isProforma: true,
-  })
-
-  await prisma.ebmTransaction.create({
-    data: {
-      organizationId: org.id,
-      saleId: cashSale.id,
-      invoiceNumber: cashSale.invoiceNumber,
-      operation: "SALE",
-      submissionStatus: EbmSubmissionStatus.SUCCESS,
-      submittedAt: new Date(),
-      ebmInvoiceNumber: "EBM-SEED-001",
-      responseData: { note: "Seeded EBM success row for reporting" },
-    },
-  })
-
-  const pendingPo = await prisma.purchaseOrder.create({
-    data: {
-      orderNumber: `PO-SEED-PENDING-${Date.now()}`,
-      branchId: mainBranch.id,
-      supplierId: supplierA.id,
-      organizationId: org.id,
-      userId: adminUser.id,
-      totalAmount: new Prisma.Decimal("45000.00"),
-      status: "PENDING",
-      notes: "Awaiting supplier confirmation",
-      items: {
-        create: [
-          {
-            productId: p2.id,
-            productName: p2.name,
-            quantity: 50,
-            unitPrice: new Prisma.Decimal("800.00"),
-            totalPrice: new Prisma.Decimal("40000.00"),
-          },
-          {
-            productName: "Custom order item (no product link)",
-            quantity: 10,
-            unitPrice: new Prisma.Decimal("500.00"),
-            totalPrice: new Prisma.Decimal("5000.00"),
-          },
-        ],
-      },
-    },
-  })
-
-  const completedPo = await prisma.purchaseOrder.create({
-    data: {
-      orderNumber: `PO-SEED-RECV-${Date.now()}`,
-      branchId: mainBranch.id,
-      supplierId: supplierB.id,
-      organizationId: org.id,
-      userId: adminUser.id,
-      totalAmount: new Prisma.Decimal("24000.00"),
-      status: "COMPLETED",
-      receivedAt: new Date(),
-      notes: "Received into main branch stock",
-      items: {
-        create: [
-          {
-            productId: p1.id,
-            productName: p1.name,
-            quantity: 100,
-            unitPrice: new Prisma.Decimal("120.00"),
-            totalPrice: new Prisma.Decimal("12000.00"),
-          },
-          {
-            productId: p5.id,
-            productName: p5.name,
-            quantity: 20,
-            unitPrice: new Prisma.Decimal("600.00"),
-            totalPrice: new Prisma.Decimal("12000.00"),
-          },
-        ],
-      },
-    },
-    include: { items: true },
-  })
-
-  for (const item of completedPo.items) {
-    if (item.productId) {
-      await addStock({
-        organizationId: org.id,
-        productId: item.productId,
-        userId: adminUser.id,
-        quantity: item.quantity,
-        movementType: "PURCHASE",
-        branchId: mainBranch.id,
-        unitCost: Number(item.unitPrice),
-        reference: completedPo.orderNumber,
-        referenceType: "PURCHASE_ORDER",
-        note: `PO received (seed): ${completedPo.orderNumber}`,
-      })
-    }
-  }
-
-  await prisma.supplierPayment.create({
-    data: {
-      purchaseOrderId: completedPo.id,
-      organizationId: org.id,
-      amount: new Prisma.Decimal("24000.00"),
-      paymentMethod: "BANK_TRANSFER",
-      paymentDate: new Date(),
-      reference: "SEED-PO-PAY-1",
-      recordedById: accountantUser.id,
-      notes: "Full payment for completed seed PO",
-    },
-  })
-
-  await prisma.expense.create({
-    data: {
-      organizationId: org.id,
-      userId: accountantUser.id,
-      branchId: mainBranch.id,
-      category: "RENT",
-      amount: new Prisma.Decimal("350000.00"),
-      paymentMethod: "BANK_TRANSFER",
-      description: "Monthly rent — main store",
-      expenseDate: new Date(),
-      reference: "RENT-SEED-1",
-    },
-  })
-
-  await prisma.expense.create({
-    data: {
-      organizationId: org.id,
-      userId: managerUser.id,
-      branchId: eastBranch.id,
-      category: "UTILITIES",
-      amount: new Prisma.Decimal("45000.00"),
-      paymentMethod: "MOBILE_MONEY",
-      description: "Electricity — east branch",
-      expenseDate: new Date(),
-    },
-  })
-
-  await prisma.cashBalance.create({
-    data: {
-      organizationId: org.id,
-      branchId: mainBranch.id,
-      balance: new Prisma.Decimal("125000.50"),
-      balanceDate: new Date(),
-      recordedById: sellerUser.id,
-      notes: "Opening cash count (seed)",
-    },
-  })
-
-  await prisma.stockTransfer.create({
-    data: {
-      organizationId: org.id,
-      fromBranchId: mainBranch.id,
-      toBranchId: eastBranch.id,
-      status: StockTransferStatus.PENDING,
-      requestedById: managerUser.id,
-      notes: "Awaiting approval — seed transfer",
-      items: {
-        create: [{ productId: p1.id, quantity: 25 }],
-      },
-    },
-  })
-
-  const transferCompleted = await prisma.stockTransfer.create({
-    data: {
-      organizationId: org.id,
-      fromBranchId: eastBranch.id,
-      toBranchId: mainBranch.id,
-      status: StockTransferStatus.COMPLETED,
-      requestedById: adminUser.id,
-      approvedById: adminUser.id,
-      completedAt: new Date(),
-      notes: "Completed seed transfer (ledger adjusted below)",
-      items: {
-        create: [{ productId: p2.id, quantity: 5 }],
-      },
-    },
-  })
-
-  await removeStock({
-    organizationId: org.id,
-    productId: p2.id,
-    userId: adminUser.id,
-    quantity: 5,
-    movementType: "TRANSFER_OUT",
-    branchId: eastBranch.id,
-    reference: `ST-${transferCompleted.id}`,
-    referenceType: "STOCK_TRANSFER",
-    note: "Seed stock transfer out",
-  })
-
-  await addStock({
-    organizationId: org.id,
-    productId: p2.id,
-    userId: adminUser.id,
-    quantity: 5,
-    movementType: "TRANSFER_IN",
-    branchId: mainBranch.id,
-    reference: `ST-${transferCompleted.id}`,
-    referenceType: "STOCK_TRANSFER",
-    note: "Seed stock transfer in",
-  })
-
-  await prisma.stockMovement.create({
-    data: {
-      organizationId: org.id,
-      productId: p1.id,
-      userId: adminUser.id,
-      branchId: mainBranch.id,
-      type: StockMovementType.ADJUSTMENT,
-      quantity: 2,
-      previousStock: 100,
-      newStock: 102,
-      note: "Seed adjustment (legacy movement row)",
-    },
-  })
-
-  await prisma.notification.create({
-    data: {
-      organizationId: org.id,
-      title: "Low stock reminder",
-      message: "Review min stock levels for demo products.",
-      type: "ALERT",
-      isRead: false,
-    },
-  })
-
-  await prisma.activityLog.create({
-    data: {
-      organizationId: org.id,
-      userId: adminUser.id,
-      branchId: mainBranch.id,
-      type: ActivityType.USER_LOGIN,
-      description: "Demo admin login (seeded activity)",
-      module: LogModule.SYSTEM,
-      status: LogStatus.SUCCESS,
-      entityType: "User",
-      entityId: String(adminUser.id),
-    },
-  })
-
-  const inviteToken = crypto.randomBytes(24).toString("hex")
-  await prisma.organizationInvitation.create({
-    data: {
-      organizationId: org.id,
-      email: "pending.invite@exceledge.test",
-      role: UserRole.SELLER,
-      token: inviteToken,
-      defaultPassword: "InviteTemp#1",
-      status: InvitationStatus.PENDING,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      invitedBy: adminUser.id,
-    },
-  })
-
-  console.log("")
-  console.log("--- Demo dataset (development) ---")
-  console.log(`Organization: ${org.name} (id=${org.id})`)
-  console.log(`Branches: ${mainBranch.code} (id=${mainBranch.id}), ${eastBranch.code} (id=${eastBranch.id})`)
-  console.log(`Password for all demo users: ${DEMO_PASSWORD}`)
-  console.log(`  ${DEMO_ADMIN_EMAIL} (ADMIN)`)
-  console.log(`  demo.manager@exceledge.test (BRANCH_MANAGER)`)
-  console.log(`  demo.seller@exceledge.test (SELLER)`)
-  console.log(`  demo.eastseller@exceledge.test (SELLER, East Branch)`)
-  console.log(`  demo.accountant@exceledge.test (ACCOUNTANT)`)
-  console.log(`Sample sales: cash, mixed/debt + partial debt payment, insurance, proforma`)
-  console.log(`Purchase orders: pending #${pendingPo.id}, completed #${completedPo.id} + supplier payment`)
-  console.log(`Stock: batches on MAIN + EAST; completed stock transfer id=${transferCompleted.id}`)
-  console.log("-----------------------------------")
-  console.log("")
+    }),
+    [201], "draft journal",
+  );
+  expect(await api("POST", `/api/v1/journals/${draft.id}/post`, {}), [200], "post journal");
+  log("gl", `done: ${draft.journalNumber} posted`);
 }
+
+/* ── Inventory (ERP webhooks) ───────────────────────────────────── */
+
+async function seedInventory() {
+  const moves = await api("GET", "/api/v1/inventory/movements?from=2026-01-01&to=2026-12-31");
+  if (moves.status === 200 && (moves.body.data?.rows ?? []).some((r: any) => (r.reference ?? "").startsWith("DEMO-"))) {
+    log("inv", "demo movements exist, skipping");
+    return;
+  }
+  log("inv", "ingesting demo ERP stock movements…");
+  let n = 0;
+  const ingest = async (body: unknown, what: string) => {
+    n += 1;
+    const res = await api("POST", "/api/v1/integration/events", body, integrationHeaders);
+    if (![200, 201].includes(res.status)) throw new Error(`${what} → ${res.status}: ${JSON.stringify(res.body)?.slice(0, 300)}`);
+  };
+  const movement = (ledgerId: number, extra: Record<string, unknown>, meta: Record<string, unknown>) => ({
+    eventId: `evt-demo-inv-${ledgerId}`,
+    idempotencyKey: `${ORG_ID}|INVENTORY|InventoryLedger|DEMO-${ledgerId}|INVENTORY_MOVEMENT|1`,
+    externalOrganizationId: String(ORG_ID),
+    externalBranchId: "1",
+    eventType: "INVENTORY_MOVEMENT",
+    occurredAt: "2026-09-10T09:00:00.000Z",
+    sourceModule: "INVENTORY",
+    sourceDocumentType: "InventoryLedger",
+    sourceDocumentId: `DEMO-${ledgerId}`,
+    currencyCode: "RWF",
+    amountTotals: { gross: "0", net: "0", tax: "0" },
+    ...extra,
+    metadata: { ledgerId: `DEMO-${ledgerId}`, branchName: "Kigali Main", unit: "PCS", ...meta },
+  });
+  await ingest(movement(1, { sourceDocumentNumber: "DEMO-PO-1" }, {
+    movementType: "PURCHASE", direction: "IN", productId: 901, productName: "Demo Rice 5kg", sku: "DEMO-901",
+    category: "Groceries", quantity: 100, runningBalance: 100, unitCost: 2000, reference: "DEMO-PO-1",
+  }), "purchase 1");
+  await ingest(movement(2, { sourceDocumentNumber: "DEMO-PO-2" }, {
+    movementType: "PURCHASE", direction: "IN", productId: 901, productName: "Demo Rice 5kg", sku: "DEMO-901",
+    category: "Groceries", quantity: 50, runningBalance: 150, unitCost: 2200, reference: "DEMO-PO-2",
+  }), "purchase 2");
+  await ingest({
+    eventId: "evt-demo-sale-1",
+    idempotencyKey: `${ORG_ID}|POS|Sale|DEMO-S-1|SALE_COMPLETED|1`,
+    externalOrganizationId: String(ORG_ID),
+    externalBranchId: "1",
+    eventType: "SALE_COMPLETED",
+    occurredAt: "2026-09-12T10:00:00.000Z",
+    sourceModule: "POS",
+    sourceDocumentType: "Sale",
+    sourceDocumentId: "DEMO-S-1",
+    sourceDocumentNumber: "DEMO-S-1",
+    currencyCode: "RWF",
+    amountTotals: { gross: "1180000", net: "1000000", tax: "180000" },
+    paymentSplits: [{ paymentMethod: "CASH", amount: 1180000 }],
+    metadata: { paymentType: "CASH", cogs: 150000 },
+  }, "demo sale");
+  log("inv", "done: 2 purchases + 1 POS sale with COGS");
+}
+
+/* ── Main ───────────────────────────────────────────────────────── */
 
 async function main() {
-  console.log("Starting database seeding...")
-  await seedSuperAdmin()
-  await seedSubscriptionPlans()
-  await seedDemoDataset()
-  console.log("✅ Database seeding completed successfully")
+  log("main", `seeding org ${ORG_ID} via ${API}`);
+  await ensureSetup();
+  await openPeriods();
+  await seedReceivables();
+  await seedPayables();
+  await seedBanking();
+  await seedExpenses();
+  await seedTax();
+  await seedFixedAssets();
+  await seedJournal();
+  await seedInventory();
+  log("main", "demo seed complete");
 }
 
-main()
-  .catch((e) => {
-    console.error("❌ Error during database seeding:", e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+main().catch((e) => {
+  // eslint-disable-next-line no-console
+  console.error(`[seed] FAILED: ${(e as Error).message}`);
+  process.exit(1);
+});

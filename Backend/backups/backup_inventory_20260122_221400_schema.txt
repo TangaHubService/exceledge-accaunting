@@ -1,1 +1,0 @@
-./scripts/backup-database-alternative.sh: line 70: psql: command not found
