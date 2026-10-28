@@ -1,9 +1,28 @@
 # exceledge-accaunting
 
+Accounting and ERP web application. It lets users manage company setup, chart of accounts, parties (suppliers/customers), banking transactions, approvals, budgets, and reporting. The interface is built with React and served by Vite; the backend is an Express service backed by Prisma and PostgreSQL.
+
+The repository is split into two independent deploy targets:
+- `frontend/` — the web UI (`React` + `Vite`)
+- `backend/` — the API service (`Express` + `Prisma`)
+
+Each folder carries its own domain package (`packages/domain/`) so neither depends on the other. Both are deployable separately through Dokploy using nixpacks.
+
 This repo contains two independently deployable pieces: a backend API service
 (`backend/`) and a frontend web app (`frontend/`). Each folder depends on its own
 domain package so neither shares dependencies with the other. Both deploy via
 Dokploy using nixpacks.
+
+## What the app does
+
+- **Setup**: company profile, business info, currency, fiscal periods, posting policies, opening balances, inventory settings, approval controls
+- **Chart of accounts**: create and organize system accounts; taxonomies, reporting groups, and navigation paths
+- **Parties**: supplier and customer records with categories and default accounts
+- **Banking**: transfers and transactions between accounts, with type mapping
+- **Documents / approvals**: posting controls, review status flows, approval posting
+- **Reporting / insights**: budgets and basic analytics
+
+The frontend uses session management (`src/lib/session.tsx`), role-based capabilities (`capabilitiesForRole`), and shared category/transfer-type constants from its domain package.
 
 ## Repository layout
 
