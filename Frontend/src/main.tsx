@@ -10,6 +10,7 @@ import "./styles-team.css";
 import "./styles-coa.css";
 import "./styles-lists.css";
 import "./styles-tools.css";
+import "./styles-txn.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

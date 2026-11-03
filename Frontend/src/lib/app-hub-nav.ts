@@ -36,6 +36,12 @@ export const ACCOUNTING_HUB_ITEMS: readonly HubItem[] = [
   { id: "fixed-assets", label: "Fixed assets", to: "/fixed-assets", match: ["/fixed-assets"] },
   { id: "prepaid-expenses", label: "Prepaid expenses", to: "/accounting/prepaid-expenses", match: ["/accounting/prepaid-expenses"] },
   { id: "my-accountant", label: "My accountant", to: "/accounting/my-accountant", match: ["/accounting/my-accountant", "/setup"] },
+  { id: "journal-entry", label: "Journal entry", to: "/accounting/journal-entry/new" },
+  { id: "bank-deposit", label: "Bank deposit", to: "/banking/deposit/new" },
+  { id: "transfer", label: "Transfer", to: "/banking/transfer/new" },
+  { id: "pay-down-credit-card", label: "Pay down credit card", to: "/banking/pay-down-credit-card/new" },
+  { id: "tasks", label: "Tasks", to: "?task=new", match: [] },
+  { id: "ai-assistant", label: "AI assistant", to: "?assistant=1", match: [] },
 ];
 
 export const EXPENSES_HUB_ITEMS: readonly HubItem[] = [
@@ -43,6 +49,13 @@ export const EXPENSES_HUB_ITEMS: readonly HubItem[] = [
   { id: "suppliers", label: "Suppliers", to: "/suppliers", match: ["/suppliers"] },
   { id: "bills", label: "Bills", to: "/bills", match: ["/bills"] },
   { id: "supplier-payments", label: "Supplier payments", to: "/supplier-payments", match: ["/supplier-payments"] },
+  { id: "new-cheque", label: "Cheque", to: "/expenses/cheque/new" },
+  { id: "new-bill", label: "Bill", to: "/expenses/bill/new" },
+  { id: "new-pay-bills", label: "Pay bills", to: "/expenses/pay-bills" },
+  { id: "new-purchase-order", label: "Purchase order", to: "/expenses/purchase-order/new" },
+  { id: "new-item-receipt", label: "Item receipt", to: "/expenses/item-receipt/new" },
+  { id: "new-supplier-credit", label: "Supplier credit", to: "/expenses/supplier-credit/new" },
+  { id: "new-credit-card-credit", label: "Credit card credit", to: "/expenses/credit-card-credit/new" },
 ];
 
 export const SALES_HUB_ITEMS: readonly HubItem[] = [
@@ -51,6 +64,15 @@ export const SALES_HUB_ITEMS: readonly HubItem[] = [
   { id: "invoices", label: "Invoices", to: "/invoices", match: ["/invoices"] },
   { id: "sales-orders", label: "Sales orders", to: "/invoices" },
   { id: "products-services", label: "Products & services", to: "/products-services", match: ["/products-services"] },
+  { id: "new-invoice", label: "Invoice", to: "/sales/invoice/new" },
+  { id: "new-receive-payment", label: "Receive payment", to: "/sales/receive-payment/new" },
+  { id: "new-statement", label: "Statement", to: "/sales/statement/new" },
+  { id: "new-sales-order", label: "Sales order", to: "/sales/sales-order/new" },
+  { id: "new-credit-note", label: "Credit note", to: "/sales/credit-note/new" },
+  { id: "new-sales-receipt", label: "Sales receipt", to: "/sales/sales-receipt/new" },
+  { id: "new-refund-receipt", label: "Refund receipt", to: "/sales/refund-receipt/new" },
+  { id: "new-delayed-credit", label: "Delayed credit", to: "/sales/delayed-credit/new" },
+  { id: "new-delayed-charge", label: "Delayed charge", to: "/sales/delayed-charge/new" },
 ];
 
 export const CUSTOMER_HUB_ITEMS: readonly HubItem[] = [
@@ -61,6 +83,8 @@ export const CUSTOMER_HUB_ITEMS: readonly HubItem[] = [
   { id: "proposals", label: "Proposals", to: "/invoices" },
   { id: "contracts", label: "Contracts", to: "/customers" },
   { id: "reviews", label: "Reviews", to: "/customers" },
+  { id: "new-estimate", label: "Estimate", to: "/sales/estimate/new" },
+  { id: "new-proposal", label: "Proposal", to: "/sales/proposal" },
 ];
 
 export const TEAM_HUB_ITEMS: readonly HubItem[] = [
@@ -71,15 +95,17 @@ export const TEAM_HUB_ITEMS: readonly HubItem[] = [
 ];
 
 export const PROJECTS_HUB_ITEMS: readonly HubItem[] = [
-  { id: "projects-overview", label: "Overview", to: "/dimensions" },
-  { id: "projects", label: "Projects", to: "/dimensions", match: ["/dimensions"] },
-  { id: "tracking-categories", label: "Tracking categories", to: "/dimensions" },
+  { id: "projects-overview", label: "Overview", to: "/projects", match: [] },
+  { id: "projects", label: "Projects", to: "/projects", match: ["/projects"] },
+  { id: "new-project", label: "New project", to: "/projects/new" },
+  { id: "tracking-categories", label: "Tracking categories", to: "/dimensions", match: ["/dimensions"] },
 ];
 
 export const INVENTORY_HUB_ITEMS: readonly HubItem[] = [
   { id: "items", label: "Items", to: "/inventory", match: ["/inventory"] },
   { id: "lists", label: "All lists", to: "/lists", match: ["/lists"] },
   { id: "movements", label: "Stock movements", to: "/inventory/movements", match: ["/inventory/movements"] },
+  { id: "inventory-adjustment", label: "Inventory adjustment", to: "/inventory/adjustment/new" },
   { id: "stock-reconciliation", label: "Stock reconciliation", to: "/inventory/reconciliation", match: ["/inventory/reconciliation"] },
 ];
 
@@ -98,10 +124,10 @@ export const APP_HUBS: readonly HubDef[] = [
     activePrefixes: ["/accounting", "/accounts", "/banking", "/journals", "/fixed-assets", "/recurring", "/setup"],
   },
   { key: "expenses", items: EXPENSES_HUB_ITEMS, activePrefixes: ["/expenses", "/suppliers", "/bills", "/supplier-payments"] },
-  { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices", "/products-services"] },
+  { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices", "/products-services", "/sales"] },
   { key: "customers", items: CUSTOMER_HUB_ITEMS, activePrefixes: ["/customers"] },
   { key: "team", items: TEAM_HUB_ITEMS, activePrefixes: ["/employees", "/time"] },
-  { key: "projects", items: PROJECTS_HUB_ITEMS, activePrefixes: ["/dimensions"] },
+  { key: "projects", items: PROJECTS_HUB_ITEMS, activePrefixes: ["/projects", "/dimensions"] },
   { key: "inventory", items: INVENTORY_HUB_ITEMS, activePrefixes: ["/inventory"] },
   { key: "tax", items: TAX_HUB_ITEMS, activePrefixes: ["/tax"] },
 ];
