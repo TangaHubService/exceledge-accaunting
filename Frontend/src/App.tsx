@@ -77,6 +77,13 @@ import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
 import { BackupRestore } from "./pages/BackupRestore";
 import { SignIn } from "./SignIn";
+import { ProjectForm } from "./pages/projects/ProjectForm";
+import { ProjectDetail, ProjectsPage } from "./pages/projects/Projects";
+import { ProposalStart, StatementForm } from "./pages/txn/CustomerExtras";
+import { CustomerLineForm, ReceivePaymentForm } from "./pages/txn/CustomerTxnForms";
+import { BankDepositForm, InventoryAdjustmentForm, JournalEntryForm, PayDownCreditCardForm, TransferForm } from "./pages/txn/OtherTxnForms";
+import { SalesDocForm } from "./pages/txn/SalesDocForm";
+import { CategoryTxnForm, ItemReceiptForm, PayBillsForm } from "./pages/txn/SupplierTxnForms";
 import { AddUser } from "./pages/AddUser";
 import { CustomFormStyles } from "./pages/CustomFormStyles";
 import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
@@ -96,6 +103,35 @@ type Route = { pattern: string; needs: AccountingCapability; render: (params: Re
 
 const ROUTES: Route[] = [
   { pattern: "/", needs: "setup:view", render: () => <Overview /> },
+  // Create menu: full-page transaction forms (mockups 107–172).
+  { pattern: "/sales/invoice/new", needs: "ar:view", render: () => <SalesDocForm key="invoice" kind="invoice" /> },
+  { pattern: "/sales/receive-payment/new", needs: "ar:view", render: () => <ReceivePaymentForm /> },
+  { pattern: "/sales/statement/new", needs: "ar:view", render: () => <StatementForm /> },
+  { pattern: "/sales/estimate/new", needs: "ar:view", render: () => <SalesDocForm key="estimate" kind="estimate" /> },
+  { pattern: "/sales/sales-order/new", needs: "ar:view", render: () => <SalesDocForm key="sales-order" kind="sales-order" /> },
+  { pattern: "/sales/proposal", needs: "ar:view", render: () => <ProposalStart /> },
+  { pattern: "/sales/proposal/new", needs: "ar:view", render: () => <SalesDocForm key="proposal" kind="proposal" /> },
+  { pattern: "/sales/credit-note/new", needs: "ar:view", render: () => <CustomerLineForm key="credit-note" kind="credit-note" /> },
+  { pattern: "/sales/sales-receipt/new", needs: "ar:view", render: () => <CustomerLineForm key="sales-receipt" kind="sales-receipt" /> },
+  { pattern: "/sales/refund-receipt/new", needs: "ar:view", render: () => <CustomerLineForm key="refund-receipt" kind="refund-receipt" /> },
+  { pattern: "/sales/delayed-credit/new", needs: "ar:view", render: () => <CustomerLineForm key="delayed-credit" kind="delayed-credit" /> },
+  { pattern: "/sales/delayed-charge/new", needs: "ar:view", render: () => <CustomerLineForm key="delayed-charge" kind="delayed-charge" /> },
+  { pattern: "/expenses/bill/new", needs: "ap:view", render: () => <CategoryTxnForm key="bill" kind="bill" /> },
+  { pattern: "/expenses/cheque/new", needs: "bank:view", render: () => <CategoryTxnForm key="cheque" kind="cheque" /> },
+  { pattern: "/expenses/pay-bills", needs: "ap:view", render: () => <PayBillsForm /> },
+  { pattern: "/expenses/purchase-order/new", needs: "ap:view", render: () => <CategoryTxnForm key="purchase-order" kind="purchase-order" /> },
+  { pattern: "/expenses/item-receipt/new", needs: "ap:view", render: () => <ItemReceiptForm /> },
+  { pattern: "/expenses/supplier-credit/new", needs: "ap:view", render: () => <CategoryTxnForm key="supplier-credit" kind="supplier-credit" /> },
+  { pattern: "/expenses/credit-card-credit/new", needs: "bank:view", render: () => <CategoryTxnForm key="credit-card-credit" kind="credit-card-credit" /> },
+  { pattern: "/banking/deposit/new", needs: "bank:view", render: () => <BankDepositForm /> },
+  { pattern: "/banking/transfer/new", needs: "bank:view", render: () => <TransferForm /> },
+  { pattern: "/banking/pay-down-credit-card/new", needs: "bank:view", render: () => <PayDownCreditCardForm /> },
+  { pattern: "/accounting/journal-entry/new", needs: "journal:create", render: () => <JournalEntryForm /> },
+  { pattern: "/inventory/adjustment/new", needs: "inventory:view", render: () => <InventoryAdjustmentForm /> },
+  { pattern: "/projects", needs: "setup:view", render: () => <ProjectsPage /> },
+  { pattern: "/projects/new", needs: "setup:view", render: () => <ProjectForm key="new" /> },
+  { pattern: "/projects/:id", needs: "setup:view", render: (p) => <ProjectDetail key={p.id} id={p.id} /> },
+  { pattern: "/projects/:id/edit", needs: "setup:view", render: (p) => <ProjectForm key={p.id} id={p.id} /> },
   { pattern: "/workflows", needs: "setup:view", render: () => <Workflows /> },
   { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
@@ -261,6 +297,8 @@ function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
   // Full-page chrome (not the main app Shell).
+  if (/^\/(sales|expenses|banking|accounting|inventory)\/[a-z-]+\/new$/.test(path) || path === "/expenses/pay-bills" || path === "/sales/proposal") return page;
+  if (path === "/projects/new" || /^\/projects\/[^/]+\/edit$/.test(path)) return page;
   if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;

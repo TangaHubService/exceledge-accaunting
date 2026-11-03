@@ -71,9 +71,9 @@ export const TEAM_HUB_ITEMS: readonly HubItem[] = [
 ];
 
 export const PROJECTS_HUB_ITEMS: readonly HubItem[] = [
-  { id: "projects-overview", label: "Overview", to: "/dimensions" },
-  { id: "projects", label: "Projects", to: "/dimensions", match: ["/dimensions"] },
-  { id: "tracking-categories", label: "Tracking categories", to: "/dimensions" },
+  { id: "projects-overview", label: "Overview", to: "/projects", match: [] },
+  { id: "projects", label: "Projects", to: "/projects", match: ["/projects"] },
+  { id: "tracking-categories", label: "Tracking categories", to: "/dimensions", match: ["/dimensions"] },
 ];
 
 export const INVENTORY_HUB_ITEMS: readonly HubItem[] = [
@@ -101,7 +101,7 @@ export const APP_HUBS: readonly HubDef[] = [
   { key: "sales", items: SALES_HUB_ITEMS, activePrefixes: ["/invoices", "/products-services"] },
   { key: "customers", items: CUSTOMER_HUB_ITEMS, activePrefixes: ["/customers"] },
   { key: "team", items: TEAM_HUB_ITEMS, activePrefixes: ["/employees", "/time"] },
-  { key: "projects", items: PROJECTS_HUB_ITEMS, activePrefixes: ["/dimensions"] },
+  { key: "projects", items: PROJECTS_HUB_ITEMS, activePrefixes: ["/projects", "/dimensions"] },
   { key: "inventory", items: INVENTORY_HUB_ITEMS, activePrefixes: ["/inventory"] },
   { key: "tax", items: TAX_HUB_ITEMS, activePrefixes: ["/tax"] },
 ];

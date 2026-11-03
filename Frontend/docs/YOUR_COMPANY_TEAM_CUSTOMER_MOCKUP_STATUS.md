@@ -40,6 +40,58 @@
 |---|------|--------|--------|---------|
 | 101 | `101. Add customer.png` | Customers & leads empty | DONE | `Customers.tsx` + hero |
 | 102–106 | Adding customer parts 1–5 | Add customer drawer tabs | DONE | `AddCustomerDrawer` + tab components |
+| 107–109 | Create invoice parts 1–3 | Invoice (Edit / Email / PDF, Manage panel, tour) | BUILT | `SalesDocForm kind="invoice"` → `/sales/invoice/new` · posts `POST /ar/invoices` |
+| 110 | `110. Receive payment.png` | Receive payment | BUILT | `ReceivePaymentForm` → `/sales/receive-payment/new` · `POST /ar/receipts` |
+| 111 | `111. Statement.png` | Create statements | BUILT | `StatementForm` → `/sales/statement/new` · downloads statement PDFs |
+| 112–114 | Estimate parts 1–3 | Estimate | BUILT (local) | `SalesDocForm kind="estimate"` → `/sales/estimate/new` |
+| 115–120 | Sales order parts 1–6 | Sales order + Customisation / Design / Customer reports panel | BUILT (local) | `SalesDocForm kind="sales-order"` → `/sales/sales-order/new` |
+| 121–122 | Credit note parts 1–2 | Credit note | BUILT | `CustomerLineForm` → `/sales/credit-note/new` · `POST /ar/credit-notes` |
+| 123–124 | Sales receipt parts 1–2 | Sales receipt | BUILT | `CustomerLineForm` → `/sales/sales-receipt/new` · invoice + receipt |
+| 125–126 | Refund receipt parts 1–2 | Refund receipt | BUILT | `CustomerLineForm` → `/sales/refund-receipt/new` · `POST /banking/payments` |
+| 127–130 | Delayed credit / charge parts 1–4 | Delayed credit, delayed charge | BUILT (local) | `CustomerLineForm` → `/sales/delayed-credit/new`, `/sales/delayed-charge/new` |
+| 131 | `131. Proposal.png` | Who's this proposal for? | BUILT (local) | `ProposalStart` → `/sales/proposal` → `/sales/proposal/new` |
+
+---
+
+## SUPPLIER
+
+| # | File | Screen | Status | Maps to |
+|---|------|--------|--------|---------|
+| 141–145 | Supplier hero + Add supplier parts 1–4 | Suppliers hero, Add supplier drawer | DONE (existing) | `SuppliersHero`, `AddSupplierDrawer` |
+| 146 | `146. Import supplier.png` | Import suppliers | DONE (existing) | `ImportSuppliersWizard` |
+| 147 | `147. Cheque.png` | Cheque | BUILT | `CategoryTxnForm kind="cheque"` → `/expenses/cheque/new` · `POST /banking/payments` |
+| 148 | `148. Create bill.png` | Bill + autofill panel | BUILT | `CategoryTxnForm kind="bill"` → `/expenses/bill/new` · `POST /ap/bills` (+ approval request) |
+| 149 | `149. Pay bill.png` | Pay bills | BUILT | `PayBillsForm` → `/expenses/pay-bills` · `POST /ap/payments` per supplier |
+| 150 | `150. Purchase order.png` | Purchase order | BUILT (local) | `CategoryTxnForm kind="purchase-order"` |
+| 151 | `151. Item receipt.png` | Item receipt | BUILT (local) | `ItemReceiptForm` → `/expenses/item-receipt/new` |
+| 152 | `152. Supplier credit.png` | Supplier credit | BUILT | `CategoryTxnForm` → `/expenses/supplier-credit/new` · `POST /ap/credit-notes` |
+| 153 | `153. Credit card.png` | Credit card credit | BUILT | `CategoryTxnForm` → `/expenses/credit-card-credit/new` · `POST /banking/receipts` |
+
+---
+
+## PROJECT
+
+| # | File | Screen | Status | Maps to |
+|---|------|--------|--------|---------|
+| 154 | `154. Project.png` | Projects empty state / list | BUILT (local) | `ProjectsPage` → `/projects` |
+| 155 | `155. Project part 2.png` | New project + Project Management Agent panel | BUILT (local) | `ProjectForm` → `/projects/new`, `/projects/:id/edit` |
+| 156–162 | Project parts 3–9 | Project detail: Summary, Transactions, Time Activity, Reports, Details, Attachments, tour | BUILT (local) | `ProjectDetail` → `/projects/:id` |
+
+---
+
+## OTHER
+
+| # | File | Screen | Status | Maps to |
+|---|------|--------|--------|---------|
+| 163–164 | Task parts 1–2 | Add task drawer | BUILT (local) | `AddTaskDrawer` (`?task=new`), listed in Needs attention |
+| 165 | `165. Bank deposit.png` | Bank deposit | BUILT | `BankDepositForm` → `/banking/deposit/new` · `POST /banking/receipts` (+ transfer for cash back) |
+| 166 | `166. Transfer.png` | Transfer | BUILT | `TransferForm` → `/banking/transfer/new` · `POST /banking/transfers` |
+| 167–168 | Journal entry parts 1–2 | Journal entry | BUILT | `JournalEntryForm` → `/accounting/journal-entry/new` · `POST /journals` |
+| 169–170 | Inventory adjustment parts 1–2 | Inventory adjustment | BUILT (local) | `InventoryAdjustmentForm` → `/inventory/adjustment/new` |
+| 171 | `171. Credit card.png` | Pay down credit card | BUILT | `PayDownCreditCardForm` → `/banking/pay-down-credit-card/new` · `POST /banking/payments` |
+| 172 | `172. New chat.png` | AI Assistant panel | BUILT | `AIAssistantPanel` (`?assistant=1`) — rule-based answers, no AI model connected |
+
+**Status key:** BUILT = UI and validation done and visually checked in the browser without a backend running; not yet tested against a live API. "(local)" = no backend endpoint yet, so saved in the browser (`src/lib/txn.ts`). Every saved document is also indexed locally so projects can show tagged transactions.
 
 ---
 
@@ -66,4 +118,5 @@
 ---
 
 ## Last updated
+2026-11-03 — CUSTOMER 107–131, SUPPLIER 147–153, PROJECT 154–162, OTHER 163–172 built (full-page transaction forms in `src/pages/txn`, projects in `src/pages/projects`)
 2026-10-19 — TEAM marked DONE after browser visual testing

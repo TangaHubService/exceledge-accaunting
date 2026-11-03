@@ -30,6 +30,7 @@ import {
   WifiOff,
   X,
   Zap,
+  Sparkles,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -44,7 +45,7 @@ import { APP_HUBS, isAppActive } from "../lib/app-hub-nav";
 import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
-import { isPathActive, Link, navigate, useLocation } from "../lib/router";
+import { isPathActive, Link, navigate, setQueryParam, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
 import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { CustomisePreferences } from "./CustomisePreferences";
@@ -58,6 +59,7 @@ import { ScreenShareModal } from "./ribbon/ScreenShareModal";
 import { TasksDrawer } from "./ribbon/TasksDrawer";
 import { UserProfileMenu } from "./ribbon/UserProfileMenu";
 import { SearchWorkspace } from "./SearchWorkspace";
+import { AddTaskDrawer, AIAssistantPanel } from "./txn/SidePanels";
 
 /** Thin stroke matching the mock line icons. */
 const SW = 1.5;
@@ -132,7 +134,7 @@ function placeBeside(el: HTMLElement | null, opts?: { caretAlign?: boolean }): P
 export function Shell({ children }: { children: ReactNode }) {
   const { email } = useSession();
   const company = useCompany();
-  const { path } = useLocation();
+  const { path, query } = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [panelPos, setPanelPos] = useState<PanelPos | null>(null);
@@ -744,6 +746,19 @@ export function Shell({ children }: { children: ReactNode }) {
                 {initials(email)}
               </span>
             </button>
+            <button
+              type="button"
+              className={`ee-icon-btn ee-ai-btn ${query.get("assistant") ? "active" : ""}`}
+              title="AI Assistant"
+              aria-label="AI Assistant"
+              aria-expanded={Boolean(query.get("assistant"))}
+              onClick={() => {
+                closeOverlay();
+                setQueryParam("assistant", query.get("assistant") ? null : "1");
+              }}
+            >
+              <Sparkles size={20} strokeWidth={SW} />
+            </button>
           </div>
         </header>
 
@@ -755,7 +770,16 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      <TasksDrawer open={overlay === "tasks"} onClose={closeOverlay} />
+      <TasksDrawer
+        open={overlay === "tasks"}
+        onClose={closeOverlay}
+        onAdd={() => {
+          closeOverlay();
+          setQueryParam("task", "new");
+        }}
+      />
+      {query.get("task") === "new" ? <AddTaskDrawer onClose={() => setQueryParam("task", null)} /> : null}
+      {query.get("assistant") ? <AIAssistantPanel onClose={() => setQueryParam("assistant", null)} /> : null}
       <HelpDrawer open={overlay === "help"} onClose={closeOverlay} />
       <InboxDrawer open={overlay === "inbox"} onClose={closeOverlay} />
       <IntegrationsModal open={overlay === "integrations"} onClose={closeOverlay} />
