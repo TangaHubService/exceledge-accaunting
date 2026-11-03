@@ -781,3 +781,8 @@ td.right .txn-cell { text-align: right; }
 .txn-band .grow { min-width: 220px; max-width: 300px; }
 @media (max-width: 900px) { .txn-w-170, .txn-w-185 { width: 100%; } }
 .txn-w-800 { width: min(800px, 100%); }
+
+/* Inside the app Shell: fill the content area under the top bar, keep the rail and nav visible. */
+.ee-content:has(> .txn-page) { max-width: none; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.ee-content > .txn-page { position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; }
+.ee-content > .txn-page > .txn-brand { display: none; }

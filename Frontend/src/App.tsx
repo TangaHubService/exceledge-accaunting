@@ -297,8 +297,6 @@ function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
   // Full-page chrome (not the main app Shell).
-  if (/^\/(sales|expenses|banking|accounting|inventory)\/[a-z-]+\/new$/.test(path) || path === "/expenses/pay-bills" || path === "/sales/proposal") return page;
-  if (path === "/projects/new" || /^\/projects\/[^/]+\/edit$/.test(path)) return page;
   if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
