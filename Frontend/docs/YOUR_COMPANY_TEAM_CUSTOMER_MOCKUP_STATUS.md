@@ -117,6 +117,33 @@
 
 ---
 
+## REPORTS (mockups 173–195) — DONE
+
+Routes sit under `/reports/*` plus `/budgets`, inside the Shell with the Reports & analytics sidebar (`src/components/reports/kit.tsx`).
+
+| Mock | Screen | Route | Data |
+|------|--------|-------|------|
+| 173–178 | Standard reports | `/reports/standard` | Links to existing report pages or `/reports/view/:slug`; favourites in local storage |
+| 179–180, 185 | Custom reports, report type dialog | `/reports/custom` | Local storage; rows read from the API |
+| 181 | Management reports | `/reports/management` | `books/statements`, AR, AP, expenses; custom reports in local storage |
+| 182 | KPI scorecard, Create KPI | `/reports/kpis` | `books/kpis`, targets via API; custom KPIs in local storage |
+| 183 | Dashboards | `/reports/dashboards` | `books/statements`, `books/kpis`, AR, AP |
+| 184 | Spreadsheet sync | `/reports/spreadsheet-sync` | Downloads through report endpoints |
+| 186–187 | Performance centre | `/reports/performance` | Monthly figures from the API; layout in local storage |
+| 188–189 | Cash flow overview | `/reports/cash-flow` | Banking, AR, AP, statements |
+| 190–191 | Cash flow planner | `/reports/cash-flow-planner` | Open documents from the API; planned items in local storage |
+| 192 | Budgets | `/budgets` | Existing budgets page |
+| 193–195 | Forecasts | `/reports/forecasts` | Actuals from the API; forecasts in local storage; Make this a budget posts to `books/budgets` |
+
+### Known gaps
+- 14 catalogue reports show "isn't connected to data yet" in `/reports/view/:slug` because no endpoint supplies them.
+- Live Excel, Google Sheets and bank feeds are not connected; Spreadsheet sync downloads files instead.
+- Cash-basis KPIs are not available because the ledger reports on an accrual basis.
+- The heading of the section holding Purchase List was cut off between mocks 175 and 176 and is labelled "What you owe"; rows may also be missing there.
+
+---
+
 ## Last updated
+2026-11-05 — REPORTS 173–195 built (`src/pages/reports`)
 2026-11-03 — CUSTOMER 107–131, SUPPLIER 147–153, PROJECT 154–162, OTHER 163–172 built (full-page transaction forms in `src/pages/txn`, projects in `src/pages/projects`)
 2026-10-19 — TEAM marked DONE after browser visual testing

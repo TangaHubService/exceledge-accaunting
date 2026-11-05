@@ -93,6 +93,13 @@ import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
 import { CompanySettings } from "./pages/settings/CompanySettings";
 import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
 import { InboxSettings } from "./pages/settings/InboxSettings";
+import { CashFlowOverview, CashFlowPlanner } from "./pages/reports/CashFlow";
+import { Forecasts, ForecastEditor, ForecastSetup } from "./pages/reports/Forecasts";
+import { KpiScorecard } from "./pages/reports/KpiScorecard";
+import { PerformanceCentre } from "./pages/reports/PerformanceCentre";
+import { DashboardDetail, Dashboards, ManagementPreview, SpreadsheetSync } from "./pages/reports/ReportInsights";
+import { CustomReports, ManagementReports, StandardReports } from "./pages/reports/ReportLists";
+import { ReportViewer } from "./pages/reports/ReportViewer";
 import { ReportsSettings } from "./pages/settings/ReportsSettings";
 import { SalesSettings } from "./pages/settings/SalesSettings";
 import { TimeSettings } from "./pages/settings/TimeSettings";
@@ -209,6 +216,22 @@ const ROUTES: Route[] = [
   { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
   { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
   { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
+  { pattern: "/reports", needs: "report:view", render: () => <Redirect to="/reports/standard" /> },
+  { pattern: "/reports/standard", needs: "report:view", render: () => <StandardReports /> },
+  { pattern: "/reports/custom", needs: "report:view", render: () => <CustomReports /> },
+  { pattern: "/reports/management", needs: "report:view", render: () => <ManagementReports /> },
+  { pattern: "/reports/management/:id", needs: "report:view", render: (p) => <ManagementPreview key={p.id} id={p.id} /> },
+  { pattern: "/reports/kpis", needs: "report:view", render: () => <KpiScorecard /> },
+  { pattern: "/reports/dashboards", needs: "report:view", render: () => <Dashboards /> },
+  { pattern: "/reports/dashboards/:id", needs: "report:view", render: (p) => <DashboardDetail key={p.id} id={p.id} /> },
+  { pattern: "/reports/spreadsheet-sync", needs: "report:view", render: () => <SpreadsheetSync /> },
+  { pattern: "/reports/performance", needs: "report:view", render: () => <PerformanceCentre /> },
+  { pattern: "/reports/cash-flow", needs: "report:view", render: () => <CashFlowOverview /> },
+  { pattern: "/reports/cash-flow-planner", needs: "report:view", render: () => <CashFlowPlanner /> },
+  { pattern: "/reports/forecasts", needs: "report:view", render: () => <Forecasts /> },
+  { pattern: "/reports/forecasts/new", needs: "report:view", render: () => <ForecastSetup /> },
+  { pattern: "/reports/forecasts/:id", needs: "report:view", render: (p) => <ForecastEditor key={p.id} id={p.id} /> },
+  { pattern: "/reports/view/:slug", needs: "report:view", render: (p) => <ReportViewer key={p.slug} slug={p.slug} /> },
   { pattern: "/reports/trial-balance", needs: "report:view", render: () => <TrialBalance /> },
   { pattern: "/dimensions", needs: "report:view", render: () => <Dimensions /> },
   { pattern: "/reports/statements", needs: "report:view", render: () => <Statements /> },

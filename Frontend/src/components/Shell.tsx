@@ -48,6 +48,7 @@ import { useCompany } from "../lib/company";
 import { isPathActive, Link, navigate, setQueryParam, useLocation } from "../lib/router";
 import { useSession } from "../lib/session";
 import { AllAppsSidebar } from "./customers/AllAppsSidebar";
+import { isReportsPath, ReportsSidebar, showsReportsSidebar } from "./reports/kit";
 import { CustomisePreferences } from "./CustomisePreferences";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { HelpDrawer } from "./ribbon/HelpDrawer";
@@ -286,10 +287,11 @@ export function Shell({ children }: { children: ReactNode }) {
       }
     : undefined;
 
+  const reportsOpen = showsReportsSidebar(path);
   const hubOpen = APP_HUBS.some((hub) => isAppActive(hub.key, path));
 
   return (
-    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${hubOpen ? "ee-hub-open" : ""}`}>
+    <div className={`ee-app ${navOpen ? "nav-open" : ""} ${hubOpen || reportsOpen ? "ee-hub-open" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -347,7 +349,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <button
             ref={reportsBtnRef}
             type="button"
-            className={`ee-rail-item ${panel === "reports" ? "hot" : ""} ${path.startsWith("/reports") && panel !== "bookmarks" ? "active" : ""}`}
+            className={`ee-rail-item ${panel === "reports" ? "hot" : ""} ${isReportsPath(path) && panel !== "bookmarks" ? "active" : ""}`}
             aria-expanded={panel === "reports"}
             onMouseEnter={() => showPanel("reports")}
             onMouseLeave={scheduleClose}
@@ -526,7 +528,7 @@ export function Shell({ children }: { children: ReactNode }) {
           onMouseLeave={scheduleClose}
         >
           {REPORTS_MENU.map((item) => {
-            const to = "to" in item && item.to ? item.to : "/reports/statements";
+            const to = item.to;
             const on = isPathActive(path, to);
             return (
               <button
@@ -537,7 +539,6 @@ export function Shell({ children }: { children: ReactNode }) {
                 onClick={() => go(to)}
               >
                 <span>{item.label}</span>
-                {"hasChildren" in item && item.hasChildren ? <ChevronRight size={14} strokeWidth={SW} /> : null}
               </button>
             );
           })}
@@ -763,7 +764,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </header>
 
         <div className={`ee-workspace ${hubOpen ? "has-dock" : ""}`}>
-          {hubOpen ? <AllAppsSidebar /> : null}
+          {hubOpen ? <AllAppsSidebar /> : showsReportsSidebar(path) ? <ReportsSidebar /> : null}
           <main className="ee-content" id="main-content" tabIndex={-1}>
             {children}
           </main>

@@ -144,14 +144,17 @@ export const CREATE_MENU: CreateColumn[] = [
 ];
 
 export const REPORTS_MENU = [
-  { label: "Standard reports", to: "/reports/statements" },
-  { label: "Custom reports", to: "/reports/statements" },
-  { label: "Management reports", to: "/reports/statements" },
-  { label: "KPIs", to: "/reports/statements" },
-  { label: "Dashboards", to: "/" },
-  { label: "Spreadsheet sync", to: "/reports/statements" },
-  { label: "Performance centre", to: "/reports/statements" },
-  { label: "Financial planning", to: "/reports/statements", hasChildren: true },
+  { label: "Standard reports", to: "/reports/standard" },
+  { label: "Custom reports", to: "/reports/custom" },
+  { label: "Management reports", to: "/reports/management" },
+  { label: "KPIs", to: "/reports/kpis" },
+  { label: "Dashboards", to: "/reports/dashboards" },
+  { label: "Spreadsheet sync", to: "/reports/spreadsheet-sync" },
+  { label: "Performance centre", to: "/reports/performance" },
+  { label: "Cash flow overview", to: "/reports/cash-flow" },
+  { label: "Cash flow planner", to: "/reports/cash-flow-planner" },
+  { label: "Budgets", to: "/budgets" },
+  { label: "Forecasts", to: "/reports/forecasts" },
 ] as const;
 
 export const ALL_APPS = [
@@ -224,17 +227,17 @@ export const CUSTOMISE_NAV_APPS = [
 /** Pages that can be bookmarked via Customise → Bookmarks. */
 export const CUSTOMISE_BOOKMARK_PAGES = [
   { id: "home", label: "Home", to: "/" },
-  { id: "standard-reports", label: "Standard reports", to: "/reports/statements" },
-  { id: "custom-reports", label: "Custom reports", to: "/reports/statements" },
-  { id: "management-reports", label: "Management reports", to: "/reports/statements" },
-  { id: "kpis", label: "KPIs", to: "/reports/statements" },
-  { id: "dashboards", label: "Dashboards", to: "/" },
-  { id: "spreadsheet-sync", label: "Spreadsheet sync", to: "/" },
-  { id: "performance-centre", label: "Performance centre", to: "/" },
-  { id: "cash-flow-overview", label: "Cash flow overview", to: "/reports/statements" },
-  { id: "cash-flow-planner", label: "Cash flow planner", to: "/reports/statements" },
+  { id: "standard-reports", label: "Standard reports", to: "/reports/standard" },
+  { id: "custom-reports", label: "Custom reports", to: "/reports/custom" },
+  { id: "management-reports", label: "Management reports", to: "/reports/management" },
+  { id: "kpis", label: "KPIs", to: "/reports/kpis" },
+  { id: "dashboards", label: "Dashboards", to: "/reports/dashboards" },
+  { id: "spreadsheet-sync", label: "Spreadsheet sync", to: "/reports/spreadsheet-sync" },
+  { id: "performance-centre", label: "Performance centre", to: "/reports/performance" },
+  { id: "cash-flow-overview", label: "Cash flow overview", to: "/reports/cash-flow" },
+  { id: "cash-flow-planner", label: "Cash flow planner", to: "/reports/cash-flow-planner" },
   { id: "budgets", label: "Budgets", to: "/budgets" },
-  { id: "forecasts", label: "Forecasts", to: "/reports/statements" },
+  { id: "forecasts", label: "Forecasts", to: "/reports/forecasts" },
   { id: "bank-transactions", label: "Bank transactions", to: "/banking/transactions" },
   { id: "integration-transactions", label: "Integration transactions", to: "/banking/integration-transactions" },
   { id: "reconcile", label: "Reconcile", to: "/banking/reconciliation" },
@@ -325,7 +328,7 @@ export const SEARCH_RECENT = [
 export const SEARCH_EXPLORE = [
   { label: "Transactions", hint: "Invoices, bills, payments and journals", to: "/journals" },
   { label: "Contacts", hint: "Customers, suppliers and employees", to: "/customers" },
-  { label: "Reports", hint: "Financial statements and saved reports", to: "/reports/statements" },
+  { label: "Reports", hint: "Financial statements and saved reports", to: "/reports/standard" },
   { label: "Help centre", hint: "Guides and product support", to: "/" },
 ] as const;
 

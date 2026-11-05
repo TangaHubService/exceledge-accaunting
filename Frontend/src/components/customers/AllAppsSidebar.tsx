@@ -6,10 +6,11 @@ import {
   LayoutGrid,
   type LucideIcon,
   Megaphone,
+  PanelLeftClose,
+  PanelLeftOpen,
   PieChart,
   Receipt,
   Settings2,
-  SlidersHorizontal,
   Users,
   UsersRound,
   Warehouse,
@@ -25,6 +26,7 @@ import { ALL_APPS } from "../../lib/dashboard-dummy";
 import { Link, navigate, useLocation } from "../../lib/router";
 
 const SW = 1.5;
+const COLLAPSE_KEY = "ee.allApps.sidebarCollapsed";
 
 const APP_ICONS: Record<string, LucideIcon> = {
   accounting: BookOpen,
@@ -43,6 +45,13 @@ export function AllAppsSidebar({ activeLeaf }: { activeLeaf?: string } = {}) {
   const { path } = useLocation();
   const leaf = resolveActiveLeaf(path, activeLeaf);
   const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenHubs(path));
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     const next = defaultOpenHubs(path);
@@ -62,11 +71,34 @@ export function AllAppsSidebar({ activeLeaf }: { activeLeaf?: string } = {}) {
     setOpen((s) => ({ ...s, [key]: !s[key] }));
   }
 
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, c ? "0" : "1");
+      } catch {
+        /* the preference just won't stick */
+      }
+      return !c;
+    });
+  }
+
+  if (collapsed) {
+    return (
+      <aside className="ee-apps-dock collapsed" aria-label="All apps">
+        <button type="button" className="ee-apps-dock-toggle" onClick={toggleCollapsed} aria-label="Show All apps menu" title="Show menu">
+          <PanelLeftOpen size={18} strokeWidth={SW} aria-hidden="true" />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="ee-apps-dock" aria-label="All apps">
       <div className="ee-apps-dock-head">
         <span>All apps</span>
-        <SlidersHorizontal size={14} strokeWidth={SW} aria-hidden="true" />
+        <button type="button" className="ee-apps-dock-toggle" onClick={toggleCollapsed} aria-label="Hide All apps menu" title="Hide menu">
+          <PanelLeftClose size={17} strokeWidth={SW} aria-hidden="true" />
+        </button>
       </div>
       <nav className="ee-apps-dock-nav">
         {ALL_APPS.map((app) => {

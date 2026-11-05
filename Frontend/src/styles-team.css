@@ -42,7 +42,18 @@
   text-transform: uppercase;
   color: #667085;
 }
-.ee-apps-dock-head svg { color: #98a2b3; }
+.ee-apps-dock.collapsed { width: 52px; align-items: center; padding-top: 12px; }
+.ee-apps-dock-toggle {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #667085;
+  cursor: pointer;
+}
+.ee-apps-dock-toggle:hover { background: #f2f4f7; color: #101828; }
+.ee-apps-dock-toggle:focus-visible { outline: 2px solid var(--ee-blue); outline-offset: 1px; }
 .ee-apps-dock-nav {
   padding: 2px 10px 12px;
   overflow: auto;
@@ -724,6 +735,7 @@
     height: auto;
     max-height: min(42vh, 320px);
   }
+  .ee-apps-dock.collapsed { width: 100%; align-items: flex-start; padding: 6px 12px; }
   .ee-team-hero { grid-template-columns: 1fr; }
   .ee-team-hero-art { order: -1; min-height: 160px; }
   .ee-time-cols { grid-template-columns: 1fr; }

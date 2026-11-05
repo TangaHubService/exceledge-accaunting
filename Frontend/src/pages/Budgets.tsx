@@ -91,9 +91,7 @@ export function Budgets() {
         <div className="ee-budget-hero-wrap">
           {/* Top breadcrumb row */}
           <div className="ee-budget-breadcrumb">
-            <span className="ee-budget-bc-section">REPORTS &amp; ANALYTICS</span>
-            <span className="ee-budget-bc-sep">›</span>
-            <span className="ee-budget-bc-current">Budgets</span>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: "var(--txn-ink)", textTransform: "none", letterSpacing: "-0.01em" }}>Budgets</h1>
             {budgets.data && budgets.data.length > 0 && (
               <button
                 type="button"
@@ -107,11 +105,11 @@ export function Budgets() {
           </div>
 
           {/* Hero card — matches mockup exactly */}
-          <div className="ee-budget-hero-card">
+          <div className="ee-budget-hero-card" style={{ background: "#edf5fe", border: "1px solid var(--txn-line)" }}>
             {/* Left: text + CTAs */}
             <div className="ee-budget-hero-body">
               <h1 className="ee-budget-hero-title">
-                Plan your finances<br />and stay ahead
+                Plan your finances and stay ahead
               </h1>
               <p className="ee-budget-hero-sub">
                 Having visibility into your finances and prioritising expenses will give you the confidence to run your business smoothly.
@@ -128,7 +126,7 @@ export function Budgets() {
               <ul className="ee-budget-hero-bullets">
                 <li>
                   <CheckCircle2 size={18} strokeWidth={2} />
-                  <span>Create budgets using financial data available in Excel Edge ERP.</span>
+                  <span>Create budgets using financial data from your ERP.</span>
                 </li>
                 <li>
                   <CheckCircle2 size={18} strokeWidth={2} />
@@ -136,7 +134,7 @@ export function Budgets() {
                 </li>
                 <li>
                   <CheckCircle2 size={18} strokeWidth={2} />
-                  <span>Use spreadsheets and sync changes back to Excel Edge ERP.</span>
+                  <span>Use spreadsheets and sync changes back to your ERP.</span>
                 </li>
               </ul>
 
@@ -173,22 +171,10 @@ export function Budgets() {
             <div className="ee-budget-hero-illustration">
               <div className="ee-budget-hero-img-wrap">
                 <img
-                  src="/illustrations/budget-hero.png"
+                  src="/illustrations/planning-hero.png"
                   alt="Financial planning illustration"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
-                {/* Fallback decorative SVG when image is missing */}
-                <svg viewBox="0 0 340 280" fill="none" xmlns="http://www.w3.org/2000/svg" className="ee-budget-hero-svg" aria-hidden="true">
-                  <rect x="20" y="40" width="300" height="200" rx="16" fill="#f0f6ff" />
-                  <rect x="40" y="80" width="80" height="120" rx="6" fill="#bfdbfe" />
-                  <rect x="140" y="60" width="80" height="140" rx="6" fill="#93c5fd" />
-                  <rect x="240" y="100" width="60" height="100" rx="6" fill="#3b82f6" />
-                  <line x1="20" y1="200" x2="320" y2="200" stroke="#cbd5e1" strokeWidth="1.5" />
-                  <circle cx="80" cy="110" r="18" fill="#dbeafe" />
-                  <circle cx="180" cy="90" r="18" fill="#bfdbfe" />
-                  <circle cx="270" cy="130" r="18" fill="#93c5fd" />
-                  <path d="M80 110 Q130 75 180 90 Q225 105 270 130" stroke="#2563eb" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-                </svg>
               </div>
             </div>
           </div>
