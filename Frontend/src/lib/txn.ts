@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SelectOption } from "../components/Select";
 import { useCompany } from "./company";
 import { amount, isoDay } from "./format";
+import { linkToProject, pushRecordInBackground, removeRecordInBackground } from "./server-store";
 import { useResource, useSession } from "./session";
-import type { AccountType, Customer, InventoryValuation, Supplier } from "./types";
+import type { AccountType, Customer, Supplier } from "./types";
 
 /* ── Terms & methods ───────────────────────────────────── */
 
@@ -132,18 +133,12 @@ export const useIncomeAccountOptions = () => useAccountOptions(INCOME_TYPES);
 export type InventoryItem = { id: string; name: string; sku: string; quantity: number; unitCost: number };
 
 /** Items on hand, summed across locations (from the valuation report). */
+const EMPTY_ITEMS: InventoryItem[] = [];
+
 export function useInventoryItems() {
   const { can } = useSession();
-  const valuation = useResource<InventoryValuation>(can("inventory:view") ? "/api/v1/inventory/valuation" : null);
-  return useMemo<InventoryItem[]>(() => {
-    const byId = new Map<string, InventoryItem>();
-    for (const l of valuation.data?.lines ?? []) {
-      const prev = byId.get(l.itemId);
-      if (prev) prev.quantity += l.quantity;
-      else byId.set(l.itemId, { id: l.itemId, name: l.name, sku: l.sku ?? "", quantity: l.quantity, unitCost: l.unitCost ?? 0 });
-    }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [valuation.data]);
+  const list = useResource<InventoryItem[]>(can("inventory:view") ? "/api/v1/inventory/items" : null);
+  return list.data ?? EMPTY_ITEMS;
 }
 
 /** Product/service picker: income accounts (services) and stocked items, keyed "acct:" / "item:". */
@@ -273,11 +268,13 @@ export function readLocal<T>(collection: string): T[] {
 export function saveLocal<T extends { id: string }>(collection: string, record: T) {
   const list = readLocal<T>(collection).filter((r) => r.id !== record.id);
   write(`ee.local.${collection}`, [record, ...list]);
+  pushRecordInBackground(collection, record);
   return record;
 }
 
 export function removeLocal(collection: string, id: string) {
   write(`ee.local.${collection}`, readLocal<{ id: string }>(collection).filter((r) => r.id !== id));
+  removeRecordInBackground(collection, id);
 }
 
 /** Next document number for a local sequence, starting at `start`. Reserved on save with `takeNumber`. */
@@ -295,6 +292,7 @@ export function indexTxn(row: Omit<TxnIndexRow, "id" | "createdAt"> & { id?: str
   const full: TxnIndexRow = { ...row, id: row.id ?? newId(), createdAt: new Date().toISOString() };
   const list = read<TxnIndexRow[]>(INDEX_KEY, []).filter((r) => r.id !== full.id);
   write(INDEX_KEY, [full, ...list].slice(0, 2000));
+  if (full.projectId) linkToProject(full.projectId, full.kind, full.id);
   return full;
 }
 

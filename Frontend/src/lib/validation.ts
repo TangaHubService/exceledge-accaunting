@@ -137,28 +137,25 @@ export type NewAccountValues = {
   parentId: string;
   description: string;
   locked: boolean;
+  openingBalance: string;
+  openingBalanceDate: string;
 };
 
 export function newAccountSchema(opts: {
   existingCodes: Set<string>;
-  range?: { min: number; max: number };
+  /** False when account numbers are turned off (QuickBooks setting) or the number is fixed. */
+  required?: boolean;
 }) {
   return yup.object({
     name: yup.string().trim().required("Account name is required").max(120, "Keep the name under 120 characters"),
+    // QuickBooks account numbers: free-form, up to 7 letters/digits, unique; not tied to the account type.
     code: yup
       .string()
       .trim()
-      .required("Account number is required")
-      .matches(/^\d{1,6}$/, "Use a numeric account number (up to 6 digits)")
-      .test("unique", "This account number already exists", (v) => !v || !opts.existingCodes.has(v))
-      .test("range", function (v) {
-        if (!v || !opts.range) return true;
-        const n = Number(v);
-        if (!Number.isFinite(n) || n < opts.range.min || n > opts.range.max) {
-          return this.createError({ message: `Use codes ${opts.range.min}–${opts.range.max}` });
-        }
-        return true;
-      }),
+      .default("")
+      .test("required", "Account number is required", (v) => opts.required === false || Boolean(v))
+      .test("format", "Use up to 7 letters, digits, \".\" or \"-\"", (v) => !v || /^[A-Za-z0-9][A-Za-z0-9.-]{0,6}$/.test(v))
+      .test("unique", "This account number already exists", (v) => !v || !opts.existingCodes.has(v)),
     accountTypeLabel: yup.string().trim().required("Select an account type"),
     detailType: yup.string().trim().required("Select a detail type"),
     isSubaccount: yup.boolean().default(false),
@@ -169,6 +166,18 @@ export function newAccountSchema(opts: {
     }),
     description: yup.string().trim().max(500, "Keep the description under 500 characters").default(""),
     locked: yup.boolean().default(false),
+    openingBalance: yup
+      .string()
+      .trim()
+      .default("")
+      .test("number", "Enter a number, e.g. 150000", (v) => !v || /^-?\d+(\.\d{1,2})?$/.test(v.replace(/,/g, ""))),
+    openingBalanceDate: yup
+      .string()
+      .default("")
+      .when("openingBalance", {
+        is: (v: string | undefined) => Boolean(v && Number(v.replace(/,/g, "")) !== 0),
+        then: (s) => s.required("Choose the date the balance is as of"),
+      }),
   });
 }
 

@@ -5,7 +5,8 @@ import { useFeedback } from "../../components/feedback";
 import { Select } from "../../components/Select";
 import { CancelButton, fileSize, Modal, PartySelect, SplitButton, TField, TxnFooter, TxnPage, useValidation, ValidationSummary } from "../../components/txn/TxnKit";
 import { navigate } from "../../lib/router";
-import { fileToDataUrl, getProject, nextProjectCode, type Project, PROJECT_FILE_MAX, PROJECT_STATUSES, type ProjectFile, type ProjectStatus, saveProject, useProjects } from "../../lib/projects";
+import { fileToDataUrl, getProject, nextProjectCode, type Project, PROJECT_FILE_MAX, saveProjectAndWait, PROJECT_STATUSES, type ProjectFile, type ProjectStatus, saveProject, useProjects } from "../../lib/projects";
+import { useSession } from "../../lib/session";
 import { customerOptions, emailListValid, newId, useCustomers } from "../../lib/txn";
 import { yup } from "../../lib/validation";
 
@@ -13,6 +14,7 @@ type Form = { name: string; code: string; customerId: string; email: string; sta
 
 export function ProjectForm({ id }: { id?: string }) {
   const { toast } = useFeedback();
+  const { api } = useSession();
   const { customers, reload } = useCustomers();
   const projects = useProjects();
   const existing = id ? getProject(id) : undefined;
@@ -93,13 +95,24 @@ export function ProjectForm({ id }: { id?: string }) {
       customerAddress: customer?.physicalAddress ?? existing?.customerAddress ?? "",
       progress: existing?.progress ?? 0,
       starred: existing?.starred ?? false,
-      files,
+      files: [],
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
     try {
-      saveProject(project);
-    } catch {
-      return toast("Couldn't save — browser storage is full. Remove some attachments and try again.", { error: true });
+      await saveProjectAndWait(project);
+    } catch (e) {
+      return toast((e as Error).message, { error: true });
+    }
+    for (const f of files) {
+      try {
+        const body = new FormData();
+        body.append("entityType", "Project");
+        body.append("entityId", project.id);
+        body.append("file", new File([await (await fetch(f.dataUrl)).blob()], f.name, { type: f.type }));
+        await api("/api/v1/books/documents/upload", { method: "POST", body });
+      } catch (e) {
+        toast(`${f.name}: ${(e as Error).message}`, { error: true });
+      }
     }
     toast(existing ? `${project.name} updated` : `Project ${project.name} created`);
     if (after === "new") {

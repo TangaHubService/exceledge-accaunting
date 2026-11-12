@@ -51,7 +51,6 @@ import {
   newId,
   peekNumber,
   rwf,
-  saveLocal,
   takeNumber,
   TERMS,
   termDays,
@@ -306,20 +305,38 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
           if (failed) toast(`${failed} attachment${failed > 1 ? "s" : ""} couldn't be uploaded`, { error: true });
         }
       } else {
-        takeNumber(sequence, form.number);
-        saveLocal(kind === "proposal" ? "estimate" : kind, {
-          id,
-          kind,
-          ...form,
-          customerName: partyName,
-          status: isQuote ? (form.acceptedBy ? "Accepted" : "Pending") : "Open",
-          subtotal,
-          discount,
-          total,
-          deposit,
-          attachments: files.map((f) => ({ name: f.file.name, size: f.file.size })),
-          createdAt: new Date().toISOString(),
+        const doc = await api<{ id: string; number: string }>(`/api/v1/commercial/${kind}`, {
+          method: "POST",
+          body: JSON.stringify({
+            number: form.number,
+            customerId: form.customerId || null,
+            leadName: form.leadName,
+            leadEmail: form.leadEmail,
+            contact: form.contact,
+            billTo: form.billTo,
+            shipTo: form.shipTo,
+            terms: form.terms,
+            docDate: form.docDate,
+            dueDate: form.dueDate,
+            expirationDate: form.expirationDate,
+            acceptedBy: form.acceptedBy,
+            acceptedDate: form.acceptedDate,
+            memo: form.memo,
+            note: form.note,
+            discountPct: num(form.discountPct) || 0,
+            deposit,
+            projectId: query.get("project") || null,
+            meta: { paymentOptions: form.paymentOptions },
+            lines: filledProductLines(form.lines).map((l) => ({
+              ...productLinesPayload([l], productOptions)[0],
+              itemId: l.product.startsWith("item:") ? l.product.slice(5) : null,
+              serviceDate: l.date,
+            })),
+          }),
         });
+        number = doc.number;
+        id = doc.id;
+        takeNumber(sequence, doc.number);
       }
       indexTxn({
         id,

@@ -26,7 +26,9 @@ import { Select } from "../../components/Select";
 import { fileSize, Modal, TField } from "../../components/txn/TxnKit";
 import { amount, date, isoDay } from "../../lib/format";
 import { Link, navigate } from "../../lib/router";
-import { fileToDataUrl, type Project, PROJECT_FILE_MAX, PROJECT_STATUSES, type ProjectStatus, saveProject, statusLabel, useProjectFigures, useProjects } from "../../lib/projects";
+import { unlinkFromProject } from "../../lib/server-store";
+import { useResource, useSession } from "../../lib/session";
+import { type Project, PROJECT_FILE_MAX, PROJECT_STATUSES, type ProjectStatus, saveProject, statusLabel, useProjectFigures, useProjects } from "../../lib/projects";
 import { COST_KINDS, INCOME_KINDS, monthsAgo, newId, removeLocal, TXN_LABELS, type TxnIndexRow, type TxnKind, useTxnIndex } from "../../lib/txn";
 
 const money = (n: number) => `RWF${amount(n, 2)}`;
@@ -293,7 +295,7 @@ export function ProjectDetail({ id }: { id: string }) {
       {tab === "Time Activity" ? <TimeTab project={p} /> : null}
       {tab === "Project Reports" ? <ReportsTab project={p} /> : null}
       {tab === "Project Details" ? <DetailsTab project={p} update={update} /> : null}
-      {tab === "Attachments" ? <AttachmentsTab project={p} update={update} /> : null}
+      {tab === "Attachments" ? <AttachmentsTab project={p} /> : null}
 
       {progressEdit ? <ProgressModal value={p.progress} onClose={() => setProgressEdit(false)} onSave={(n) => (update({ progress: n }), setProgressEdit(false), toast(`Progress set to ${n}%`))} /> : null}
     </div>
@@ -463,11 +465,12 @@ function TransactionsTab({ project, type, setType }: { project: Project; type: s
     if (!(await confirm({ title: `Remove ${sel.size} transaction${sel.size > 1 ? "s" : ""} from this project?`, body: "The transactions stay in your books; they just won't be tagged to this project.", confirmLabel: "Remove" }))) return;
     try {
       const all = JSON.parse(localStorage.getItem("ee.txn.index") ?? "[]") as TxnIndexRow[];
+      await Promise.all(all.filter((r) => sel.has(r.id)).map((r) => unlinkFromProject(project.id, r.kind, r.id)));
       localStorage.setItem("ee.txn.index", JSON.stringify(all.map((r) => (sel.has(r.id) ? { ...r, projectId: undefined } : r))));
       window.dispatchEvent(new CustomEvent("ee-local-store", { detail: "ee.txn.index" }));
       toast("Removed from project");
-    } catch {
-      toast("Couldn't update this browser's storage", { error: true });
+    } catch (e) {
+      toast((e as Error).message, { error: true });
     }
     setSel(new Set());
     setBatch(false);
@@ -915,8 +918,11 @@ function DetailsTab({ project: p, update }: { project: Project; update: (patch: 
   );
 }
 
-function AttachmentsTab({ project: p, update }: { project: Project; update: (patch: Partial<Project>) => void }) {
+type ProjectDocument = { id: string; fileName: string; sizeBytes: number | null; createdAt: string };
+
+function AttachmentsTab({ project: p }: { project: Project }) {
   const { toast, confirm } = useFeedback();
+  const { api, download } = useSession();
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [spin, setSpin] = useState(false);
@@ -928,24 +934,37 @@ function AttachmentsTab({ project: p, update }: { project: Project; update: (pat
 
   async function add(list: FileList | null) {
     if (!list) return;
-    const added = [];
+    let uploaded = 0;
     for (const f of Array.from(list)) {
       if (f.size > PROJECT_FILE_MAX) {
         toast(`${f.name} is larger than ${fileSize(PROJECT_FILE_MAX)}`, { error: true });
         continue;
       }
-      added.push({ id: newId(), name: f.name, size: f.size, type: f.type, dataUrl: await fileToDataUrl(f), addedAt: new Date().toISOString() });
+      try {
+        const body = new FormData();
+        body.append("entityType", "Project");
+        body.append("entityId", p.id);
+        body.append("file", f);
+        await api("/api/v1/books/documents/upload", { method: "POST", body });
+        uploaded += 1;
+      } catch (e) {
+        toast(`${f.name}: ${(e as Error).message}`, { error: true });
+      }
     }
-    if (!added.length) return;
-    try {
-      update({ files: [...p.files, ...added] });
-      toast(`${added.length} file${added.length > 1 ? "s" : ""} uploaded`);
-    } catch {
-      toast("Browser storage is full — remove some files first", { error: true });
+    if (uploaded) {
+      documents.reload();
+      toast(`${uploaded} file${uploaded > 1 ? "s" : ""} uploaded`);
     }
   }
 
-  const sorted = useMemo(() => [...p.files].sort((a, b) => b.addedAt.localeCompare(a.addedAt)), [p.files]);
+  const documents = useResource<ProjectDocument[]>(`/api/v1/books/documents?entityType=Project&entityId=${encodeURIComponent(p.id)}`);
+  const sorted = useMemo(
+    () =>
+      (documents.data ?? [])
+        .map((d) => ({ id: d.id, name: d.fileName, size: d.sizeBytes ?? 0, addedAt: d.createdAt }))
+        .sort((a, b) => b.addedAt.localeCompare(a.addedAt)),
+    [documents.data],
+  );
   return (
     <div className="prj-tab">
       <div
@@ -964,7 +983,7 @@ function AttachmentsTab({ project: p, update }: { project: Project; update: (pat
         <input ref={input} type="file" multiple hidden onChange={(e) => (void add(e.target.files), (e.target.value = ""))} />
       </div>
       <div className="prj-files">
-        <button type="button" className={`txn-icon ${spin ? "prj-spin" : ""}`} aria-label="Refresh" onClick={() => setSpin(true)}>
+        <button type="button" className={`txn-icon ${spin ? "prj-spin" : ""}`} aria-label="Refresh" onClick={() => (setSpin(true), documents.reload())}>
           <RefreshCw size={22} />
         </button>
         {sorted.length ? (
@@ -981,9 +1000,9 @@ function AttachmentsTab({ project: p, update }: { project: Project; update: (pat
               {sorted.map((f) => (
                 <tr key={f.id}>
                   <td>
-                    <a href={f.dataUrl} download={f.name} className="txn-link">
+                    <button type="button" className="txn-link" onClick={() => void download(`/api/v1/books/documents/${f.id}/download`, f.name).catch((e: Error) => toast(e.message, { error: true }))}>
                       {f.name}
-                    </a>
+                    </button>
                   </td>
                   <td>{fileSize(f.size)}</td>
                   <td>{date(f.addedAt)}</td>
@@ -993,7 +1012,13 @@ function AttachmentsTab({ project: p, update }: { project: Project; update: (pat
                       className="txn-icon sm"
                       aria-label={`Delete ${f.name}`}
                       onClick={async () => {
-                        if (await confirm({ title: `Delete ${f.name}?`, confirmLabel: "Delete", danger: true })) update({ files: p.files.filter((x) => x.id !== f.id) });
+                        if (!(await confirm({ title: `Delete ${f.name}?`, confirmLabel: "Delete", danger: true }))) return;
+                        try {
+                          await api(`/api/v1/books/documents/${f.id}`, { method: "DELETE" });
+                          documents.reload();
+                        } catch (e) {
+                          toast((e as Error).message, { error: true });
+                        }
                       }}
                     >
                       <Trash2 size={16} />
@@ -1013,7 +1038,7 @@ function AttachmentsTab({ project: p, update }: { project: Project; update: (pat
           </div>
         )}
       </div>
-      <p className="muted">Each file can be up to {fileSize(PROJECT_FILE_MAX)}. Attachments are stored in this browser.</p>
+      <p className="muted">Each file can be up to {fileSize(PROJECT_FILE_MAX)}. Attachments are stored with the project.</p>
     </div>
   );
 }

@@ -2,7 +2,9 @@ import { INVENTORY_MOVEMENT_KINDS } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import { actorOf, handle } from "../../lib/http";
 import * as inventory from "./inventory.service";
+import * as stock from "./stock-documents.service";
 
 export const inventoryRouter = Router();
 
@@ -102,3 +104,18 @@ inventoryRouter.post("/opening-snapshot", requireCapability("inventory:manage"),
     fail(res, e);
   }
 });
+
+inventoryRouter.get("/items", handle((req) => stock.listItems(req.companyId!)));
+inventoryRouter.get("/item-receipts", handle((req) => stock.listItemReceipts(req.companyId!, { status: str(req.query.status), supplierId: str(req.query.supplierId) })));
+inventoryRouter.post(
+  "/item-receipts",
+  requireCapability("inventory:manage"),
+  handle((req) => stock.createItemReceipt(req.companyId!, stock.itemReceiptBody.parse(req.body), actorOf(req)), 201),
+);
+inventoryRouter.get("/adjustments", handle((req) => stock.listAdjustments(req.companyId!, { status: str(req.query.status) })));
+inventoryRouter.get("/adjustments/:id", handle((req) => stock.getAdjustment(req.companyId!, req.params.id)));
+inventoryRouter.post(
+  "/adjustments",
+  requireCapability("inventory:manage"),
+  handle((req) => stock.createAdjustment(req.companyId!, stock.adjustmentBody.parse(req.body), actorOf(req)), 201),
+);

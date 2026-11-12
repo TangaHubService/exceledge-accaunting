@@ -824,7 +824,7 @@ export function AttachmentBox({
 /** After a document is posted, attach the picked files to it (server document storage). */
 export async function uploadAttachments(
   api: <T>(path: string, init?: RequestInit) => Promise<T>,
-  entityType: "ArInvoice" | "ApBill" | "Journal",
+  entityType: "ArInvoice" | "ApBill" | "Journal" | "ItemReceipt" | "Project",
   entityId: string,
   files: PickedFile[],
 ) {

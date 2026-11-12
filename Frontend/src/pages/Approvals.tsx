@@ -121,7 +121,7 @@ const STATUS_FILTERS: Array<{ value: string; label: string }> = [
 
 const TYPE_FILTERS: Array<{ value: string; label: string }> = [
   { value: "", label: "All records" },
-  ...["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment", "PeriodClose"].map((t) => ({ value: t, label: entityTypeLabel(t) })),
+  ...["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment", "PeriodClose", "InventoryAdjustment", "PurchaseOrder"].map((t) => ({ value: t, label: entityTypeLabel(t) })),
 ];
 
 export function Approvals() {

@@ -50,10 +50,8 @@ import {
   emailListValid,
   indexTxn,
   monthsAgo,
-  newId,
   peekNumber,
   rwf,
-  saveLocal,
   supplierOptions,
   takeNumber,
   TERMS,
@@ -387,10 +385,23 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
         return { id: t.id, number: t.number, posted: true };
       }
       case "purchase-order": {
-        const id = newId();
-        takeNumber("purchase-order", form.number);
-        saveLocal("purchase-order", { id, ...form, supplierName: partyName, total, attachments: files.map((f) => f.file.name), createdAt: new Date().toISOString() });
-        return { id, number: form.number, posted: false };
+        const doc = await api<{ id: string; number: string; status: string }>("/api/v1/commercial/purchase-order", {
+          method: "POST",
+          body: JSON.stringify({
+            number: form.number,
+            supplierId: form.party,
+            shipTo: form.shipping,
+            shipVia: form.shipVia,
+            terms: form.terms,
+            docDate: form.date,
+            dueDate: form.dueDate,
+            memo: form.memo,
+            note: form.message,
+            lines: accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+          }),
+        });
+        takeNumber("purchase-order", doc.number);
+        return { id: doc.id, number: doc.number, posted: false };
       }
     }
   }
@@ -772,6 +783,7 @@ export function ItemReceiptForm() {
   const { suppliers, reload } = useSuppliers();
   const items = useInventoryItems();
   const v = useValidation();
+  const { api } = useSession();
   const blank = () => ({ supplierId: "", date: isoDay(), number: peekNumber("item-receipt"), memo: "", lines: [emptyReceiptLine(), emptyReceiptLine()] });
   const [form, setForm] = useState(blank);
   const [files, setFiles] = useState<PickedFile[]>([]);
@@ -805,10 +817,23 @@ export function ItemReceiptForm() {
     if (!(await v.validate(schema, form))) return;
     const lines = form.lines.filter((l) => !isBlankRow(l, RECEIPT_KEYS));
     const value = lines.reduce((s, l) => s + num(l.qty) * num(l.rate), 0);
-    const id = newId();
+    let id = "";
+    try {
+      const receipt = await api<{ id: string; number: string }>("/api/v1/inventory/item-receipts", {
+        method: "POST",
+        body: JSON.stringify({ supplierId: form.supplierId, number: form.number, date: form.date, memo: form.memo, lines: lines.map((l) => ({ itemId: l.product, quantity: num(l.qty), unitCost: num(l.rate) })) }),
+      });
+      id = receipt.id;
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+      return;
+    }
+    if (files.length) {
+      const failed = await uploadAttachments(api, "ItemReceipt", id, files);
+      if (failed) toast(`${failed} attachment${failed > 1 ? "s" : ""} couldn't be uploaded`, { error: true });
+    }
     takeNumber("item-receipt", form.number);
-    saveLocal("item-receipt", { id, ...form, lines, supplierName: supplier?.name, value, attachments: files.map((f) => f.file.name), createdAt: new Date().toISOString() });
-    indexTxn({ id, kind: "item-receipt", number: form.number, date: form.date, party: supplier?.name ?? "", amount: value, memo: form.memo, status: "Received", posted: false });
+    indexTxn({ id, kind: "item-receipt", number: form.number, date: form.date, party: supplier?.name ?? "", amount: value, memo: form.memo, status: "Received", posted: true });
     toast(`Item receipt #${form.number} saved — record the supplier's bill when it arrives`);
     if (close) return navigate("/inventory");
     setForm(blank());

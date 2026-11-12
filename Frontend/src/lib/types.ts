@@ -31,6 +31,7 @@ export type Account = {
   systemProtected: boolean;
   allowManualPost: boolean;
   isCashAccount: boolean;
+  bankReconciliationRequired?: boolean;
   currentBalance: Decimal;
   hasPostedTransactions: boolean;
 };

@@ -335,7 +335,11 @@ export type AccountingCapability =
   | "control:view"
   | "control:manage"
   | "platform:view"
-  | "platform:manage";
+  | "platform:manage"
+  | "project:view"
+  | "project:manage"
+  | "team:view"
+  | "team:manage";
 
 const ALL_FINANCE: AccountingCapability[] = [
   "setup:view",
@@ -386,6 +390,10 @@ const ALL_FINANCE: AccountingCapability[] = [
   "control:manage",
   "platform:view",
   "platform:manage",
+  "project:view",
+  "project:manage",
+  "team:view",
+  "team:manage",
 ];
 
 const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
@@ -416,6 +424,9 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "budget:view",
     "control:view",
     "platform:view",
+    "project:view",
+    "project:manage",
+    "team:view",
   ],
   ACCOUNTANT: [
     "setup:view",
@@ -459,6 +470,10 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "control:manage",
     "platform:view",
     "platform:manage",
+    "project:view",
+    "project:manage",
+    "team:view",
+    "team:manage",
   ],
   SELLER: [],
 };
@@ -695,6 +710,23 @@ export function assertCodeMatchesType(code: string, type: AccountTypeCode): void
   }
 }
 
+/**
+ * QuickBooks account numbers: optional, free-form, up to 7 characters (letters, digits, "." or "-"),
+ * and not tied to the account type. The type ranges above are only used to suggest numbers.
+ */
+export const ACCOUNT_NUMBER_MAX_LENGTH = 7;
+
+export function assertValidAccountNumber(code: string): void {
+  const c = code.trim();
+  if (!c) throw new Error("Account number is required");
+  if (c.length > ACCOUNT_NUMBER_MAX_LENGTH) {
+    throw new Error(`Account numbers can be up to ${ACCOUNT_NUMBER_MAX_LENGTH} characters`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(c)) {
+    throw new Error("Account numbers can only use letters, digits, \".\" and \"-\"");
+  }
+}
+
 export interface CoaAccountInput {
   code: string;
   name: string;
@@ -703,7 +735,8 @@ export interface CoaAccountInput {
   parentType?: AccountTypeCode | null;
   parentCode?: string | null;
   existingCodes: Set<string>;
-  existingNamesInType: Set<string>;
+  /** Lower-cased names of the accounts that share this account's parent (or the top level). */
+  siblingNames: Set<string>;
   systemProtected?: boolean;
 }
 
@@ -711,13 +744,17 @@ export function validateNewAccount(input: CoaAccountInput): void {
   if (!input.code?.trim()) throw new Error("Account code is required");
   if (!input.name?.trim()) throw new Error("Account name is required");
   if (!input.type) throw new Error("Account type is required");
-  assertCodeMatchesType(input.code.trim(), input.type);
+  assertValidAccountNumber(input.code);
   if (input.existingCodes.has(input.code.trim())) {
     throw new Error("Account code must be unique");
   }
   const nameKey = input.name.trim().toLowerCase();
-  if (input.existingNamesInType.has(nameKey)) {
-    throw new Error("Account name must be unique within its category");
+  if (input.siblingNames.has(nameKey)) {
+    throw new Error(
+      input.parentId
+        ? "Another subaccount of this parent already has this name"
+        : "Another account already has this name",
+    );
   }
   if (input.parentId) {
     if (!input.parentType) throw new Error("Parent account does not exist");
@@ -726,6 +763,8 @@ export function validateNewAccount(input: CoaAccountInput): void {
     }
   }
 }
+
+const BALANCE_SHEET_CODES = new Set<AccountTypeCode>(["ASSET", "LIABILITY", "EQUITY"]);
 
 export function validateAccountUpdate(input: {
   existing: {
@@ -737,7 +776,8 @@ export function validateAccountUpdate(input: {
   nextCode?: string;
   nextType?: AccountTypeCode;
   nextName?: string;
-  nameTakenInType?: boolean;
+  /** Another account under the same parent already has the new name. */
+  nameTakenBySibling?: boolean;
   allowProtectedMutation?: boolean;
 }): void {
   if (input.existing.systemProtected && !input.allowProtectedMutation) {
@@ -748,14 +788,23 @@ export function validateAccountUpdate(input: {
       throw new Error("Protected system accounts cannot change type");
     }
   }
-  if (input.existing.hasPostedTransactions && input.nextCode && input.nextCode !== input.existing.code) {
-    throw new Error("Account codes cannot be modified once transactions have been posted");
-  }
+  // QuickBooks lets you renumber an account at any time; journals point at the account, not its number.
   if (input.nextCode && input.nextCode !== input.existing.code) {
-    assertCodeMatchesType(input.nextCode, input.nextType ?? input.existing.type);
+    assertValidAccountNumber(input.nextCode);
   }
-  if (input.nameTakenInType) {
-    throw new Error("Account name must be unique within its category");
+  // After postings the type may only move within the same statement (balance sheet or profit and loss).
+  if (
+    input.existing.hasPostedTransactions &&
+    input.nextType &&
+    input.nextType !== input.existing.type &&
+    BALANCE_SHEET_CODES.has(input.nextType) !== BALANCE_SHEET_CODES.has(input.existing.type)
+  ) {
+    throw new Error(
+      "This account has transactions, so it can only change to another balance sheet type or another profit and loss type",
+    );
+  }
+  if (input.nameTakenBySibling) {
+    throw new Error("Another account under the same parent already has this name");
   }
 }
 

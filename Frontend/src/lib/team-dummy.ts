@@ -180,7 +180,6 @@ export type StoredEmployee = EmployeeDraft & {
   createdAt: string;
 };
 
-const STORAGE_KEY = "ee-team-employees";
 const DRAFT_KEY = "ee-team-employee-draft";
 
 export function emptyEmployeeDraft(): EmployeeDraft {
@@ -226,19 +225,24 @@ export function employeeDisplayName(d: EmployeeDraft) {
   return [d.firstName, d.lastName].filter(Boolean).join(" ").trim() || "Employee";
 }
 
-export function loadEmployees(): StoredEmployee[] {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as StoredEmployee[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+/** An API employee row in the shape the screens use. Pay fields are absent for people who can't manage the team. */
+export function employeeFromServer(row: Record<string, unknown>): StoredEmployee {
+  const blank = emptyEmployeeDraft();
+  const draft: Record<string, string> = { ...blank };
+  for (const key of Object.keys(blank)) {
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    draft[key] = /Date$|^contract(Start|End)$|^dateOfBirth$|^effectiveFrom$/.test(key) ? String(value).slice(0, 10) : String(value);
   }
+  draft.employeeId = String(row.employeeNumber ?? "");
+  const employee = draft as unknown as EmployeeDraft;
+  return { ...employee, id: String(row.id), displayName: employeeDisplayName(employee), createdAt: String(row.createdAt ?? "") };
 }
 
-export function saveEmployees(list: StoredEmployee[]) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+/** What the API takes when saving an employee. */
+export function employeeToServer(draft: EmployeeDraft) {
+  const { employeeId: _generatedByServer, ...rest } = draft;
+  return { ...rest, basicSalary: draft.basicSalary === "" ? null : Number(draft.basicSalary) };
 }
 
 export function loadEmployeeDraft(): EmployeeDraft | null {
@@ -260,7 +264,7 @@ export function clearEmployeeDraft() {
 }
 
 /** Sunday-start week label matching the weekly timesheet mock. */
-export function weekRangeLabel(anchor = new Date(2026, 9, 18)) {
+export function weekRangeLabel(anchor = new Date()) {
   const start = new Date(anchor);
   start.setDate(start.getDate() - start.getDay());
   const end = new Date(start);
@@ -270,13 +274,14 @@ export function weekRangeLabel(anchor = new Date(2026, 9, 18)) {
   return `${fmt(start)} – ${end.getDate()} ${end.toLocaleDateString("en-GB", { month: "short" })} ${end.getFullYear()}`;
 }
 
-export function weekDayHeaders(anchor = new Date(2026, 9, 18)) {
+export function weekDayHeaders(anchor = new Date()) {
   const start = new Date(anchor);
   start.setDate(start.getDate() - start.getDay());
   const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   return names.map((name, i) => {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    return { key: name.toLowerCase(), label: `${name} ${d.getDate()}` };
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { key: name.toLowerCase(), label: `${name} ${d.getDate()}`, date: iso };
   });
 }

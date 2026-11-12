@@ -77,11 +77,25 @@ coaRouter.get("/export", requireCapability("coa:export"), async (req: AuthedRequ
   return res.json({ success: true, data: rows });
 });
 
+// QuickBooks "Enable account numbers".
+coaRouter.get("/settings", async (req: AuthedRequest, res) => {
+  res.json({ success: true, data: await coa.getNumberingSettings(req.companyId!) });
+});
+
+coaRouter.put("/settings", requireCapability("coa:edit"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ useAccountNumbers: z.boolean() }).parse(req.body);
+    res.json({ success: true, data: await coa.setNumberingSettings(req.companyId!, body.useAccountNumbers, actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
 coaRouter.post("/", requireCapability("coa:create"), async (req: AuthedRequest, res) => {
   try {
     const body = z
       .object({
-        code: z.string().min(1),
+        code: z.string().optional(),
         name: z.string().min(1),
         type: accountTypeEnum,
         parentId: z.string().nullable().optional(),
@@ -92,6 +106,7 @@ coaRouter.post("/", requireCapability("coa:create"), async (req: AuthedRequest, 
         costCentre: z.string().optional(),
         taxMapping: z.string().optional(),
         openingBalance: z.number().optional(),
+        openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         allowManualPost: z.boolean().optional(),
         allowAutoPost: z.boolean().optional(),
         bankReconciliationRequired: z.boolean().optional(),
@@ -124,7 +139,6 @@ coaRouter.patch("/:id", requireCapability("coa:edit"), async (req: AuthedRequest
         branchId: z.string().optional(),
         costCentre: z.string().optional(),
         taxMapping: z.string().optional(),
-        openingBalance: z.number().optional(),
         allowManualPost: z.boolean().optional(),
         allowAutoPost: z.boolean().optional(),
         bankReconciliationRequired: z.boolean().optional(),
@@ -137,6 +151,33 @@ coaRouter.patch("/:id", requireCapability("coa:edit"), async (req: AuthedRequest
       })
       .parse(req.body);
     const data = await coa.updateAccount(req.companyId!, req.params.id, body, actor(req));
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+// Batch actions: make several accounts inactive or active in one call.
+for (const [action, capability, isActive] of [
+  ["deactivate", "coa:deactivate", false],
+  ["reactivate", "coa:edit", true],
+] as const) {
+  coaRouter.post(`/batch/${action}`, requireCapability(capability), async (req: AuthedRequest, res) => {
+    try {
+      const body = z.object({ ids: z.array(z.string()).min(1).max(500) }).parse(req.body);
+      const data = await coa.batchSetAccountsActive(req.companyId!, body.ids, isActive, actor(req));
+      res.json({ success: true, data });
+    } catch (e) {
+      res.status(400).json({ success: false, error: (e as Error).message });
+    }
+  });
+}
+
+// QuickBooks merge: fold this account into a sibling of the same type; the account is removed afterwards.
+coaRouter.post("/:id/merge", requireCapability("coa:edit"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ targetId: z.string().min(1) }).parse(req.body);
+    const data = await coa.mergeAccounts(req.companyId!, req.params.id, body.targetId, actor(req));
     res.json({ success: true, data });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });

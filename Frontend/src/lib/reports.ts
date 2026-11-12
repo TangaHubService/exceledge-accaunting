@@ -59,7 +59,7 @@ export const REPORT_SECTIONS: ReportSection[] = [
   { title: "Employees", left: [R("Employee Contact List", "/employees"), R("Recent/Edited Time Activities"), R("Time Activities by Employee Detail")], right: [] },
   {
     title: "For my accountant",
-    left: [R("Account List", "/accounting/chart-of-accounts"), R("Balance Sheet", POSITION), ...BS, R("Invalid Journal Transactions", "/exceptions"), R("General Ledger", "/ledger"), R("General Ledger List", "/ledger"), R("Journal", "/journals"), R("Recurring Template List", "/accounting/recurring-transactions"), R("Profit and Loss", INCOME), R("Profit and Loss by Customer")],
+    left: [R("Account List"), R("Balance Sheet", POSITION), ...BS, R("Invalid Journal Transactions", "/exceptions"), R("General Ledger", "/ledger"), R("General Ledger List", "/ledger"), R("Journal", "/journals"), R("Recurring Template List", "/accounting/recurring-transactions"), R("Profit and Loss", INCOME), R("Profit and Loss by Customer")],
     right: [R("Profit and Loss by Month"), R("Profit and Loss Comparison", INCOME), ...PL_MORE, R("Recent Transactions", "/banking/transactions"), R("Reconciliation Reports", "/banking/reconciliation"), R("Trial Balance", "/reports/trial-balance"), R("Adjusted Trial Balance", "/reports/trial-balance"), R("Transaction Detail by Account", "/ledger"), R("Transaction List by Date", "/ledger"), R("Transaction List with Splits", "/ledger")],
   },
   { title: "Payroll", learnMore: "Learn more about Payroll", left: [R("Employee Contact List", "/employees"), R("Recent/Edited Time Activities"), R("Time Activities by Employee Detail")], right: [] },

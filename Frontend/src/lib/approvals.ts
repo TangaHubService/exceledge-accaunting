@@ -2,7 +2,7 @@ import type { Tone } from "../components/ui";
 import type { Journal } from "./types";
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "RETURNED";
-export type ApprovalEntityType = "Journal" | "Expense" | "ApBill" | "Budget" | "TaxAdjustment" | "FixedAssetImpairment" | "PeriodClose";
+export type ApprovalEntityType = "Journal" | "Expense" | "ApBill" | "Budget" | "TaxAdjustment" | "FixedAssetImpairment" | "PeriodClose" | "InventoryAdjustment" | "PurchaseOrder";
 
 export type ApprovalDecision = {
   id: string;
@@ -91,6 +91,8 @@ const ENTITY_LABEL: Record<string, string> = {
   TaxAdjustment: "Tax adjustment",
   FixedAssetImpairment: "Asset impairment",
   PeriodClose: "Period close",
+  InventoryAdjustment: "Inventory adjustment",
+  PurchaseOrder: "Purchase order",
 };
 
 export function entityTypeLabel(type: string | null | undefined) {
@@ -110,6 +112,10 @@ export function entityHref(type: string | null | undefined, id: string | null | 
       return "/expenses/list";
     case "ApBill":
       return "/bills";
+    case "InventoryAdjustment":
+      return "/inventory/movements";
+    case "PurchaseOrder":
+      return "/expenses";
     case "Budget":
     case "BudgetLine":
       return "/budgets";

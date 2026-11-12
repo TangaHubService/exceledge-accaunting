@@ -85,7 +85,7 @@ export function authenticateErpJwt(req: AuthedRequest, res: Response, next: Next
   }
   try {
     const token = header.slice("Bearer ".length);
-    const payload = jwt.verify(token, env.jwtSecret) as ErpTokenPayload;
+    const payload = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] }) as ErpTokenPayload;
     if (!payload.userId) {
       return res.status(401).json({ success: false, error: "Invalid token payload" });
     }

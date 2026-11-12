@@ -14,6 +14,7 @@ import {
   validateNewAccount,
   accountTypeForCode,
   assertCodeMatchesType,
+  assertValidAccountNumber,
   assertJournalBalanced,
   buildSaleCompletedLines,
   sumJournalLines,
@@ -219,6 +220,13 @@ describe("chart of accounts rules", () => {
     expect(() => assertCodeMatchesType("1100", "LIABILITY")).toThrow(/does not match/);
   });
 
+  it("accepts free-form QuickBooks account numbers up to 7 characters", () => {
+    expect(() => assertValidAccountNumber("2105")).not.toThrow();
+    expect(() => assertValidAccountNumber("AB-10.5")).not.toThrow();
+    expect(() => assertValidAccountNumber("12345678")).toThrow(/up to 7/);
+    expect(() => assertValidAccountNumber("10 20")).toThrow(/letters, digits/);
+  });
+
   it("validates new account uniqueness and parent category", () => {
     expect(() =>
       validateNewAccount({
@@ -226,7 +234,7 @@ describe("chart of accounts rules", () => {
         name: "Rent",
         type: "EXPENSE",
         existingCodes: new Set(["6100"]),
-        existingNamesInType: new Set(["salaries"]),
+        siblingNames: new Set(["salaries"]),
       }),
     ).not.toThrow();
 
@@ -238,7 +246,7 @@ describe("chart of accounts rules", () => {
         parentId: "p1",
         parentType: "ASSET",
         existingCodes: new Set(),
-        existingNamesInType: new Set(),
+        siblingNames: new Set(),
       }),
     ).toThrow(/match the parent/);
   });

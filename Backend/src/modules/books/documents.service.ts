@@ -16,6 +16,9 @@ export const ATTACHABLE_TYPES = {
   FixedAsset: { view: "fa:view", attach: "fa:manage" },
   BankReconciliation: { view: "bank:view", attach: "bank:manage" },
   ControlTest: { view: "control:view", attach: "control:manage" },
+  Project: { view: "project:view", attach: "project:manage" },
+  InventoryAdjustment: { view: "inventory:view", attach: "inventory:manage" },
+  ItemReceipt: { view: "inventory:view", attach: "inventory:manage" },
 } as const satisfies Record<string, { view: AccountingCapability; attach: AccountingCapability }>;
 export type AttachableType = keyof typeof ATTACHABLE_TYPES;
 
@@ -109,6 +112,18 @@ async function findRecord(companyId: string, entityType: AttachableType, entityI
     case "FixedAsset": {
       const a = await prisma.fixedAsset.findFirst({ where, select: { purchaseDate: true } });
       return a && { date: a.purchaseDate, keepReason: null };
+    }
+    case "Project": {
+      const row = await prisma.project.findFirst({ where, select: { id: true } });
+      return row && { date: null, keepReason: null };
+    }
+    case "InventoryAdjustment": {
+      const row = await prisma.inventoryAdjustment.findFirst({ where, select: { adjustmentDate: true, status: true } });
+      return row && { date: row.adjustmentDate, keepReason: row.status === "POSTED" ? "it supports a posted inventory adjustment" : null };
+    }
+    case "ItemReceipt": {
+      const row = await prisma.itemReceipt.findFirst({ where, select: { receiptDate: true } });
+      return row && { date: row.receiptDate, keepReason: "it supports a posted goods receipt" };
     }
     case "ControlTest": {
       const t = await prisma.controlTest.findFirst({ where, select: { id: true } });

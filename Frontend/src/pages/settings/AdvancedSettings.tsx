@@ -3,6 +3,8 @@ import { useState } from "react";
 import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
+import { useFeedback } from "../../components/feedback";
+import { useCoaSettings } from "../../lib/coa-settings";
 import { ADVANCED_SETTINGS } from "../../lib/settings-dummy";
 
 function TextRow({ label, value, note }: { label: string; value: string; note?: string }) {
@@ -20,7 +22,17 @@ function TextRow({ label, value, note }: { label: string; value: string; note?: 
 export function AdvancedSettings() {
   const d = ADVANCED_SETTINGS;
   const [closeBooks, setCloseBooks] = useState(d.closeTheBooks);
-  const [acctNums, setAcctNums] = useState(d.enableAccountNumbers);
+  // Saved per company: turning numbers off hides them in the chart of accounts and assigns them automatically.
+  const coaSettings = useCoaSettings();
+  const { toast } = useFeedback();
+  async function setAcctNums(on: boolean) {
+    try {
+      await coaSettings.setUseAccountNumbers(on);
+      toast(on ? "Account numbers turned on" : "Account numbers turned off");
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
   const [classes, setClasses] = useState(d.trackClasses);
   const [locations, setLocations] = useState(d.trackLocations);
   const [prefill, setPrefill] = useState(d.prefillForms);
@@ -98,7 +110,7 @@ export function AdvancedSettings() {
         {coaOpen ? (
           <div className="ee-settings-row">
             <div className="ee-settings-row-label">Enable account numbers</div>
-            <SettingsToggle label="Enable account numbers" on={acctNums} onChange={setAcctNums} />
+            <SettingsToggle label="Enable account numbers" on={coaSettings.useAccountNumbers} onChange={(on) => void setAcctNums(on)} />
           </div>
         ) : null}
       </section>

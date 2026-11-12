@@ -335,7 +335,11 @@ export type AccountingCapability =
   | "control:view"
   | "control:manage"
   | "platform:view"
-  | "platform:manage";
+  | "platform:manage"
+  | "project:view"
+  | "project:manage"
+  | "team:view"
+  | "team:manage";
 
 const ALL_FINANCE: AccountingCapability[] = [
   "setup:view",
@@ -386,6 +390,10 @@ const ALL_FINANCE: AccountingCapability[] = [
   "control:manage",
   "platform:view",
   "platform:manage",
+  "project:view",
+  "project:manage",
+  "team:view",
+  "team:manage",
 ];
 
 const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
@@ -416,6 +424,9 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "budget:view",
     "control:view",
     "platform:view",
+    "project:view",
+    "project:manage",
+    "team:view",
   ],
   ACCOUNTANT: [
     "setup:view",
@@ -459,6 +470,10 @@ const ROLE_CAPABILITIES: Record<ErpRole, AccountingCapability[]> = {
     "control:manage",
     "platform:view",
     "platform:manage",
+    "project:view",
+    "project:manage",
+    "team:view",
+    "team:manage",
   ],
   SELLER: [],
 };

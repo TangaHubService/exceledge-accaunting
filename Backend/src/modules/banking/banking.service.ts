@@ -37,6 +37,12 @@ export const KIND_LABELS: Record<FinancialAccountKind, string> = {
 };
 
 const GL_CODE_BASE: Record<FinancialAccountKind, number> = { CASH: 1100, BANK: 1110, PETTY_CASH: 1120, MOBILE_MONEY: 1130 };
+const GL_DETAIL_TYPE: Record<FinancialAccountKind, string> = {
+  CASH: "Cash on hand",
+  BANK: "Bank",
+  PETTY_CASH: "Cash on hand",
+  MOBILE_MONEY: "Cash and cash equivalents",
+};
 
 const NUMBERING: Record<BankTransactionKind, [string, string]> = {
   RECEIPT: ["BANK_RECEIPT", "RCV"],
@@ -184,6 +190,8 @@ export async function createFinancialAccount(companyId: string, input: AccountIn
         currency: input.currency,
         isCashAccount: true,
         bankReconciliationRequired: input.kind === "BANK" || input.kind === "MOBILE_MONEY",
+        // QuickBooks account type ||| detail type, as the chart of accounts screen stores it.
+        reportingGroup: `Cash and cash equivalents|||${GL_DETAIL_TYPE[input.kind]}`,
         description: `${KIND_LABELS[input.kind]} account ${name}`,
       },
       { ...actor, erpUserId: actor.erpUserId ?? 0 },

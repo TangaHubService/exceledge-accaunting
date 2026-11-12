@@ -1,17 +1,24 @@
 import { BookOpen, ChevronDown, Clock, HelpCircle, MessageSquarePlus, Settings, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { navigate } from "../../lib/router";
-import { TIME_CUSTOMER_OPTIONS, TIME_NAME_OPTIONS, TIME_SERVICE_OPTIONS } from "../../lib/team-dummy";
+import { useResource, useSession } from "../../lib/session";
+import { employeeFromServer, TIME_SERVICE_OPTIONS } from "../../lib/team-dummy";
+import { useCustomers } from "../../lib/txn";
 import { useFeedback } from "../feedback";
 
 export function SingleTimeActivity() {
   const { toast } = useFeedback();
+  const { api, can } = useSession();
+  const { customers } = useCustomers();
+  const staff = useResource<Array<Record<string, unknown>>>(can("team:view") ? "/api/v1/team/employees" : null);
+  const nameOptions = useMemo(() => [{ value: "", label: "Choose name" }, ...(staff.data ?? []).map(employeeFromServer).map((e) => ({ value: e.id, label: e.displayName }))], [staff.data]);
+  const customerChoices = useMemo(() => [{ value: "", label: "Choose customer" }, ...customers.map((c) => ({ value: c.id, label: c.name }))], [customers]);
   const [name, setName] = useState("");
   const [customer, setCustomer] = useState("");
   const [service, setService] = useState("");
   const [billable, setBillable] = useState(false);
   const [setTimes, setSetTimes] = useState(false);
-  const [startDate, setStartDate] = useState("2026-10-18");
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [duration, setDuration] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -19,7 +26,19 @@ export function SingleTimeActivity() {
     navigate("/employees");
   }
 
-  function save(andNew: boolean) {
+  async function save(andNew: boolean) {
+    const match = /^(\d{1,2})(?::(\d{2}))?$/.exec(duration.trim());
+    const durationMinutes = match ? Number(match[1]) * 60 + Number(match[2] ?? 0) : 0;
+    if (!name) return toast("Choose who did the work", { error: true });
+    if (!durationMinutes) return toast("Enter the duration as hh:mm", { error: true });
+    try {
+      await api("/api/v1/team/time", {
+        method: "POST",
+        body: JSON.stringify({ employeeId: name, customerId: customer || null, service: TIME_SERVICE_OPTIONS.find((o) => o.value === service)?.label ?? service, billable, date: startDate, durationMinutes, notes }),
+      });
+    } catch (error) {
+      return toast((error as Error).message, { error: true });
+    }
     toast(andNew ? "Time activity saved — ready for another" : "Time activity saved");
     if (andNew) {
       setCustomer("");
@@ -69,7 +88,7 @@ export function SingleTimeActivity() {
           className="ee-time-card"
           onSubmit={(e) => {
             e.preventDefault();
-            save(false);
+            void save(false);
           }}
         >
           <div className="ee-time-cols">
@@ -77,7 +96,7 @@ export function SingleTimeActivity() {
               <label className="field">
                 <span>Name</span>
                 <select className="input" value={name} onChange={(e) => setName(e.target.value)}>
-                  {TIME_NAME_OPTIONS.map((o) => (
+                  {nameOptions.map((o) => (
                     <option key={o.value || "n"} value={o.value}>
                       {o.label}
                     </option>
@@ -87,7 +106,7 @@ export function SingleTimeActivity() {
               <label className="field">
                 <span>Customer</span>
                 <select className="input" value={customer} onChange={(e) => setCustomer(e.target.value)}>
-                  {TIME_CUSTOMER_OPTIONS.map((o) => (
+                  {customerChoices.map((o) => (
                     <option key={o.value || "c"} value={o.value}>
                       {o.label}
                     </option>

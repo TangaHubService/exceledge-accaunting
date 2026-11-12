@@ -110,6 +110,11 @@ export function ImportData() {
   const [importing, setImporting] = useState(false);
 
   function openImport(item: ImportCatalogItem) {
+    // Chart of accounts has the real three-step import (Upload, Map data, Import), as in QuickBooks.
+    if (item.id === "chart-of-accounts") {
+      navigate("/import-data/chart-of-accounts");
+      return;
+    }
     setSelectedItem(item);
     setSelectedFileName(null);
     setImportStep("file");

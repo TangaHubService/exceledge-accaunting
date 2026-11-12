@@ -15,11 +15,11 @@ import { notify } from "../notifications/notification.service";
 
 export type Actor = { erpUserId?: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } };
 
-export const APPROVAL_ENTITY_TYPES = ["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment", "PeriodClose"] as const;
+export const APPROVAL_ENTITY_TYPES = ["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment", "PeriodClose", "InventoryAdjustment", "PurchaseOrder"] as const;
 export type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
 
 /** Documents that post on creation unless setup lists them in `approvalRequiredFor`. */
-export const GATED_ENTITY_TYPES = ["ApBill", "TaxAdjustment", "FixedAssetImpairment"] as const;
+export const GATED_ENTITY_TYPES = ["ApBill", "TaxAdjustment", "FixedAssetImpairment", "InventoryAdjustment", "PurchaseOrder"] as const;
 export type GatedEntityType = (typeof GATED_ENTITY_TYPES)[number];
 
 /** Who may decide an approval depends on what is being approved. */
@@ -31,6 +31,8 @@ const DECIDE_CAPABILITY: Record<ApprovalEntityType, AccountingCapability> = {
   TaxAdjustment: "tax:manage",
   FixedAssetImpairment: "fa:post",
   PeriodClose: "close:manage",
+  InventoryAdjustment: "inventory:manage",
+  PurchaseOrder: "ap:manage",
 };
 
 export async function approvalControls(companyId: string) {
@@ -96,6 +98,14 @@ async function entitySummary(companyId: string, entityType: string, id: string):
       const f = await prisma.fixedAssetImpairment.findFirst({ where, select: { createdByErpUserId: true, asset: { select: { number: true, name: true } } } });
       return f && { summary: `Impairment of ${f.asset.number} ${f.asset.name}`, createdBy: f.createdByErpUserId };
     }
+    case "InventoryAdjustment": {
+      const a = await prisma.inventoryAdjustment.findFirst({ where, select: { number: true, reason: true, createdByErpUserId: true } });
+      return a && { summary: `Inventory adjustment ${a.number} — ${a.reason}`, createdBy: a.createdByErpUserId };
+    }
+    case "PurchaseOrder": {
+      const p = await prisma.commercialDocument.findFirst({ where: { ...where, kind: "PURCHASE_ORDER" }, select: { number: true, partyName: true, createdByErpUserId: true } });
+      return p && { summary: `Purchase order ${p.number} — ${p.partyName}`, createdBy: p.createdByErpUserId };
+    }
     case "PeriodClose": {
       const c = await prisma.periodClose.findFirst({ where, select: { kind: true, periodId: true, requestedByErpUserId: true } });
       if (!c) return null;
@@ -141,6 +151,14 @@ async function applyToEntity(row: ApprovalRequest, outcome: "PROGRESS" | Approva
   } else if (row.entityType === "FixedAssetImpairment") {
     if (outcome === "APPROVED") await (await import("../fixed-assets/fa.service")).postPendingImpairment(row.companyId, row.entityId, actor);
     if (outcome === "REJECTED") await prisma.fixedAssetImpairment.updateMany({ where: { ...where, status: "PENDING_APPROVAL" }, data: { status: "REJECTED" } });
+  } else if (row.entityType === "InventoryAdjustment") {
+    const stock = await import("../inventory/stock-documents.service");
+    if (outcome === "APPROVED") await stock.postPendingAdjustment(row.companyId, row.entityId, actor);
+    if (outcome === "REJECTED") await prisma.inventoryAdjustment.updateMany({ where: { ...where, status: "PENDING_APPROVAL" }, data: { status: "REJECTED" } });
+  } else if (row.entityType === "PurchaseOrder") {
+    const waiting = { ...where, status: "PENDING_APPROVAL" as const };
+    if (outcome === "APPROVED") await prisma.commercialDocument.updateMany({ where: waiting, data: { status: "OPEN" } });
+    if (outcome === "REJECTED") await prisma.commercialDocument.updateMany({ where: waiting, data: { status: "VOID" } });
   } else if (row.entityType === "PeriodClose") {
     const close = await import("../books/close.service");
     if (outcome === "APPROVED") await close.approveCloseRequest(row.companyId, row.entityId, actor);

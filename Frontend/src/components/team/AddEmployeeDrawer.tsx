@@ -11,6 +11,7 @@ import {
   saveEmployeeDraft,
   type StoredEmployee,
 } from "../../lib/team-dummy";
+import { newId } from "../../lib/txn";
 import { employeeEmploymentSchema, employeePersonalSchema, validateYup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { Drawer } from "../ui";
@@ -24,7 +25,7 @@ export function AddEmployeeDrawer({
   onSaved,
 }: {
   onClose: () => void;
-  onSaved: (employee: StoredEmployee) => void;
+  onSaved: (employee: StoredEmployee) => Promise<void>;
 }) {
   const { toast } = useFeedback();
   const [step, setStep] = useState(0);
@@ -69,13 +70,16 @@ export function AddEmployeeDrawer({
     }
     const employee: StoredEmployee = {
       ...draft,
-      id: `emp-${Date.now()}`,
+      id: `emp-${newId()}`,
       displayName: employeeDisplayName(draft),
       createdAt: new Date().toISOString(),
     };
-    clearEmployeeDraft();
-    toast(`${employee.displayName} saved`);
-    onSaved(employee);
+    try {
+      await onSaved(employee);
+      clearEmployeeDraft();
+    } catch (error) {
+      toast((error as Error).message, { error: true });
+    }
   }
 
   const meta = EMPLOYEE_STEPS[step]!;

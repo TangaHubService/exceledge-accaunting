@@ -12,9 +12,10 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { navigate } from "../../lib/router";
+import { useResource, useSession } from "../../lib/session";
+import { useCustomers } from "../../lib/txn";
 import {
-  TIME_CUSTOMER_OPTIONS,
-  TIME_NAME_OPTIONS,
+  employeeFromServer,
   TIME_SERVICE_OPTIONS,
   weekDayHeaders,
   weekRangeLabel,
@@ -58,6 +59,11 @@ function formatMinutes(total: number) {
 
 export function WeeklyTimesheet() {
   const { toast } = useFeedback();
+  const { api, can } = useSession();
+  const { customers } = useCustomers();
+  const staff = useResource<Array<Record<string, unknown>>>(can("team:view") ? "/api/v1/team/employees" : null);
+  const nameOptions = useMemo(() => [{ value: "", label: "Choose name" }, ...(staff.data ?? []).map(employeeFromServer).map((e) => ({ value: e.id, label: e.displayName }))], [staff.data]);
+  const customerChoices = useMemo(() => [{ value: "", label: "Choose customer" }, ...customers.map((c) => ({ value: c.id, label: c.name }))], [customers]);
   const days = useMemo(() => weekDayHeaders(), []);
   const weekLabel = useMemo(() => weekRangeLabel(), []);
   const [name, setName] = useState("");
@@ -87,7 +93,27 @@ export function WeeklyTimesheet() {
 
   const grandTotal = rows.reduce((sum, r) => sum + rowTotal(r), 0);
 
-  function save(andNew: boolean) {
+  async function save(andNew: boolean) {
+    if (!name) return toast("Choose who did the work", { error: true });
+    const filled = rows.filter((r) => rowTotal(r) > 0);
+    if (!filled.length) return toast("Enter some time on at least one day", { error: true });
+    try {
+      await api("/api/v1/team/time/weekly", {
+        method: "POST",
+        body: JSON.stringify({
+          employeeId: name,
+          rows: filled.map((r) => ({
+            customerId: r.customer || null,
+            service: TIME_SERVICE_OPTIONS.find((o) => o.value === r.service)?.label ?? r.service,
+            billable: r.billable,
+            notes: r.notes,
+            days: days.map((d) => ({ date: d.date, durationMinutes: parseMinutes(r.hours[d.key] ?? "") })),
+          })),
+        }),
+      });
+    } catch (error) {
+      return toast((error as Error).message, { error: true });
+    }
     toast(andNew ? "Timesheet saved — ready for another" : "Timesheet saved");
     if (andNew) {
       setRows([emptyRow(), emptyRow(), emptyRow()]);
@@ -130,7 +156,7 @@ export function WeeklyTimesheet() {
           <label className="field">
             <span>Name</span>
             <select className="input" value={name} onChange={(e) => setName(e.target.value)}>
-              {TIME_NAME_OPTIONS.map((o) => (
+              {nameOptions.map((o) => (
                 <option key={o.value || "n"} value={o.value}>
                   {o.label}
                 </option>
@@ -140,7 +166,7 @@ export function WeeklyTimesheet() {
           <label className="field">
             <span>Select a week</span>
             <select className="input" defaultValue={weekLabel}>
-              <option value={weekLabel}>{weekLabel.replace("Oct", "Oct")}</option>
+              <option value={weekLabel}>{weekLabel}</option>
             </select>
           </label>
           <div className="ee-weekly-tools">
@@ -188,7 +214,7 @@ export function WeeklyTimesheet() {
                     value={row.customer}
                     onChange={(e) => updateRow(row.id, { customer: e.target.value })}
                   >
-                    {TIME_CUSTOMER_OPTIONS.map((o) => (
+                    {customerChoices.map((o) => (
                       <option key={o.value || "c"} value={o.value}>
                         {o.label}
                       </option>

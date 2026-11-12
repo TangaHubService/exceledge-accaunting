@@ -1,18 +1,23 @@
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useFeedback } from "../components/feedback";
 import { AddEmployeeDrawer } from "../components/team/AddEmployeeDrawer";
 import { EmployeesHero } from "../components/team/EmployeesHero";
 import { EmployeesTips } from "../components/team/EmployeesTips";
 import { navigate, setQueryParam, useLocation } from "../lib/router";
+import { useResource, useSession } from "../lib/session";
 import {
-  loadEmployees,
-  saveEmployees,
+  employeeFromServer,
+  employeeToServer,
   type StoredEmployee,
 } from "../lib/team-dummy";
 
 export function Employees() {
   const { query } = useLocation();
-  const [employees, setEmployees] = useState<StoredEmployee[]>(() => loadEmployees());
+  const { api, can } = useSession();
+  const { toast } = useFeedback();
+  const list = useResource<Array<Record<string, unknown>>>(can("team:view") ? "/api/v1/team/employees" : null);
+  const employees = useMemo(() => (list.data ?? []).map(employeeFromServer), [list.data]);
   const [creating, setCreating] = useState(query.get("new") === "1");
 
   useEffect(() => {
@@ -31,10 +36,10 @@ export function Employees() {
     setQueryParam("new", null);
   }
 
-  function onSaved(employee: StoredEmployee) {
-    const next = [employee, ...employees];
-    setEmployees(next);
-    saveEmployees(next);
+  async function onSaved(employee: StoredEmployee) {
+    await api(`/api/v1/team/employees/${encodeURIComponent(employee.id)}`, { method: "PUT", body: JSON.stringify(employeeToServer(employee)) });
+    toast(`${employee.displayName} saved`);
+    list.reload();
     closeCreate();
   }
 

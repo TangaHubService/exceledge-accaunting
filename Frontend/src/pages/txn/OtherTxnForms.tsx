@@ -30,10 +30,8 @@ import { useSession } from "../../lib/session";
 import {
   BANK_TXN_METHODS,
   indexTxn,
-  newId,
   peekNumber,
   rwf,
-  saveLocal,
   takeNumber,
   useAccountOptions,
   useExpenseAccountOptions,
@@ -629,6 +627,7 @@ const REASONS = ["Shrinkage", "Damaged goods", "Theft", "Stock count correction"
 
 export function InventoryAdjustmentForm() {
   const { toast } = useFeedback();
+  const { api } = useSession();
   const { accounts } = useCompany();
   const items = useInventoryItems();
   const expense = useExpenseAccountOptions();
@@ -670,18 +669,25 @@ export function InventoryAdjustmentForm() {
   });
 
   function save(close: boolean) {
-    void v.validate(schema, form).then((ok) => {
+    void v.validate(schema, form).then(async (ok) => {
       if (!ok) return;
       const lines = form.lines.filter((l) => !isBlankRow(l, ADJ_KEYS));
-      const value = lines.reduce((s, l) => {
-        const item = items.find((i) => i.id === l.item);
-        return s + (isValue ? num(l.change) : num(l.change) * (item?.unitCost ?? 0));
-      }, 0);
-      const id = newId();
+      let saved: { id: string; status: string; value: string | number };
+      try {
+        saved = await api("/api/v1/inventory/adjustments", {
+          method: "POST",
+          body: JSON.stringify({ number: form.reference, type: form.type, date: form.date, reason: form.reason, accountId: form.account, memo: form.memo, lines: lines.map((l) => ({ itemId: l.item, change: num(l.change) })) }),
+        });
+      } catch (e) {
+        toast((e as Error).message, { error: true });
+        return;
+      }
+      const id = saved.id;
+      const value = Number(saved.value);
+      const waiting = saved.status === "PENDING_APPROVAL";
       takeNumber("inventory-adjustment", form.reference, 1);
-      saveLocal("inventory-adjustment", { id, ...form, lines, value, createdAt: new Date().toISOString() });
-      indexTxn({ id, kind: "inventory-adjustment", number: form.reference, date: form.date, party: form.reason, amount: Math.abs(value), memo: form.memo, status: "Recorded", posted: false });
-      toast(`Inventory adjustment #${form.reference} recorded for ${lines.length} item${lines.length > 1 ? "s" : ""}`);
+      indexTxn({ id, kind: "inventory-adjustment", number: form.reference, date: form.date, party: form.reason, amount: Math.abs(value), memo: form.memo, status: waiting ? "Pending approval" : "Posted", posted: false });
+      toast(waiting ? `Inventory adjustment #${form.reference} sent for approval; stock changes once it's approved` : `Inventory adjustment #${form.reference} posted for ${lines.length} item${lines.length > 1 ? "s" : ""}`);
       if (close) return navigate("/inventory/movements");
       setForm(blank());
     });
@@ -790,7 +796,7 @@ export function InventoryAdjustmentForm() {
       />
       {itemOptions.length === 0 ? <p className="muted" style={{ marginTop: -10 }}>No stocked items yet — add products under Inventory first.</p> : null}
       <TextArea label="Memo" value={form.memo} onChange={(t) => setForm((f) => ({ ...f, memo: t }))} error={v.errors.memo} className="w-lg" rows={4} />
-      <p className="muted">Adjustments are recorded here; stock levels in the books change through the inventory integration.</p>
+      <p className="muted">Adjustments update stock and post to the books when saved, or once approved if your company requires approval.</p>
       <Privacy />
     </TxnPage>
   );

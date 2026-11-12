@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { pushRecord } from "./server-store";
 import { COST_KINDS, INCOME_KINDS, readLocal, saveLocal, type TxnIndexRow, useLocalCollection, useTxnIndex } from "./txn";
 
 export type ProjectStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
@@ -33,7 +34,8 @@ export type Project = {
   createdAt: string;
 };
 
-export const PROJECT_FILE_MAX = 2 * 1024 * 1024;
+/** Matches the server's document limit; attachments are stored there, not in the browser. */
+export const PROJECT_FILE_MAX = 10 * 1024 * 1024;
 
 export function useProjects() {
   return useLocalCollection<Project>("projects");
@@ -44,6 +46,12 @@ export function getProject(id: string) {
 }
 
 export function saveProject(p: Project) {
+  return saveLocal<Project>("projects", p);
+}
+
+/** Saves and waits for the server, for screens that act on the project straight after. */
+export async function saveProjectAndWait(p: Project) {
+  await pushRecord("projects", p);
   return saveLocal<Project>("projects", p);
 }
 

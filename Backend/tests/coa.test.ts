@@ -50,11 +50,12 @@ describe("Phase 2 Chart of Accounts", () => {
       });
     expect(child.status).toBe(201);
 
-    const badType = await request(app)
+    // QuickBooks numbers are free-form (not tied to the type) but limited to 7 letters/digits.
+    const badNumber = await request(app)
       .post("/api/v1/coa")
       .set(headers)
-      .send({ code: "2105", name: "Bad", type: "EXPENSE" });
-    expect(badType.status).toBe(400);
+      .send({ code: "TOOLONG99", name: "Bad", type: "EXPENSE" });
+    expect(badNumber.status).toBe(400);
 
     const badParent = await request(app)
       .post("/api/v1/coa")
@@ -105,8 +106,8 @@ describe("Phase 2 Chart of Accounts", () => {
       .set(headers)
       .send({
         rows: [
-          { code: "6150", name: "Electricity", type: "EXPENSE" },
-          { code: "6151", name: "Water Utility", type: "EXPENSE", parentCode: "6150" },
+          { code: "6155", name: "Electricity", type: "EXPENSE" },
+          { code: "6156", name: "Water Utility", type: "EXPENSE", parentCode: "6155" },
         ],
       });
     expect(imported.status).toBe(201);
@@ -114,7 +115,7 @@ describe("Phase 2 Chart of Accounts", () => {
 
     const exported = await request(app).get("/api/v1/coa/export?format=json").set(headers);
     expect(exported.status).toBe(200);
-    expect(exported.body.data.some((r: { code: string }) => r.code === "6151")).toBe(true);
+    expect(exported.body.data.some((r: { code: string }) => r.code === "6156")).toBe(true);
 
     const csv = await request(app).get("/api/v1/coa/export?format=csv").set(headers);
     expect(csv.status).toBe(200);
@@ -131,7 +132,7 @@ describe("Phase 2 Chart of Accounts", () => {
     const otherList = await request(app).get("/api/v1/coa?q=6120").set(other);
     expect(otherList.status).toBe(200);
     // other org only has system seed unless imported — 6120 should not exist there
-    expect(otherList.body.data.some((a: { code: string }) => a.code === "6150")).toBe(false);
+    expect(otherList.body.data.some((a: { code: string }) => a.code === "6155")).toBe(false);
   });
 
   it("deactivates custom account and prevents delete when posted flag set", async () => {
@@ -139,7 +140,7 @@ describe("Phase 2 Chart of Accounts", () => {
     const created = await request(app)
       .post("/api/v1/coa")
       .set(headers)
-      .send({ code: "6130", name: "Internet", type: "EXPENSE" });
+      .send({ code: "6135", name: "Internet", type: "EXPENSE" });
     expect(created.status).toBe(201);
 
     const deactivated = await request(app)

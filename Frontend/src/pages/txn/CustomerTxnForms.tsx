@@ -45,11 +45,9 @@ import {
   customerOptions,
   emailListValid,
   indexTxn,
-  newId,
   peekNumber,
 
   rwf,
-  saveLocal,
   takeNumber,
   toBankMethod,
   type TxnKind,
@@ -630,10 +628,12 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
       });
       return { id: t.id, number: t.number ?? form.number, posted: true };
     }
-    const id = newId();
-    takeNumber(kind, form.number, cfg.sequenceStart);
-    saveLocal(kind, { id, ...form, customerName: customer?.name, total, attachments: files.map((f) => f.file.name), createdAt: new Date().toISOString() });
-    return { id, number: form.number, posted: false };
+    const doc = await api<{ id: string; number: string }>(`/api/v1/commercial/${kind}`, {
+      method: "POST",
+      body: JSON.stringify({ number: form.number, customerId: form.customerId, docDate: form.date, memo: form.memo, note: form.message, lines }),
+    });
+    takeNumber(kind, doc.number, cfg.sequenceStart);
+    return { id: doc.id, number: doc.number, posted: false };
   }
 
   async function save(after: "stay" | "new" | "close" | "send") {

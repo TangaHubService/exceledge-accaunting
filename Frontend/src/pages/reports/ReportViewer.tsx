@@ -9,7 +9,8 @@ import { type CustomReport, downloadCsv, monthLong, type MonthFigures, reportNam
 import { Link, useLocation } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import { newId, readLocal, saveLocal, TERMS } from "../../lib/txn";
-import type { ApBill, ArInvoiceList, Customer, Supplier } from "../../lib/types";
+import type { Account, ApBill, ArInvoiceList, Customer, Supplier } from "../../lib/types";
+import { accountMeta, BALANCE_SHEET, naturalBalance } from "../Accounts";
 
 type Row = Record<string, unknown>;
 type Col = { key: string; label: string; kind?: "money" | "date" | "text" };
@@ -60,6 +61,38 @@ function autoColumns(rows: Row[]): Col[] {
       label: humanize(key.replace(/([a-z])([A-Z])/g, "$1_$2")),
       kind: /date/i.test(key) ? ("date" as const) : typeof first[key] === "number" ? ("money" as const) : ("text" as const),
     }));
+}
+
+
+const accountListCols: Col[] = [
+  { key: "code", label: "No." },
+  { key: "account", label: "Account" },
+  { key: "type", label: "Type" },
+  { key: "detailType", label: "Detail type" },
+  { key: "description", label: "Description" },
+  { key: "balance", label: "Balance", kind: "money" },
+];
+
+function accountListRows(accounts: Account[]): Row[] {
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const fullName = (a: Account) => {
+    const parts = [a.name];
+    for (let p = a.parentId ? byId.get(a.parentId) : undefined, i = 0; p && i < 20; p = p.parentId ? byId.get(p.parentId) : undefined, i++) parts.unshift(p.name);
+    return parts.join(":");
+  };
+  return accounts
+    .map((a) => {
+      const meta = accountMeta(a);
+      return {
+        code: a.code,
+        account: fullName(a),
+        type: meta.accountType,
+        detailType: meta.detailType === "—" ? "" : meta.detailType,
+        description: a.description ?? "",
+        balance: BALANCE_SHEET.has(a.type) ? naturalBalance(a) : "",
+      };
+    })
+    .sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }));
 }
 
 type Source = { title?: string; path: string; build: (data: unknown) => Built };
@@ -136,6 +169,8 @@ const SOURCES: Record<string, Source> = {
   "expense-list": { title: "Expenses", path: "/api/v1/expenses?pageSize=200", build: (d) => { const rows = anyRows(d); return { columns: autoColumns(rows), rows, dateKey: "expenseDate" }; } },
   "journal-entries": { title: "Journal entries", path: "/api/v1/journals", build: (d) => { const rows = anyRows(d); return { columns: autoColumns(rows), rows }; } },
   "banking-transactions": { title: "Banking transactions", path: "/api/v1/banking/transactions?pageSize=200", build: (d) => { const rows = anyRows(d); return { columns: autoColumns(rows), rows }; } },
+  // QuickBooks Account List: active accounts as "Parent:Child", with balances on balance sheet accounts only.
+  "account-list": { title: "Account List", path: "/api/v1/coa?isActive=true", build: (d) => ({ columns: accountListCols, rows: accountListRows(d as Account[]) }) },
 };
 
 function Table({ built, title }: { built: Built; title: string }) {

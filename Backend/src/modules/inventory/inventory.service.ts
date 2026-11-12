@@ -935,3 +935,135 @@ export async function slowMovingReport(companyId: string, slowDays = 90, deadDay
   };
   return { slowDays, deadDays, lines, slow: sum("SLOW"), dead: sum("DEAD") };
 }
+
+
+/* ── Stock documents raised in Accounting (item receipts, inventory adjustments) ───────── */
+
+export type StockDocumentLine =
+  | { sourceKey: string; itemId: string; locationId: string; kind: InventoryMovementKind; quantity: number; unitCost?: number }
+  | { sourceKey: string; itemId: string; locationId: string; valueChange: number };
+
+/** The location a line defaults to: where the item is held, else the only location, else a main store. */
+export async function defaultLocationFor(companyId: string, itemId: string) {
+  const held = await prisma.inventoryBalance.findFirst({ where: { companyId, itemId, quantity: { gt: 0 } }, orderBy: { quantity: "desc" } });
+  if (held) return held.locationId;
+  const any = await prisma.inventoryLocation.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+  if (any) return any.id;
+  const tx = prisma as unknown as Prisma.TransactionClient;
+  return (await upsertLocation(tx, companyId, "MAIN", "Main store")).id;
+}
+
+/** Changes the value of stock on hand without moving quantity; cost layers are rescaled so issues cost it correctly. */
+async function recordValueChange(
+  tx: Prisma.TransactionClient,
+  input: { companyId: string; sourceKey: string; itemId: string; locationId: string; movementDate: Date; change: number; reference: string; referenceType: string; note?: string },
+) {
+  const created = await balanceFor(tx, input.companyId, input.itemId, input.locationId);
+  await tx.$queryRaw`SELECT id FROM "inventory_balances" WHERE id = ${created.id} FOR UPDATE`;
+  const balance = await tx.inventoryBalance.findUniqueOrThrow({ where: { id: created.id }, include: { item: true } });
+  const quantity = qty(balance.quantity);
+  const before = money(balance.value);
+  const change = roundMoney(input.change);
+  const after = roundMoney(before + change);
+  if (quantity <= 0) throw new Error(`${balance.item.name} has no stock at that location to revalue`);
+  if (after < 0) throw new Error(`${balance.item.name} is only worth ${before}; its value can't go below zero`);
+  const movement = await tx.inventoryMovement.create({
+    data: {
+      companyId: input.companyId,
+      sourceKey: input.sourceKey,
+      itemId: input.itemId,
+      locationId: input.locationId,
+      kind: change > 0 ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT",
+      movementDate: input.movementDate,
+      value: change,
+      quantityAfter: quantity,
+      valueAfter: after,
+      costSource: "MANUAL",
+      reference: input.reference,
+      referenceType: input.referenceType,
+      note: input.note,
+    },
+  });
+  const layers = await tx.inventoryCostLayer.findMany({ where: { itemId: input.itemId, locationId: input.locationId, remaining: { gt: 0 } } });
+  const layered = layers.reduce((sum, l) => sum + qty(l.remaining) * qty(l.unitCost), 0);
+  if (layered > 0) {
+    const factor = (layered + change) / layered;
+    for (const layer of layers) await tx.inventoryCostLayer.update({ where: { id: layer.id }, data: { unitCost: qty(layer.unitCost) * factor } });
+  }
+  await tx.inventoryBalance.update({ where: { id: balance.id }, data: { value: after, lastMovementAt: input.movementDate } });
+  return movement;
+}
+
+/**
+ * Records a stock document's movements and posts its one journal, inside the caller's transaction.
+ * `contraAccountId` replaces the mapped gain/loss/write-off account with the one chosen on the document.
+ */
+export async function postStockDocument(
+  companyId: string,
+  doc: { type: string; id: string; number: string; date: Date; description: string; contraAccountId?: string },
+  lines: StockDocumentLine[],
+  actor: { erpUserId?: number; erpRole?: string },
+) {
+  return inTransaction(async () => {
+    const { accounts: mapped, method } = await inventoryConfig(companyId);
+    const settings = await prisma.inventoryAccountingSettings.findUnique({ where: { companyId } });
+    const contra = doc.contraAccountId;
+    const accounts: DefaultAccountMap = contra
+      ? { ...mapped, inventoryGainId: contra, inventoryLossId: contra, inventoryAdjustmentId: contra, inventoryWriteOffId: contra }
+      : mapped;
+    await assertOpenPeriod(companyId, doc.date);
+    const tx = prisma as unknown as Prisma.TransactionClient;
+    const movements: InventoryMovement[] = [];
+    for (const line of lines) {
+      if ("valueChange" in line) {
+        movements.push(
+          await recordValueChange(tx, { companyId, sourceKey: line.sourceKey, itemId: line.itemId, locationId: line.locationId, movementDate: doc.date, change: line.valueChange, reference: doc.number, referenceType: doc.type }),
+        );
+        continue;
+      }
+      const movement = await recordMovement(tx, {
+        companyId,
+        sourceKey: line.sourceKey,
+        itemId: line.itemId,
+        locationId: line.locationId,
+        kind: line.kind,
+        movementDate: doc.date,
+        quantity: line.quantity,
+        suppliedUnitCost: line.unitCost,
+        method,
+        reference: doc.number,
+        referenceType: doc.type,
+      });
+      if (movement.costSource === "UNCOSTED") {
+        const item = await prisma.inventoryItem.findUniqueOrThrow({ where: { id: line.itemId } });
+        throw new Error(`${item.name} has no cost yet; give it a unit cost on this line`);
+      }
+      if (qty(movement.quantityAfter) < -0.0001 && (settings?.negativeInventoryPolicy ?? "PREVENT") === "PREVENT") {
+        const item = await prisma.inventoryItem.findUniqueOrThrow({ where: { id: line.itemId } });
+        throw new Error(`Only ${qty(movement.quantityAfter) + line.quantity} of ${item.name} is in stock at that location`);
+      }
+      movements.push(movement);
+    }
+    const journalLines = netLines(movements.filter((m) => money(m.value) !== 0).flatMap((m) => movementLines(accounts, m)));
+    if (!journalLines.length) return { movements, journal: null, value: 0 };
+    await assertAccountsPostable(companyId, journalLines.map((l) => l.accountId));
+    const journal = await createAndPostJournal(
+      companyId,
+      {
+        journalDate: doc.date,
+        journalType: "AUTOMATIC",
+        description: doc.description,
+        referenceNumber: doc.number,
+        sourceModule: "INVENTORY",
+        sourceDocumentType: doc.type,
+        sourceDocumentId: doc.id,
+        sourceDocumentNumber: doc.number,
+        status: "APPROVED",
+        lines: journalLines,
+      },
+      actor,
+    );
+    await prisma.inventoryMovement.updateMany({ where: { id: { in: movements.map((m) => m.id) } }, data: { journalId: journal.id } });
+    return { movements, journal, value: roundMoney(movements.reduce((sum, m) => sum + money(m.value), 0)) };
+  });
+}

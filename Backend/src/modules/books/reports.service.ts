@@ -4,9 +4,9 @@ import { prisma } from "../../lib/prisma";
 
 export type Dims = { costCentre?: string; project?: string; branchId?: string };
 type Sums = Map<string, { debit: number; credit: number }>;
-type AccountInfo = { id: string; code: string; name: string; type: BookAccountType; reportingGroup: string | null; parentId: string | null };
+type AccountInfo = { id: string; code: string; name: string; type: BookAccountType; reportingGroup: string | null; parentId: string | null; isCashAccount?: boolean };
 export type Classification = "CURRENT" | "NON_CURRENT";
-export type StatementLine = { accountId?: string; code: string; name: string; amount: number; comparative: number; classification?: Classification };
+export type StatementLine = { accountId?: string; code: string; name: string; amount: number; comparative: number; classification?: Classification; isCash?: boolean };
 
 const PNL: BookAccountType[] = ["INCOME", "OTHER_INCOME", "COST_OF_SALES", "EXPENSE", "OTHER_EXPENSE"];
 const isPnl = (type: BookAccountType) => PNL.includes(type);
@@ -48,7 +48,7 @@ async function sums(
 async function accountsOf(companyId: string): Promise<Map<string, AccountInfo>> {
   const rows = await prisma.account.findMany({
     where: { companyId },
-    select: { id: true, code: true, name: true, type: true, reportingGroup: true, parentId: true },
+    select: { id: true, code: true, name: true, type: true, reportingGroup: true, parentId: true, isCashAccount: true },
   });
   return new Map(rows.map((a) => [a.id, { ...a, type: a.type as BookAccountType }]));
 }
@@ -77,7 +77,8 @@ export function classify(account: AccountInfo, accounts: Map<string, AccountInfo
   const group = [account.reportingGroup, account.parentId ? accounts.get(account.parentId)?.reportingGroup : null].filter(Boolean).join(" ").toLowerCase();
   if (/(?<!non[\s-]?)current portion|due within/.test(group)) return "CURRENT";
   if (/non[\s-]?current|long[\s-]?term|fixed asset|property|plant|equipment|intangible|investment property/.test(group)) return "NON_CURRENT";
-  if (/current|short[\s-]?term|working capital/.test(group)) return "CURRENT";
+  if (/current|short[\s-]?term|working capital|cash and cash equivalents|accounts receivable|accounts payable|credit card/.test(group)) return "CURRENT";
+  // Account numbers are free-form (QuickBooks), so the number range is only a fallback for accounts without a type.
   const head = Number(account.code.slice(0, 2));
   if (account.type === "ASSET") return [15, 17, 18, 19].includes(head) ? "NON_CURRENT" : "CURRENT";
   if (account.type === "LIABILITY") return head >= 25 && head <= 29 ? "NON_CURRENT" : "CURRENT";
@@ -103,7 +104,13 @@ function pnlProfit(accounts: Map<string, AccountInfo>, s: Sums) {
   return money4(total);
 }
 
-const isCash = (a: AccountInfo) => a.type === "ASSET" && a.code.startsWith("11");
+/** Cash: flagged as cash, or typed "Cash and cash equivalents"; the 11xx number range only for untyped older accounts. */
+export const isCash = (a: AccountInfo) =>
+  a.type === "ASSET" &&
+  (Boolean(a.isCashAccount) ||
+    /^cash and cash equivalents\|\|\|/i.test(a.reportingGroup ?? "") ||
+    /\|\|\|undeposited funds$/i.test(a.reportingGroup ?? "") ||
+    (!(a.reportingGroup ?? "").includes("|||") && a.code.startsWith("11")));
 const isDepreciation = (a: AccountInfo) => a.type === "EXPENSE" && (a.code === "6300" || /depreciation|amorti[sz]ation/i.test(a.name));
 
 /**
@@ -173,7 +180,7 @@ function lines(
     const amount = natural(a, current.get(id));
     const comparative = natural(a, prior.get(id));
     if (Math.abs(amount) < 0.0001 && Math.abs(comparative) < 0.0001) continue;
-    out.push({ accountId: id, code: a.code, name: a.name, amount, comparative, ...(withClass ? { classification: classify(a, accounts) } : {}) });
+    out.push({ accountId: id, code: a.code, name: a.name, amount, comparative, ...(withClass ? { classification: classify(a, accounts), isCash: isCash(a) } : {}) });
   }
   return out.sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }));
 }

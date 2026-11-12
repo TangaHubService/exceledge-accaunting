@@ -202,6 +202,14 @@ model Company {
   webhookDeliveries    WebhookDelivery[]
   notificationSettings NotificationSettings?
   notificationEmails   NotificationEmail[]
+  commercialDocuments CommercialDocument[]
+  itemReceipts ItemReceipt[]
+  inventoryAdjustments InventoryAdjustment[]
+  projects Project[]
+  tasks Task[]
+  employees Employee[]
+  timeActivities TimeActivity[]
+  workspaceRecords WorkspaceRecord[]
 
   @@map("companies")
 }
@@ -351,6 +359,8 @@ model AccountingPolicy {
   materialityThreshold       Decimal?                 @db.Decimal(18, 4)
   roundingPolicy             String?
   periodClosingPolicy        String?
+  /// QuickBooks "Enable account numbers": when off, numbers are assigned automatically and hidden.
+  useAccountNumbers          Boolean                  @default(true)
   createdAt                  DateTime                 @default(now())
   updatedAt                  DateTime                 @updatedAt
 
@@ -1030,6 +1040,9 @@ model Customer {
   debitNotes  ArDebitNote[]
   deposits    ArDeposit[]
   ledger      ArLedgerEntry[]
+  commercialDocuments CommercialDocument[]
+  projects Project[]
+  timeActivities TimeActivity[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpCustomerId])
@@ -1348,6 +1361,8 @@ model Supplier {
   advances    ApAdvance[]
   ledger      ApLedgerEntry[]
   goodsReceipts GoodsReceipt[]
+  commercialDocuments CommercialDocument[]
+  itemReceipts ItemReceipt[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpSupplierId])
@@ -1653,6 +1668,9 @@ model InventoryItem {
   balances  InventoryBalance[]
   movements InventoryMovement[]
   layers    InventoryCostLayer[]
+  commercialLines CommercialDocumentLine[]
+  itemReceiptLines ItemReceiptLine[]
+  adjustmentLines InventoryAdjustmentLine[]
 
   @@unique([companyId, externalProductId])
   @@index([companyId, name])
@@ -3434,4 +3452,391 @@ model AutomationJob {
 
   @@index([companyId])
   @@map("automation_jobs")
+}
+
+// Screens from the design: documents that do not post, stock documents, projects, team, workspace
+
+enum CommercialDocumentKind {
+  ESTIMATE
+  PROPOSAL
+  SALES_ORDER
+  DELAYED_CHARGE
+  DELAYED_CREDIT
+  PURCHASE_ORDER
+}
+
+enum CommercialDocumentStatus {
+  PENDING_APPROVAL
+  PENDING
+  ACCEPTED
+  DECLINED
+  OPEN
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CONVERTED
+  CLOSED
+  VOID
+}
+
+/// Quotes, orders and delayed items. They do not touch the GL until converted to an invoice, credit note or bill.
+model CommercialDocument {
+  id              String                   @id @default(cuid())
+  companyId       String
+  kind            CommercialDocumentKind
+  /// Number series; proposals share the estimate series.
+  series          String
+  number          String
+  status          CommercialDocumentStatus
+  customerId      String?
+  supplierId      String?
+  partyName       String
+  leadName        String?
+  leadEmail       String?
+  contact         String?
+  billTo          String?
+  shipTo          String?
+  shipVia         String?
+  terms           String?
+  docDate         DateTime
+  dueDate         DateTime?
+  expirationDate  DateTime?
+  acceptedBy      String?
+  acceptedDate    DateTime?
+  memo            String?
+  note            String?
+  currency        String
+  exchangeRate    Decimal                  @default(1) @db.Decimal(18, 8)
+  discountPct     Decimal                  @default(0) @db.Decimal(7, 4)
+  net             Decimal                  @db.Decimal(18, 4)
+  tax             Decimal                  @default(0) @db.Decimal(18, 4)
+  total           Decimal                  @db.Decimal(18, 4)
+  deposit         Decimal                  @default(0) @db.Decimal(18, 4)
+  projectId       String?
+  convertedToType String?
+  convertedToId   String?
+  convertedToNumber String?
+  /// Screen-only fields (payment options, chosen style, ...).
+  meta            Json?
+  createdByErpUserId Int?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  company  Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer?                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  supplier Supplier?                @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  project  Project?                 @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lines    CommercialDocumentLine[]
+  receipts ItemReceipt[]
+
+  @@unique([companyId, series, number])
+  @@index([companyId, kind, status, docDate])
+  @@map("commercial_documents")
+}
+
+model CommercialDocumentLine {
+  id               String    @id @default(cuid())
+  documentId       String
+  lineNumber       Int
+  description      String
+  serviceDate      DateTime?
+  itemId           String?
+  accountId        String?
+  quantity         Decimal   @db.Decimal(18, 4)
+  unitPrice        Decimal   @db.Decimal(18, 4)
+  discount         Decimal   @default(0) @db.Decimal(18, 4)
+  net              Decimal   @db.Decimal(18, 4)
+  taxCode          String?
+  taxRate          Decimal   @default(0) @db.Decimal(7, 4)
+  tax              Decimal   @default(0) @db.Decimal(18, 4)
+  receivedQuantity Decimal   @default(0) @db.Decimal(18, 4)
+  billedQuantity   Decimal   @default(0) @db.Decimal(18, 4)
+
+  document CommercialDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  item     InventoryItem?     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([documentId, lineNumber])
+  @@map("commercial_document_lines")
+}
+
+enum ItemReceiptStatus {
+  RECEIVED
+  BILLED
+}
+
+/// Goods received before the supplier's bill: inventory is debited against goods received not invoiced.
+model ItemReceipt {
+  id              String            @id @default(cuid())
+  companyId       String
+  number          String
+  supplierId      String
+  purchaseOrderId String?
+  goodsReceiptId  String?           @unique
+  journalId       String?
+  receiptDate     DateTime
+  memo            String?
+  value           Decimal           @db.Decimal(18, 4)
+  status          ItemReceiptStatus @default(RECEIVED)
+  billId          String?
+  createdByErpUserId Int?
+  createdAt       DateTime          @default(now())
+
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrder CommercialDocument? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  lines         ItemReceiptLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, supplierId, status])
+  @@map("item_receipts")
+}
+
+model ItemReceiptLine {
+  id                  String  @id @default(cuid())
+  receiptId           String
+  lineNumber          Int
+  itemId              String
+  locationId          String
+  description         String?
+  purchaseOrderLineId String?
+  quantity            Decimal @db.Decimal(18, 4)
+  unitCost            Decimal @db.Decimal(18, 4)
+  value               Decimal @db.Decimal(18, 4)
+  taxCode             String?
+
+  receipt ItemReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item    InventoryItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([receiptId, lineNumber])
+  @@map("item_receipt_lines")
+}
+
+enum InventoryAdjustmentType {
+  QUANTITY
+  VALUE
+}
+
+enum InventoryAdjustmentStatus {
+  PENDING_APPROVAL
+  POSTED
+  REJECTED
+}
+
+model InventoryAdjustment {
+  id          String                    @id @default(cuid())
+  companyId   String
+  number      String
+  type        InventoryAdjustmentType
+  status      InventoryAdjustmentStatus
+  adjustmentDate DateTime
+  reason      String
+  accountId   String
+  memo        String?
+  value       Decimal                   @default(0) @db.Decimal(18, 4)
+  journalId   String?
+  createdByErpUserId Int?
+  createdAt   DateTime                  @default(now())
+
+  company Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines   InventoryAdjustmentLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status, adjustmentDate])
+  @@map("inventory_adjustments")
+}
+
+model InventoryAdjustmentLine {
+  id           String  @id @default(cuid())
+  adjustmentId String
+  lineNumber   Int
+  itemId       String
+  locationId   String
+  /// Signed change: quantity for QUANTITY adjustments, money for VALUE adjustments.
+  change       Decimal @db.Decimal(18, 4)
+  unitCost     Decimal? @db.Decimal(18, 4)
+  value        Decimal @default(0) @db.Decimal(18, 4)
+
+  adjustment InventoryAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  item       InventoryItem       @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([adjustmentId, lineNumber])
+  @@map("inventory_adjustment_lines")
+}
+
+enum ProjectStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELED
+}
+
+/// A project is also a PROJECT dimension (same code), so posted journal lines carry it and profit comes from the GL.
+model Project {
+  id           String        @id
+  companyId    String
+  code         String
+  name         String
+  customerId   String?
+  customerName String?
+  customerAddress String?
+  email        String?
+  startDate    DateTime?
+  endDate      DateTime?
+  status       ProjectStatus @default(NOT_STARTED)
+  notes        String?
+  progress     Int           @default(0)
+  starred      Boolean       @default(false)
+  budget       Decimal?      @db.Decimal(18, 4)
+  customFields Json?
+  createdByErpUserId Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer  Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  links     ProjectLink[]
+  documents CommercialDocument[]
+  time      TimeActivity[]
+  tasks     Task[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("projects")
+}
+
+/// A document or posted record tagged to a project.
+model ProjectLink {
+  id        String   @id @default(cuid())
+  companyId String
+  projectId String
+  kind      String
+  sourceId  String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, sourceId])
+  @@index([projectId])
+  @@map("project_links")
+}
+
+model Task {
+  id          String    @id
+  companyId   String
+  name        String
+  description String?
+  assignee    String?
+  dueDate     DateTime?
+  priority    String?
+  recurring   Boolean   @default(false)
+  frequency   String?
+  links       Json?
+  files       Json?
+  done        Boolean   @default(false)
+  projectId   String?
+  createdByErpUserId Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, done, dueDate])
+  @@map("tasks")
+}
+
+model Employee {
+  id               String    @id
+  companyId        String
+  employeeNumber   String
+  firstName        String
+  lastName         String
+  middleName       String?
+  preferredName    String?
+  email            String?
+  phone            String?
+  address          String?
+  city             String?
+  country          String?
+  gender           String?
+  jobTitle         String?
+  department       String?
+  employmentType   String?
+  joiningDate      DateTime?
+  workLocation     String?
+  reportingManager String?
+  employmentStatus String    @default("active")
+  contractStart    DateTime?
+  contractEnd      DateTime?
+  probation        String?
+  workSchedule     String?
+  /// Restricted to team:manage.
+  dateOfBirth      DateTime?
+  nationalId       String?
+  payFrequency     String?
+  currency         String?
+  basicSalary      Decimal?  @db.Decimal(18, 4)
+  effectiveFrom    DateTime?
+  paymentMethod    String?
+  bankName         String?
+  accountHolder    String?
+  accountNumber    String?
+  tin              String?
+  rssb             String?
+  createdByErpUserId Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  time    TimeActivity[]
+
+  @@unique([companyId, employeeNumber])
+  @@index([companyId, employmentStatus])
+  @@map("employees")
+}
+
+model TimeActivity {
+  id              String   @id @default(cuid())
+  companyId       String
+  employeeId      String?
+  personName      String
+  customerId      String?
+  customerName    String?
+  projectId       String?
+  service         String?
+  activityDate    DateTime
+  durationMinutes Int
+  billable        Boolean  @default(false)
+  hourlyRate      Decimal? @db.Decimal(18, 4)
+  notes           String?
+  batchId         String?
+  createdByErpUserId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  project  Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, activityDate])
+  @@index([companyId, employeeId, activityDate])
+  @@map("time_activities")
+}
+
+/// Screen state with no accounting effect (saved reports, forecasts, planners, preferences).
+model WorkspaceRecord {
+  companyId  String
+  collection String
+  recordId   String
+  /// 0 = shared with the company; otherwise visible only to that user.
+  ownerErpUserId Int   @default(0)
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([companyId, collection, recordId, ownerErpUserId])
+  @@map("workspace_records")
 }

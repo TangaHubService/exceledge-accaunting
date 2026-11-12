@@ -5,6 +5,19 @@ import path from "path";
 loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 loadEnv({ path: path.resolve(process.cwd(), ".env") });
 
+const nodeEnv = process.env.NODE_ENV ?? "development";
+
+/** Dev defaults would let anyone forge tokens or post events, so production refuses to start with them. */
+if (nodeEnv === "production") {
+  const problems: string[] = [];
+  const secret = process.env.JWT_SECRET ?? "";
+  if (secret.length < 32 || secret.startsWith("change-me") || secret === "dev-secret") problems.push("JWT_SECRET must be a real secret of at least 32 characters");
+  if (!process.env.INTEGRATION_API_KEY || process.env.INTEGRATION_API_KEY === "dev-integration-key") problems.push("INTEGRATION_API_KEY must be set");
+  if (!process.env.DATABASE_URL) problems.push("DATABASE_URL must be set");
+  if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === "*") problems.push("CORS_ORIGIN must name the web app's origin");
+  if (problems.length) throw new Error(`Refusing to start in production:\n- ${problems.join("\n- ")}`);
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4600),
   databaseUrl: process.env.DATABASE_URL ?? "",
@@ -12,7 +25,9 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   integrationApiKey: process.env.INTEGRATION_API_KEY ?? "dev-integration-key",
   erpApiUrl: (process.env.ERP_API_URL ?? "http://localhost:4500/api").replace(/\/$/, ""),
-  nodeEnv: process.env.NODE_ENV ?? "development",
+  nodeEnv,
+  /** Proxies in front of the API, so `req.ip` in the audit trail is the real client. */
+  trustProxy: Number(process.env.TRUST_PROXY ?? 0),
   /** Base URL of the accounting web app, for links in emailed notifications */
   webAppUrl: (process.env.ACCOUNTING_WEB_URL ?? "http://localhost:5173").replace(/\/$/, ""),
   documentStorageDir: path.resolve(process.env.DOCUMENT_STORAGE_DIR ?? path.resolve(__dirname, "../../storage/documents")),

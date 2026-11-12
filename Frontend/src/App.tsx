@@ -6,6 +6,8 @@ import { erpLinks } from "./lib/config";
 import { EmptyState } from "./components/ui";
 import { CompanyProvider } from "./lib/company";
 import { Link, match, Redirect, useLocation } from "./lib/router";
+import { ServerStoreSync } from "./components/ServerStoreSync";
+import { clearServerCache } from "./lib/server-store";
 import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
 import { Accounts } from "./pages/Accounts";
 import { AgeingReportPage } from "./pages/Ageing";
@@ -73,6 +75,7 @@ import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
 import { Workflows } from "./pages/Workflows";
+import { ImportChartOfAccounts } from "./pages/ImportChartOfAccounts";
 import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
 import { BackupRestore } from "./pages/BackupRestore";
@@ -254,6 +257,7 @@ const ROUTES: Route[] = [
   { pattern: "/exceptions", needs: "exceptions:view", render: () => <Exceptions /> },
   { pattern: "/audit", needs: "audit:view", render: () => <AuditLog /> },
   { pattern: "/import-data", needs: "setup:view", render: () => <ImportData /> },
+  { pattern: "/import-data/chart-of-accounts", needs: "coa:import", render: () => <ImportChartOfAccounts /> },
   { pattern: "/export-data", needs: "setup:view", render: () => <ExportData /> },
   { pattern: "/backup-restore", needs: "setup:view", render: () => <BackupRestore /> },
 ];
@@ -264,6 +268,7 @@ export function App() {
 
   const signOut = useCallback((reason?: "expired") => {
     clearToken();
+    clearServerCache();
     setToken("");
     setNotice(reason === "expired" ? "Your session ended. Sign in again to continue." : "");
   }, []);
@@ -279,6 +284,7 @@ export function App() {
   return (
     <SessionProvider token={token} onSignOut={signOut} onTokenRefreshed={setToken}>
       <FeedbackProvider>
+        <ServerStoreSync />
         <Gate />
       </FeedbackProvider>
     </SessionProvider>

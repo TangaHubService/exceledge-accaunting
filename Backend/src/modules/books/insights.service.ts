@@ -82,7 +82,7 @@ function kpiInput(s: Statements, key: Key, accounts: Awaited<ReturnType<typeof k
     inventory: lineSum(s.position.assets, key, isAccount(accounts.inventory)),
     receivables: lineSum(s.position.assets, key, isAccount(accounts.receivables)),
     payables: lineSum(s.position.liabilities, key, isAccount(accounts.payables)),
-    cash: lineSum(s.position.assets, key, (l) => l.code.startsWith("11")),
+    cash: lineSum(s.position.assets, key, (l) => l.isCash ?? l.code.startsWith("11")),
   };
 }
 

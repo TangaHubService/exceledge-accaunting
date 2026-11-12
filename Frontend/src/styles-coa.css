@@ -6,7 +6,7 @@
 
 .ee-coa-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin: 4px 0 16px;
@@ -221,14 +221,14 @@
 .ee-coa-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 760px;
   font-size: 14px; /* body / account names */
   font-variant-numeric: tabular-nums;
 }
 
 .ee-coa-table th {
   text-align: left;
-  padding: 12px 12px;
+  padding: 12px 8px;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -241,14 +241,14 @@
 .ee-coa-table th.num,
 .ee-coa-table td.num {
   text-align: right;
-  font-size: 12px;
-  letter-spacing: -0.02em;
+  font-size: 13.5px;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .ee-coa-table td {
-  padding: 12px;
+  padding: 10px 8px;
   border-bottom: 1px solid #eef1f5;
   color: #111827;
   vertical-align: middle;
@@ -609,7 +609,344 @@
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* Title and Run report / New share one row, as in QuickBooks, until the screen is phone-narrow. */
+@media (max-width: 560px) {
   .ee-coa-head {
     flex-direction: column;
   }
+}
+
+/* Name gets the most room; the number column stays tight. */
+.ee-coa-table th.ee-coa-name-col {
+  min-width: 170px;
+}
+
+/* ── Chart of accounts: sorting, batch actions, edit mode, clean up, import ── */
+.ee-coa-th-sort {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ee-coa-th-sort:hover {
+  color: var(--ee-blue, #2f6fed);
+}
+
+.ee-coa-sort.on {
+  color: var(--ee-blue, #2f6fed);
+}
+
+.ee-coa-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+}
+
+.ee-coa-batch-count {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0b2a4a;
+}
+
+.ee-coa-batch .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ee-coa-batch-menu {
+  left: 0;
+  right: auto;
+  min-width: 180px;
+}
+
+.ee-coa-row-menu {
+  min-width: 0;
+}
+
+.ee-coa-new-menu button.danger {
+  color: #b42318;
+}
+
+.ee-coa-new-menu button.danger:hover {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.ee-coa-inline {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13.5px;
+  width: 84px;
+}
+
+.ee-coa-inline-name {
+  width: 100%;
+  min-width: 180px;
+}
+
+.ee-coa-table tr.has-error td {
+  background: #fef3f2;
+}
+
+.ee-coa-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid #c7d7fe;
+  background: #eef4ff;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: #0b2a4a;
+}
+
+.ee-coa-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ee-coa-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  border: 1.5px dashed #c3cfdf;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.ee-coa-drop:hover,
+.ee-coa-drop:focus-within {
+  border-color: var(--ee-blue, #2f6fed);
+  background: #f3f7ff;
+}
+
+.ee-coa-drop input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.ee-coa-import-table {
+  min-width: 620px;
+  font-size: 13px;
+}
+
+.ee-coa-import-ok {
+  color: #067647;
+  font-weight: 600;
+}
+
+.ee-coa-import-bad {
+  color: #b42318;
+}
+
+.ee-coa-import-errors {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+@media print {
+  .ee-coa-print-hide,
+  .ee-coa-toolbar,
+  .ee-coa-head-actions,
+  .ee-coa-check-col,
+  .ee-coa-table td:first-child,
+  .ee-cust-crumbs,
+  .ee-coa-banner {
+    display: none !important;
+  }
+
+  .ee-coa-table-wrap {
+    border: 0;
+    overflow: visible;
+  }
+
+  .ee-coa-table {
+    min-width: 0;
+  }
+}
+
+.ee-coa-table th.ee-coa-detail {
+  width: 150px;
+}
+
+
+.ee-coa-settings-menu {
+  width: 230px;
+  padding: 8px 0;
+}
+
+.ee-coa-settings-title {
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.ee-coa-settings-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 13.5px;
+  color: #111827;
+  cursor: pointer;
+}
+
+.ee-coa-settings-opt:hover {
+  background: #f8fafc;
+}
+
+.ee-coa-new-menu .ee-coa-settings-link {
+  margin-top: 6px;
+  border-top: 1px solid #eef1f5;
+  color: var(--ee-blue, #2f6fed);
+}
+
+.ee-coa-lock-mark {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-left: 6px;
+  color: #64748b;
+}
+
+.ee-coa-lock-state {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* ── Import data → Chart of accounts (QuickBooks-style Upload / Map data / Import) ── */
+.ee-imp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 980px;
+}
+
+.ee-imp-steps {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.ee-imp-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ee-imp-steps li.on {
+  background: #e8f0fe;
+  color: #0b2a4a;
+}
+
+.ee-imp-steps li.done {
+  color: #15803d;
+}
+
+.ee-imp-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 12.5px;
+}
+
+.ee-imp-steps li.on .ee-imp-step-dot {
+  background: var(--ee-blue, #2f6fed);
+  color: #fff;
+}
+
+.ee-imp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e5e9f0;
+  border-radius: 12px;
+}
+
+.ee-imp-h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0b2a4a;
+}
+
+.ee-imp-map {
+  min-width: 0;
+}
+
+.ee-imp-map td:last-child {
+  width: 55%;
+}
+
+.ee-imp-req {
+  color: #dc2626;
+}
+
+.ee-imp-hint {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.ee-imp-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.ee-imp-done-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.ee-imp-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
