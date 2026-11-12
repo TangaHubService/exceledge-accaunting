@@ -324,7 +324,7 @@ export function AIAssistantPanel({ onClose }: { onClose: () => void }) {
             </button>
             {menu ? (
               <div className="prj-menu" style={{ right: 0, left: "auto" }}>
-                <button type="button" onClick={() => (setMsgs([]), setMenu(false))}>
+                <button type="button" onClick={() => { setMsgs([]); setMenu(false); }}>
                   New chat
                 </button>
               </div>
@@ -395,7 +395,7 @@ export function AIAssistantPanel({ onClose }: { onClose: () => void }) {
           }}
         />
         <div className="ai-input-row">
-          <button type="button" className="txn-icon sm" aria-label="Start a new chat" onClick={() => setMsgs([])}>
+          <button type="button" className="txn-icon sm" aria-label="Start a new chat" onClick={() => setMsgs(() => [])}>
             <Plus size={20} />
           </button>
           <button type="submit" className="txn-icon sm" aria-label="Send" disabled={!text.trim()}>
