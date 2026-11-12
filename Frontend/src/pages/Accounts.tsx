@@ -12,7 +12,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { NewAccountDrawer } from "../components/coa/NewAccountDrawer";
 import { useFeedback } from "../components/feedback";
 import { Select } from "../components/Select";
+import { Pagination } from "../components/Pagination";
 import { Badge, EmptyState, Loadable, SkeletonRows } from "../components/ui";
+import { usePagedResource } from "../lib/pagination";
 import { useCompany } from "../lib/company";
 import { useCoaSettings } from "../lib/coa-settings";
 import { ALL_ACCOUNT_TYPE_LABELS, decodeReportingGroup } from "../lib/coa-taxonomy";
@@ -78,6 +80,8 @@ function breakable(text: string) {
   ));
 }
 type FlatRow = { account: Account; depth: number; isParent: boolean };
+/** A row of the paged list from /api/v1/coa/rows. */
+type AccountRow = Account & { depth: number; hasChildren: boolean };
 type SortKey = "code" | "name" | "type" | "balance";
 type Sort = { key: SortKey; dir: 1 | -1 };
 
@@ -207,24 +211,31 @@ export function Accounts() {
   const columnOptions = OPTIONAL_COLUMNS.filter((c) => c.key !== "currency" || multiCurrency);
   const visibleOptional = columnOptions.filter((c) => !hidden.has(c.key)).length;
 
-  const rows = useMemo(() => {
-    // With account numbers off there is no Number column: like QuickBooks, order by account type, then name.
-    const flat = flatten(tree.data ?? [], !numbersOn && sort.key === "code" ? { key: "type", dir: sort.dir } : sort);
-    const q = search.trim().toLowerCase();
-    return flat.filter(({ account: a }) => {
-      if (cleanup) return isUnused(a);
-      if (!showInactive && !a.isActive) return false;
-      const meta = accountMeta(a);
-      if (typeFilter && meta.accountType !== typeFilter && a.type !== typeFilter) return false;
-      if (!q) return true;
-      return (
-        (numbersOn && a.code.toLowerCase().includes(q)) ||
-        a.name.toLowerCase().includes(q) ||
-        meta.accountType.toLowerCase().includes(q) ||
-        meta.detailType.toLowerCase().includes(q)
-      );
-    });
-  }, [tree.data, search, typeFilter, showInactive, cleanup, sort, numbersOn]);
+  // Wait for a pause in typing before asking the server for the filtered page.
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // The table is paged on the server: it filters, sorts (keeping subaccounts under their parent) and slices.
+  // With account numbers off there is no Number column: like QuickBooks, order by account type, then name.
+  const effectiveSort = !numbersOn && sort.key === "code" ? "type" : sort.key;
+  const list = usePagedResource<AccountRow>(
+    "/api/v1/coa/rows",
+    {
+      q: query,
+      type: typeFilter,
+      includeInactive: showInactive || undefined,
+      unused: cleanup || undefined,
+      searchNumbers: numbersOn ? undefined : false,
+      sort: effectiveSort,
+      dir: sort.dir === 1 ? "asc" : "desc",
+    },
+    // QuickBooks' rows-per-page choices for the chart of accounts.
+    { key: "chart-of-accounts", defaultPageSize: 50, pageSizeOptions: [50, 75, 100, 150, 300] },
+  );
+  const rows: FlatRow[] = useMemo(() => list.rows.map((a) => ({ account: a, depth: a.depth, isParent: a.hasChildren })), [list.rows]);
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id] && byId.has(id));
   const allSelected = rows.length > 0 && rows.every((r) => selected[r.account.id]);
@@ -267,6 +278,7 @@ export function Accounts() {
 
   function reloadAll() {
     tree.reload();
+    list.reload();
     dash.reload();
     reloadCompany();
   }
@@ -690,7 +702,7 @@ export function Accounts() {
         </div>
       </div>
 
-      <Loadable resource={tree} skeleton={<SkeletonRows rows={10} cols={6} />}>
+      <Loadable resource={list} skeleton={<SkeletonRows rows={10} cols={6} />}>
         {() => (
           <div className="ee-coa-table-wrap">
             <table className="ee-coa-table">
@@ -844,6 +856,16 @@ export function Accounts() {
           </div>
         )}
       </Loadable>
+
+      <Pagination
+        page={list.page}
+        pageSize={list.pageSize}
+        total={list.total}
+        onPage={list.setPage}
+        onPageSize={list.setPageSize}
+        pageSizeOptions={list.pageSizeOptions}
+        label="Chart of accounts pages"
+      />
 
       {dash.data && (
         <p className="ee-coa-caption">

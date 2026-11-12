@@ -8,6 +8,7 @@ import {
   type AccountTypeCode,
 } from "@exceledge/accounting-domain";
 import { Prisma, type Account, type AccountType } from "@prisma/client";
+import { paginateArray, type PageRequest } from "../../lib/pagination";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { createAndPostJournal } from "../journals/journal.service";
@@ -98,6 +99,103 @@ export async function listAccounts(
     where,
     orderBy: [{ code: "asc" }],
   });
+}
+
+const TYPE_ORDER: AccountType[] = ["ASSET", "LIABILITY", "EQUITY", "INCOME", "COST_OF_SALES", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"];
+/** QuickBooks lists account types in this fixed order (the order of the type picker). */
+const QB_TYPE_ORDER = [
+  "Cash and cash equivalents", "Accounts receivable (A/R)", "Current assets", "Fixed assets", "Non-current assets",
+  "Credit card", "Accounts payable (A/P)", "Current liabilities", "Non-current liabilities", "Owner's equity",
+  "Income", "Other income", "Cost of sales", "Expenses", "Other expense",
+];
+const DEBIT_NORMAL = new Set<AccountType>(["ASSET", "COST_OF_SALES", "EXPENSE", "OTHER_EXPENSE"]);
+
+/** The QuickBooks account type and detail type shown for an account (older bank/cash accounts are inferred). */
+export function accountLabels(a: Pick<Account, "type" | "reportingGroup" | "isCashAccount" | "bankReconciliationRequired">) {
+  const rg = a.reportingGroup ?? "";
+  const i = rg.indexOf("|||");
+  if (i >= 0) return { accountType: rg.slice(0, i), detailType: rg.slice(i + 3) };
+  if (a.type === "ASSET" && a.isCashAccount) {
+    return { accountType: "Cash and cash equivalents", detailType: a.bankReconciliationRequired ? "Bank" : "Cash on hand" };
+  }
+  return { accountType: rg, detailType: "" };
+}
+
+export type AccountListSort = "code" | "name" | "type" | "balance";
+export type AccountListQuery = {
+  q?: string;
+  /** A category (ASSET, EXPENSE, …) or a QuickBooks account type label ("Cash and cash equivalents"). */
+  type?: string;
+  includeInactive?: boolean;
+  /** Clean-up view: active, never used, zero balance, not a system account. */
+  unused?: boolean;
+  /** Search account numbers too (off when the company hides account numbers). */
+  searchNumbers?: boolean;
+  sort?: AccountListSort;
+  dir?: "asc" | "desc";
+};
+export type AccountListRow = Account & { depth: number; hasChildren: boolean; accountType: string; detailType: string };
+
+/**
+ * The chart of accounts as the list screen shows it: siblings sorted, subaccounts directly under their parent, then
+ * filtered and paged. Filtering keeps the hierarchy order, as QuickBooks does.
+ */
+export async function listAccountRows(companyId: string, query: AccountListQuery, page: PageRequest) {
+  await ensureSystemChartOfAccounts(companyId);
+  const accounts = await prisma.account.findMany({ where: { companyId } });
+  const dir = query.dir === "desc" ? -1 : 1;
+  const sort = query.sort ?? "code";
+  const labels = new Map(accounts.map((a) => [a.id, accountLabels(a)]));
+  const natural = (a: Account) => (DEBIT_NORMAL.has(a.type) ? Number(a.currentBalance) : -Number(a.currentBalance));
+  const rank = (label: string) => {
+    const i = QB_TYPE_ORDER.indexOf(label);
+    return i < 0 ? QB_TYPE_ORDER.length : i;
+  };
+  const byNumber = (a: Account, b: Account) => a.code.localeCompare(b.code, undefined, { numeric: true });
+  const compare = (a: Account, b: Account) => {
+    let d = 0;
+    if (sort === "name") d = a.name.localeCompare(b.name);
+    else if (sort === "balance") d = natural(a) - natural(b);
+    else if (sort === "type") {
+      const la = labels.get(a.id)!.accountType, lb = labels.get(b.id)!.accountType;
+      d = TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) || rank(la) - rank(lb) || la.localeCompare(lb) || a.name.localeCompare(b.name);
+    } else d = byNumber(a, b);
+    return (d || byNumber(a, b)) * dir;
+  };
+
+  const children = new Map<string | null, Account[]>();
+  const ids = new Set(accounts.map((a) => a.id));
+  for (const a of accounts) {
+    const key = a.parentId && ids.has(a.parentId) ? a.parentId : null;
+    children.set(key, [...(children.get(key) ?? []), a]);
+  }
+  const ordered: AccountListRow[] = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const a of [...(children.get(parent) ?? [])].sort(compare)) {
+      const kids = children.get(a.id) ?? [];
+      ordered.push({ ...a, depth, hasChildren: kids.length > 0, ...labels.get(a.id)! });
+      walk(a.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+
+  const q = query.q?.trim().toLowerCase() ?? "";
+  const isCategory = (TYPE_ORDER as string[]).includes(query.type ?? "");
+  const rows = ordered.filter((a) => {
+    if (query.unused) {
+      return a.isActive && !a.systemProtected && !a.hasPostedTransactions && Number(a.currentBalance) === 0;
+    }
+    if (!query.includeInactive && !a.isActive) return false;
+    if (query.type && (isCategory ? a.type !== query.type : a.accountType !== query.type)) return false;
+    if (!q) return true;
+    return (
+      (query.searchNumbers !== false && a.code.toLowerCase().includes(q)) ||
+      a.name.toLowerCase().includes(q) ||
+      a.accountType.toLowerCase().includes(q) ||
+      a.detailType.toLowerCase().includes(q)
+    );
+  });
+  return paginateArray(rows, page);
 }
 
 export async function getAccountTree(companyId: string) {

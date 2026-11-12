@@ -20,6 +20,7 @@ import { createReceipt, reverseReceipt } from "../ar/ar.service";
 import { writeAudit } from "../audit/audit.service";
 import { createAccount } from "../coa/coa.service";
 import { createAndPostJournal, linesInJournalCurrency } from "../journals/journal.service";
+import { normalizePage, pageArgs } from "../../lib/pagination";
 
 export type Actor = {
   erpUserId?: number;
@@ -771,11 +772,10 @@ export async function listTransactions(
         }
       : {}),
   };
-  const pageSize = Math.min(Math.max(filter.pageSize ?? 50, 1), 200);
-  const page = Math.max(filter.page ?? 1, 1);
+  const { page, pageSize } = normalizePage(filter, { maxSize: 200 });
   const [total, rows, sums] = await Promise.all([
     prisma.bankTransaction.count({ where }),
-    prisma.bankTransaction.findMany({ where, include: { financialAccount: true, counterAccount: true }, orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.bankTransaction.findMany({ where, include: { financialAccount: true, counterAccount: true }, orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }], ...pageArgs({ page, pageSize }) }),
     prisma.bankTransaction.groupBy({ by: ["kind"], where: { ...where, status: "POSTED" }, _sum: { amount: true } }),
   ]);
   const sum = (k: BankTransactionKind[]) => roundMoney(sums.filter((s) => k.includes(s.kind)).reduce((t, s) => t + money(s._sum.amount), 0));

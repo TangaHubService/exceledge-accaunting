@@ -7,6 +7,7 @@ import {
   requireCapability,
   resolveCompany,
 } from "../../middleware/auth";
+import { parsePage } from "../../lib/pagination";
 import * as coa from "./coa.service";
 
 export const coaRouter = Router();
@@ -34,6 +35,26 @@ const accountTypeEnum = z.enum([
 
 coaRouter.get("/dashboard", async (req: AuthedRequest, res) => {
   const data = await coa.getCoaDashboard(req.companyId!);
+  res.json({ success: true, data });
+});
+
+// Paged list for the chart of accounts screen: ?page=&pageSize=&q=&type=&includeInactive=&unused=&sort=&dir=
+coaRouter.get("/rows", async (req: AuthedRequest, res) => {
+  const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : undefined);
+  const sort = str(req.query.sort);
+  const data = await coa.listAccountRows(
+    req.companyId!,
+    {
+      q: str(req.query.q),
+      type: str(req.query.type),
+      includeInactive: req.query.includeInactive === "true",
+      unused: req.query.unused === "true",
+      searchNumbers: req.query.searchNumbers !== "false",
+      sort: sort === "name" || sort === "type" || sort === "balance" ? sort : "code",
+      dir: req.query.dir === "desc" ? "desc" : "asc",
+    },
+    parsePage(req.query, { defaultSize: 50, maxSize: 500 }),
+  );
   res.json({ success: true, data });
 });
 

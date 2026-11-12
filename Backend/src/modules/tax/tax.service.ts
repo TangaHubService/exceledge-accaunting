@@ -19,6 +19,7 @@ import { documentApprovalPlan, requestApproval } from "../approvals/approval.ser
 import { writeAudit } from "../audit/audit.service";
 import { createAndPostJournal } from "../journals/journal.service";
 import { glBalance, isoDay, startOfDay, endOfDay } from "../banking/banking.service";
+import { normalizePage, pageArgs } from "../../lib/pagination";
 
 export type Actor = {
   erpUserId?: number;
@@ -624,8 +625,7 @@ export async function taxLedger(companyId: string, options: { taxType?: TaxType;
   await ensureTaxSettings(companyId);
   const defaults = await defaultsFor(companyId);
   const { start, end } = range(options.from, options.to);
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = Math.min(200, Math.max(1, options.pageSize ?? 50));
+  const { page, pageSize } = normalizePage(options, { maxSize: 200 });
 
   const accountIds: string[] = [];
   const typeForAccount = new Map<string, TaxType>();
@@ -862,8 +862,7 @@ export async function getTaxPayment(companyId: string, id: string) {
 
 export async function listTaxPayments(companyId: string, options: { from?: string; to?: string; taxType?: TaxType; page?: number; pageSize?: number } = {}) {
   const { start, end } = range(options.from, options.to);
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 50));
+  const { page, pageSize } = normalizePage(options, { maxSize: 100 });
   const where = {
     companyId,
     paymentDate: { gte: start, lte: end },
@@ -871,7 +870,7 @@ export async function listTaxPayments(companyId: string, options: { from?: strin
   };
   const [total, rows] = await Promise.all([
     prisma.taxPayment.count({ where }),
-    prisma.taxPayment.findMany({ where, orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.taxPayment.findMany({ where, orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }], ...pageArgs({ page, pageSize }) }),
   ]);
   return {
     page,
@@ -1148,12 +1147,11 @@ export async function discardFiling(companyId: string, id: string, actor: Actor 
 
 export async function listFiscalDocuments(companyId: string, options: { from?: string; to?: string; page?: number; pageSize?: number } = {}) {
   const { start, end } = range(options.from, options.to);
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 50));
+  const { page, pageSize } = normalizePage(options, { maxSize: 100 });
   const where = { companyId, occurredAt: { gte: start, lte: end } };
   const [total, rows] = await Promise.all([
     prisma.fiscalDocument.count({ where }),
-    prisma.fiscalDocument.findMany({ where, orderBy: { occurredAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.fiscalDocument.findMany({ where, orderBy: { occurredAt: "desc" }, ...pageArgs({ page, pageSize }) }),
   ]);
   return {
     page,

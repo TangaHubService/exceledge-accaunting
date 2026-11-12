@@ -20,6 +20,7 @@ import { decideApproval, planFor, requestApproval, resubmitApproval } from "../a
 import { writeAudit } from "../audit/audit.service";
 import { assertDimensions, createAndPostJournal } from "../journals/journal.service";
 import { endOfDay, isoDay, startOfDay } from "../banking/banking.service";
+import { normalizePage, pageArgs } from "../../lib/pagination";
 
 export type Actor = {
   erpUserId?: number;
@@ -319,8 +320,7 @@ export async function listExpenses(
   options: { from?: string; to?: string; status?: ExpenseStatus; categoryId?: string; page?: number; pageSize?: number } = {},
 ) {
   await ensureExpenseCategories(companyId);
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 50));
+  const { page, pageSize } = normalizePage(options, { maxSize: 100 });
   const where = {
     companyId,
     ...(options.status ? { status: options.status } : {}),
@@ -340,8 +340,7 @@ export async function listExpenses(
       where,
       include: { category: true },
       orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...pageArgs({ page, pageSize }),
     }),
   ]);
   return {

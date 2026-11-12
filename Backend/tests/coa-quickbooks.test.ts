@@ -185,4 +185,33 @@ describe("Chart of accounts — QuickBooks parity", () => {
     expect(flights.parentId).toBe(travel.id);
     expect(res.body.data.errors).toEqual([expect.objectContaining({ code: "Fuel" })]);
   });
+
+  it("pages the chart of accounts with subaccounts kept under their parent", async () => {
+    const parent = await create({ code: "6980", name: "Paging parent", type: "EXPENSE", reportingGroup: "Expenses|||Office/General Administrative Expenses" });
+    await create({ code: "6981", name: "Paging child", type: "EXPENSE", reportingGroup: "Expenses|||Office/General Administrative Expenses", parentId: parent.body.data.id });
+
+    const first = await request(app).get("/api/v1/coa/rows?page=1&pageSize=10").set(headers);
+    expect(first.status).toBe(200);
+    expect(first.body.data).toMatchObject({ page: 1, pageSize: 10 });
+    expect(first.body.data.rows).toHaveLength(10);
+    expect(first.body.data.total).toBeGreaterThan(10);
+    expect(first.body.data.pageCount).toBe(Math.ceil(first.body.data.total / 10));
+
+    const all = await request(app).get("/api/v1/coa/rows?pageSize=500").set(headers);
+    const codes = all.body.data.rows.map((r: { code: string }) => r.code);
+    expect(codes.indexOf("6981")).toBe(codes.indexOf("6980") + 1);
+    expect(all.body.data.rows.find((r: { code: string }) => r.code === "6981")).toMatchObject({ depth: 1 });
+
+    const search = await request(app).get("/api/v1/coa/rows?q=paging&pageSize=5").set(headers);
+    expect(search.body.data.rows.map((r: { name: string }) => r.name)).toEqual(["Paging parent", "Paging child"]);
+    const byType = await request(app).get("/api/v1/coa/rows?type=Cash%20and%20cash%20equivalents&pageSize=500").set(headers);
+    expect(byType.body.data.rows.every((r: { accountType: string }) => r.accountType === "Cash and cash equivalents")).toBe(true);
+
+    const desc = await request(app).get("/api/v1/coa/rows?sort=name&dir=desc&pageSize=3").set(headers);
+    const names = desc.body.data.rows.map((r: { name: string }) => r.name);
+    expect([...names].sort((a: string, b: string) => b.localeCompare(a))).toEqual(names);
+
+    const past = await request(app).get("/api/v1/coa/rows?page=999&pageSize=10").set(headers);
+    expect(past.body.data.page).toBe(past.body.data.pageCount);
+  });
 });
