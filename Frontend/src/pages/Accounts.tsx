@@ -909,9 +909,10 @@ export function Accounts() {
         </div>
       )}
 
-      {(creating || editing) && dash.data && (
+      {/* Open straight away: categories only seed number suggestions, so a slow or failed dashboard must not swallow the click. */}
+      {(creating || editing) && (
         <NewAccountDrawer
-          categories={dash.data.categories}
+          categories={dash.data?.categories ?? []}
           accounts={allAccounts}
           account={editing ?? undefined}
           onClose={() => {
