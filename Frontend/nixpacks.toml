@@ -14,4 +14,5 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npx serve dist -l 3000"
+# -s (single-page mode): unknown paths get index.html so a refresh on /accounting/... loads the app instead of a 404.
+cmd = "npx serve -s dist -l 3000"

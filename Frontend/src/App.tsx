@@ -2,10 +2,11 @@ import type { AccountingCapability } from "@exceledge/accounting-domain-web";
 import { type ReactNode, useCallback, useState } from "react";
 import { FeedbackProvider } from "./components/feedback";
 import { Shell } from "./components/Shell";
+import { NotFound } from "./components/NotFound";
 import { erpLinks } from "./lib/config";
 import { EmptyState } from "./components/ui";
 import { CompanyProvider } from "./lib/company";
-import { Link, match, Redirect, useLocation } from "./lib/router";
+import { match, Redirect, useLocation } from "./lib/router";
 import { ServerStoreSync } from "./components/ServerStoreSync";
 import { clearServerCache } from "./lib/server-store";
 import { clearToken, readInitialToken, SessionProvider, storeToken, useSession } from "./lib/session";
@@ -349,9 +350,5 @@ function Routes() {
     }
     return <>{route.render(params)}</>;
   }
-  return (
-    <div className="panel">
-      <EmptyState title="Page not found" body="The page you're looking for doesn't exist." action={<Link to="/" className="btn">Go to overview</Link>} />
-    </div>
-  );
+  return <NotFound />;
 }
