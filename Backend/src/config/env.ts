@@ -11,7 +11,8 @@ const nodeEnv = process.env.NODE_ENV ?? "development";
 if (nodeEnv === "production") {
   const problems: string[] = [];
   const secret = process.env.JWT_SECRET ?? "";
-  if (secret.length < 32 || secret.startsWith("change-me") || secret === "dev-secret") problems.push("JWT_SECRET must be a real secret of at least 32 characters");
+  // No length rule: the secret is shared with the ERP, so it is whatever the ERP uses. Only the dev defaults are refused.
+  if (!secret || secret.startsWith("change-me") || secret === "dev-secret") problems.push("JWT_SECRET must be set to the ERP's JWT secret");
   if (!process.env.INTEGRATION_API_KEY || process.env.INTEGRATION_API_KEY === "dev-integration-key") problems.push("INTEGRATION_API_KEY must be set");
   if (!process.env.DATABASE_URL) problems.push("DATABASE_URL must be set");
   if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === "*") problems.push("CORS_ORIGIN must name the web app's origin");
