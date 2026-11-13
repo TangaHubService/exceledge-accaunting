@@ -622,6 +622,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
           reference: form.reference.trim() || `Refund ${form.number}`,
           partyType: "CUSTOMER",
           partyName: customer?.name,
+          relatedCustomerId: form.customerId || undefined,
           description: form.message.trim() || `Refund to ${customer?.name ?? "customer"}`,
           lines: lines.map((l) => ({ accountId: l.accountId!, amount: Math.round(l.quantity * l.unitPrice * 100) / 100, description: l.description.slice(0, 300) })),
         }),

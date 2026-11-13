@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
 import { useCompany } from "../lib/company";
-import { amount, date, humanize, isoDay, money, toNumber } from "../lib/format";
+import { amount, date, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
 import type { ArDeposit, Customer, CustomerLedger, CustomerStatement, CustomerType } from "../lib/types";
 import { SettlementAccountField } from "./BankingForms";
@@ -30,146 +30,6 @@ export const PAYMENT_METHODS = [
   { value: "ONLINE", label: "Online" },
 ];
 
-/* ── Customer ──────────────────────────────────────────── */
-
-export function CustomerForm({ customer, onClose, onSaved }: { customer?: Customer; onClose: () => void; onSaved: (c: Customer) => void }) {
-  const { api } = useSession();
-  const editing = Boolean(customer);
-  const [form, setForm] = useState({
-    name: customer?.name ?? "",
-    customerType: customer?.customerType ?? ("CREDIT" as CustomerType),
-    tin: customer?.tin ?? "",
-    telephone: customer?.telephone ?? "",
-    email: customer?.email ?? "",
-    physicalAddress: customer?.physicalAddress ?? "",
-    creditLimit: customer ? amount(customer.creditLimit) : "",
-    creditPeriodDays: String(customer?.creditPeriodDays ?? 30),
-    creditStatus: customer?.creditStatus ?? "GOOD",
-    status: customer?.status ?? "ACTIVE",
-    notes: customer?.notes ?? "",
-  });
-  const { busy, error, run } = useSubmit();
-  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
-
-  const tinInvalid = form.tin !== "" && !/^\d{9}$/.test(form.tin);
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (tinInvalid) return;
-    const limit = parseAmount(form.creditLimit);
-    const common = {
-      name: form.name.trim(),
-      customerType: form.customerType,
-      telephone: form.telephone || undefined,
-      email: form.email || undefined,
-      creditLimit: Number.isFinite(limit) ? limit : undefined,
-      creditPeriodDays: Number(form.creditPeriodDays) || 0,
-      notes: form.notes || undefined,
-    };
-    void run(async () => {
-      const result = editing
-        ? await api<Customer>(`/api/v1/ar/customers/${customer!.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ ...common, creditStatus: form.creditStatus, status: form.status }),
-          })
-        : await api<Customer>("/api/v1/ar/customers", {
-            method: "POST",
-            body: JSON.stringify({ ...common, tin: form.tin || undefined, physicalAddress: form.physicalAddress || undefined }),
-          });
-      onSaved(result);
-      return editing ? "Customer updated" : `${result.name} added as ${result.code}`;
-    });
-  }
-
-  return (
-    <Drawer
-      title={editing ? `Edit ${customer!.name}` : "New customer"}
-      onClose={onClose}
-      footer={<Footer onCancel={onClose} busy={busy} label={editing ? "Save changes" : "Add customer"} formId="customer-form" />}
-    >
-      <form id="customer-form" onSubmit={submit}>
-        <FormError message={error} />
-        <div className="form-grid">
-          <Field label="Customer name" required className="span-2">
-            <input className="input" value={form.name} onChange={(e) => set("name")(e.target.value)} required />
-          </Field>
-          <Field label="Customer type">
-            <Select
-              value={form.customerType}
-              onChange={set("customerType")}
-              searchable={false}
-              options={CUSTOMER_TYPES.map((t) => ({ value: t, label: humanize(t) }))}
-            />
-          </Field>
-          <Field label="TIN" hint={editing ? "TIN can't be changed after the customer is created." : "9-digit RRA taxpayer number"} error={tinInvalid ? "TIN must be 9 digits" : null}>
-            <input
-              className={`input ${tinInvalid ? "invalid" : ""}`}
-              value={form.tin}
-              onChange={(e) => set("tin")(e.target.value.replace(/\D/g, "").slice(0, 9))}
-              inputMode="numeric"
-              disabled={editing}
-            />
-          </Field>
-        </div>
-
-        <div className="form-section-title" style={{ marginTop: 22 }}>Credit terms</div>
-        <div className="form-grid">
-          <Field label="Credit limit" hint="Leave empty for no limit set">
-            <MoneyInput value={form.creditLimit} onChange={set("creditLimit")} />
-          </Field>
-          <Field label="Payment due after" hint="Days after the invoice date">
-            <input className="input num" type="number" min={0} value={form.creditPeriodDays} onChange={(e) => set("creditPeriodDays")(e.target.value)} />
-          </Field>
-          {editing && (
-            <>
-              <Field label="Credit status" hint="Customers on hold or blocked can't be invoiced">
-                <Select
-                  value={form.creditStatus}
-                  onChange={set("creditStatus")}
-                  options={[
-                    { value: "GOOD", label: "Good" },
-                    { value: "WATCH", label: "Watch" },
-                    { value: "ON_HOLD", label: "On hold" },
-                    { value: "BLOCKED", label: "Blocked" },
-                  ]}
-                />
-              </Field>
-              <Field label="Status">
-                <Select
-                  value={form.status}
-                  onChange={set("status")}
-                  options={[
-                    { value: "ACTIVE", label: "Active" },
-                    { value: "INACTIVE", label: "Inactive" },
-                  ]}
-                />
-              </Field>
-            </>
-          )}
-        </div>
-
-        <div className="form-section-title" style={{ marginTop: 22 }}>Contact</div>
-        <div className="form-grid">
-          <Field label="Phone">
-            <input className="input" type="tel" value={form.telephone} onChange={(e) => set("telephone")(e.target.value)} placeholder="+250 7…" />
-          </Field>
-          <Field label="Email">
-            <input className="input" type="email" value={form.email} onChange={(e) => set("email")(e.target.value)} />
-          </Field>
-          {!editing && (
-            <Field label="Address" className="span-2">
-              <input className="input" value={form.physicalAddress} onChange={(e) => set("physicalAddress")(e.target.value)} />
-            </Field>
-          )}
-          <Field label="Notes" className="span-2">
-            <textarea className="input" value={form.notes} onChange={(e) => set("notes")(e.target.value)} />
-          </Field>
-        </div>
-      </form>
-    </Drawer>
-  );
-}
-
 /* ── Shared customer data ──────────────────────────────── */
 
 function useActiveCustomers(skip: boolean) {
@@ -188,17 +48,13 @@ export type OpenInvoice = {
 
 /** Outstanding invoices with their ids (the statement has numbers, the ledger links numbers to ids). */
 export function useOpenInvoices(customerId: string | null) {
+  // Statement rows carry the invoice id, so opening-balance invoices (posted as OPENING in the ledger) are included.
   const statement = useResource<CustomerStatement>(customerId ? `/api/v1/ar/customers/${customerId}/statement` : null);
-  const ledger = useResource<CustomerLedger>(customerId ? `/api/v1/ar/customers/${customerId}/ledger` : null);
   const invoices = useMemo<OpenInvoice[] | undefined>(() => {
-    if (!statement.data || !ledger.data) return undefined;
-    const ids = new Map(ledger.data.entries.filter((e) => e.docType === "INVOICE" && e.docNumber).map((e) => [e.docNumber!, e.docId]));
-    return statement.data.rows
-      .filter((r) => ids.has(r.invoiceNumber))
-      .map((r) => ({ id: ids.get(r.invoiceNumber)!, ...r }))
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [statement.data, ledger.data]);
-  return { invoices, error: statement.error ?? ledger.error };
+    if (!statement.data) return undefined;
+    return statement.data.rows.map((r) => ({ ...r, id: r.id })).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [statement.data]);
+  return { invoices, error: statement.error };
 }
 
 function CustomerPicker({

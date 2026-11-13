@@ -13,7 +13,10 @@ import { documentLines, notFoundStatus, periodQuery, sendPdf } from "../../lib/h
 import { exportFormat, sendReport } from "../../lib/report-export";
 import * as print from "../print/print.service";
 import { ageingDocument } from "../books/report-documents";
+import { parsePage, wantsPage } from "../../lib/pagination";
 import * as ar from "./ar.service";
+import * as customers from "./customers.service";
+import * as customerEmail from "./customer-email.service";
 
 export const arRouter = Router();
 
@@ -58,42 +61,197 @@ arRouter.get("/ageing", async (req: AuthedRequest, res) => {
   }
 });
 
+const listFilter = z.object({
+  q: z.string().max(100).optional(),
+  status: z.enum(["active", "inactive", "all"]).optional(),
+  balance: z.enum(["owing", "overdue", "over-limit", "credit"]).optional(),
+  type: customerType.optional(),
+  tag: z.string().max(30).optional(),
+  sort: z.enum(["name", "code", "balance", "created"]).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+});
+
+const optionalText = z.string().trim().max(500).optional().nullable();
+const customerFields = {
+  name: z.string().trim().min(1, "Display name is required").max(200),
+  companyName: optionalText,
+  customerType: customerType.optional(),
+  category: optionalText,
+  tin: z
+    .string()
+    .trim()
+    .regex(/^\d{9}$/, "TIN must be 9 digits")
+    .optional()
+    .nullable()
+    .or(z.literal("").transform(() => null)),
+  contactPerson: optionalText,
+  telephone: optionalText,
+  mobile: optionalText,
+  email: z.string().trim().email("Email is not valid").optional().nullable().or(z.literal("").transform(() => null)),
+  website: optionalText,
+  physicalAddress: optionalText,
+  shippingAddress: optionalText,
+  country: optionalText,
+  province: optionalText,
+  district: optionalText,
+  paymentTerms: optionalText,
+  preferredPaymentMethod: payMethod.optional().nullable(),
+  creditLimit: z.number().min(0, "Credit limit can't be negative").optional(),
+  creditPeriodDays: z.number().int().min(0).max(365).optional(),
+  creditStatus: z.enum(["GOOD", "WATCH", "ON_HOLD", "BLOCKED"]).optional(),
+  notes: z.string().max(4000).optional().nullable(),
+  parentId: z.string().min(1).optional().nullable(),
+  tags: z.array(z.string().max(30)).max(10).optional(),
+  taxExempt: z.boolean().optional(),
+  taxExemptReason: optionalText,
+};
+/** Turns nulls from the create form into "not given". */
+function dropNulls<T extends Record<string, unknown>>(o: T) {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined)) as { [K in keyof T]: Exclude<T[K], null> };
+}
+function zodMessage(e: unknown) {
+  if (e instanceof z.ZodError) return e.issues.map((i) => i.message).join("; ");
+  return (e as Error).message;
+}
+
+/** Without `page`: the full array older pickers use. With `page`: the paged customer centre list with counts. */
 arRouter.get("/customers", async (req: AuthedRequest, res) => {
-  const q = typeof req.query.q === "string" ? req.query.q : undefined;
-  res.json({ success: true, data: await ar.listCustomers(req.companyId!, q) });
+  if (!wantsPage(req.query)) {
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    return res.json({ success: true, data: await ar.listCustomers(req.companyId!, q) });
+  }
+  try {
+    const filter = listFilter.parse(req.query);
+    res.json({ success: true, data: await customers.listCustomersPage(req.companyId!, filter, parsePage(req.query, { defaultSize: 25, maxSize: 200 })) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+/** Mail-server failures (bad login, unreachable host) are the server's problem, not the request's. */
+function emailError(res: import("express").Response, e: unknown) {
+  const err = e as Error & { status?: number; responseCode?: number; code?: string };
+  if (err.status === 503) return res.status(503).json({ success: false, error: err.message });
+  if (err instanceof z.ZodError) return res.status(400).json({ success: false, error: zodMessage(err) });
+  if (err.responseCode || err.code === "EAUTH" || err.code === "ECONNECTION" || err.code === "ETIMEDOUT" || err.code === "ESOCKET") {
+    return res.status(502).json({ success: false, error: `The mail server refused the message: ${err.message}` });
+  }
+  return res.status(notFoundStatus(e)).json({ success: false, error: err.message });
+}
+
+const emailBody = z.object({
+  to: z.string().max(500).optional(),
+  cc: z.string().max(500).optional(),
+  subject: z.string().max(200).optional(),
+  message: z.string().max(4000).optional(),
+});
+
+arRouter.get("/email/status", (_req, res) => {
+  res.json({ success: true, data: customerEmail.emailStatus() });
+});
+
+arRouter.post("/email/test", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ to: z.string().min(3).max(200) }).parse(req.body);
+    res.json({ success: true, data: await customerEmail.sendTestEmail(req.companyId!, body.to, actor(req)) });
+  } catch (e) {
+    emailError(res, e);
+  }
+});
+
+arRouter.post("/invoices/:id/email", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = emailBody.extend({ reminder: z.boolean().optional() }).parse(req.body ?? {});
+    res.json({ success: true, data: await customerEmail.emailInvoice(req.companyId!, req.params.id, body, actor(req)) });
+  } catch (e) {
+    emailError(res, e);
+  }
+});
+
+arRouter.post("/customers/:id/statement/email", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = emailBody.extend({ from: z.string().optional(), toDate: z.string().optional() }).parse(req.body ?? {});
+    res.json({ success: true, data: await customerEmail.emailStatement(req.companyId!, req.params.id, body, actor(req)) });
+  } catch (e) {
+    emailError(res, e);
+  }
+});
+
+arRouter.get("/customers/duplicates", async (req: AuthedRequest, res) => {
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  res.json({
+    success: true,
+    data: await customers.findCustomerDuplicates(req.companyId!, {
+      name: str(req.query.name),
+      tin: str(req.query.tin),
+      email: str(req.query.email),
+      phone: str(req.query.phone),
+      exceptId: str(req.query.exceptId),
+    }),
+  });
+});
+
+arRouter.get("/customers/export.csv", async (req: AuthedRequest, res) => {
+  try {
+    const filter = listFilter.parse(req.query);
+    const csv = await customers.exportCustomersCsv(req.companyId!, filter);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="customers-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    res.status(400).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/customers/import", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const row = z.object({
+      ...customerFields,
+      name: z.string().trim().max(200).default(""),
+      tin: z.string().trim().optional().nullable(),
+      email: z.string().trim().optional().nullable(),
+      openingBalance: z.number().optional(),
+      openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Opening balance date must be yyyy-mm-dd").optional(),
+    });
+    const body = z.object({ dryRun: z.boolean().optional(), rows: z.array(row).min(1, "The file has no rows").max(2000, "Import at most 2,000 customers at a time") }).parse(req.body);
+    const rows = body.rows.map((r) => dropNulls(r) as customers.ImportRow);
+    res.json({ success: true, data: await customers.importCustomers(req.companyId!, rows, { dryRun: body.dryRun }, actor(req), inTransaction) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/customers/bulk-status", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ ids: z.array(z.string()).min(1).max(500), status: z.enum(["ACTIVE", "INACTIVE"]) }).parse(req.body);
+    res.json({ success: true, data: await customers.bulkSetStatus(req.companyId!, body.ids, body.status, actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: zodMessage(e) });
+  }
 });
 
 arRouter.post("/customers", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z
       .object({
-        code: z.string().optional(),
-        name: z.string().min(1),
-        customerType: customerType.optional(),
-        category: z.string().optional(),
-        tin: z.string().optional(),
-        telephone: z.string().optional(),
-        email: z.string().optional(),
-        currency: z.string().optional(),
-        paymentTerms: z.string().optional(),
-        creditLimit: z.number().optional(),
-        creditPeriodDays: z.number().int().optional(),
-        creditStatus: z.enum(["GOOD", "WATCH", "ON_HOLD", "BLOCKED"]).optional(),
-        openingBalance: z.number().optional(),
-        notes: z.string().optional(),
-        physicalAddress: z.string().optional(),
+        ...customerFields,
+        code: z.string().trim().max(40).optional(),
+        // Fixed at creation: posted documents carry the customer's currency.
+        currency: z.string().trim().toUpperCase().length(3, "Currency must be a 3-letter code").optional(),
+        openingBalance: z.number().min(0, "Opening balance can't be negative").optional(),
+        openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Opening balance date must be yyyy-mm-dd").optional(),
       })
       .parse(req.body);
-    const data = await inTransaction(() => ar.createCustomer(req.companyId!, body, actor(req)));
+    const data = await inTransaction(() => ar.createCustomer(req.companyId!, dropNulls(body), actor(req)));
     res.status(201).json({ success: true, data });
   } catch (e) {
-    res.status(400).json({ success: false, error: (e as Error).message });
+    res.status(400).json({ success: false, error: zodMessage(e) });
   }
 });
 
 arRouter.get("/customers/:id", async (req: AuthedRequest, res) => {
   try {
-    res.json({ success: true, data: await ar.getCustomer(req.companyId!, req.params.id) });
+    res.json({ success: true, data: await customers.customerProfile(req.companyId!, req.params.id) });
   } catch (e) {
     res.status(404).json({ success: false, error: (e as Error).message });
   }
@@ -102,22 +260,129 @@ arRouter.get("/customers/:id", async (req: AuthedRequest, res) => {
 arRouter.patch("/customers/:id", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        customerType: customerType.optional(),
-        creditLimit: z.number().optional(),
-        creditPeriodDays: z.number().int().optional(),
-        creditStatus: z.enum(["GOOD", "WATCH", "ON_HOLD", "BLOCKED"]).optional(),
-        status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
-        notes: z.string().optional(),
-        paymentTerms: z.string().optional(),
-        telephone: z.string().optional(),
-        email: z.string().optional(),
-      })
+      .object({ ...customerFields, status: z.enum(["ACTIVE", "INACTIVE"]).optional() })
+      .partial()
       .parse(req.body);
     res.json({ success: true, data: await inTransaction(() => ar.updateCustomer(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
-    res.status(400).json({ success: false, error: (e as Error).message });
+    res.status(400).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.get("/customers/:id/summary", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await customers.customerSummary(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/customers/:id/transactions", async (req: AuthedRequest, res) => {
+  try {
+    const filter = z
+      .object({
+        type: z.enum(["INVOICE", "PAYMENT", "CREDIT_NOTE", "DEBIT_NOTE", "DEPOSIT", "ESTIMATE", "SALES_ORDER", "DELAYED_CHARGE", "DELAYED_CREDIT", "REFUND"]).optional(),
+        status: z.enum(["open", "overdue", "closed"]).optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+      })
+      .parse(req.query);
+    res.json({ success: true, data: await customers.customerTransactions(req.companyId!, req.params.id, filter, parsePage(req.query, { defaultSize: 25, maxSize: 200 })) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.get("/customers/:id/credits", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.customerCredits(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.post("/customers/:id/apply-credits", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        applications: z
+          .array(z.object({ source: z.enum(["PAYMENT", "CREDIT_NOTE", "DEPOSIT"]), sourceId: z.string().min(1), invoiceId: z.string().min(1), amount: z.number().positive() }))
+          .min(1, "Enter an amount to apply")
+          .max(200),
+      })
+      .parse(req.body);
+    res.json({ success: true, data: await inTransaction(() => ar.applyCustomerCredits(req.companyId!, req.params.id, body, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/customers/:id/contacts", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({
+        name: z.string().trim().min(1, "Enter the contact's name").max(200),
+        role: optionalText,
+        email: z.string().trim().email("Email is not valid").optional().nullable().or(z.literal("").transform(() => null)),
+        phone: optionalText,
+      })
+      .parse(req.body);
+    res.status(201).json({ success: true, data: await customers.addContact(req.companyId!, req.params.id, body) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.delete("/customers/:id/contacts/:contactId", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await customers.removeContact(req.companyId!, req.params.id, req.params.contactId) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/customers/:id/merge", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ intoCustomerId: z.string().min(1) }).parse(req.body);
+    res.json({ success: true, data: await inTransaction(() => customers.mergeCustomers(req.companyId!, req.params.id, body.intoCustomerId, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.get("/customers/:id/notes", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await customers.listCustomerNotes(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.post("/customers/:id/notes", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ body: z.string().min(1, "Write something in the note").max(4000) }).parse(req.body);
+    const data = await customers.addCustomerNote(req.companyId!, req.params.id, body.body, { erpUserId: req.erpUser!.userId, name: req.erpUser!.email });
+    res.status(201).json({ success: true, data });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.get("/customers/:id/activity", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await customers.customerActivity(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/transactions/:type/:id", async (req: AuthedRequest, res) => {
+  try {
+    const type = z.enum(["PAYMENT", "CREDIT_NOTE", "DEBIT_NOTE", "DEPOSIT"]).parse(req.params.type);
+    res.json({ success: true, data: await customers.customerTransactionDetail(req.companyId!, type, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: zodMessage(e) });
   }
 });
 
@@ -188,6 +453,32 @@ arRouter.get("/invoices/:id", async (req: AuthedRequest, res) => {
     res.json({ success: true, data: await ar.getInvoice(req.companyId!, req.params.id) });
   } catch (e) {
     res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.get("/invoices/:id/applications", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ar.invoiceApplications(req.companyId!, req.params.id) });
+  } catch (e) {
+    res.status(404).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.post("/invoices/:id/void", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ reason: z.string().trim().max(300).optional() }).parse(req.body ?? {});
+    res.json({ success: true, data: await inTransaction(() => ar.voidInvoice(req.companyId!, req.params.id, body.reason || undefined, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.delete("/applications/:kind/:id", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const kind = z.enum(["PAYMENT", "CREDIT_NOTE", "DEPOSIT", "CREDIT_ON_ISSUE"]).parse(req.params.kind);
+    res.json({ success: true, data: await inTransaction(() => ar.unapplyFromInvoice(req.companyId!, kind, req.params.id, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
   }
 });
 

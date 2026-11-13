@@ -7,6 +7,8 @@ export default defineConfig({
     fileParallelism: false,
     hookTimeout: 60000,
     testTimeout: 60000,
+    // Never send real email from tests, even when .env holds SMTP credentials.
+    env: { MAIL_TRANSPORT: "json" },
   },
 
   resolve: {

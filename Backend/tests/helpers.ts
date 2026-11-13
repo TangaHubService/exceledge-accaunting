@@ -23,6 +23,7 @@ export function signErpToken(overrides: Record<string, unknown> = {}) {
 export async function resetCompany(orgId: number) {
   const company = { externalErpOrganizationId: String(orgId) };
   await prisma.arAllocation.deleteMany({ where: { receipt: { company } } });
+  await prisma.arCreditApplication.deleteMany({ where: { creditNote: { company } } });
   await prisma.apAllocation.deleteMany({ where: { payment: { company } } });
   await prisma.apAdvanceAllocation.deleteMany({ where: { advance: { company } } });
   await prisma.taxPayment.deleteMany({ where: { company } });

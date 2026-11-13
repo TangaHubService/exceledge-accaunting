@@ -16,17 +16,18 @@ import {
   periodStatement,
   type DocumentLineInput,
   readPaymentSplits,
+  reverseJournalLines,
   realizedFxSettlement,
   roundMoney,
   settledPortion,
   settlementAccountId,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
-import type { CustomerType, Prisma } from "@prisma/client";
-import { defaultsFor, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import type { ArPaymentMethod, CustomerType, Prisma } from "@prisma/client";
+import { defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
+import { createAndPostJournal, linesInJournalCurrency, reversalCurrency } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -134,6 +135,7 @@ export async function createCustomer(
   input: {
     code?: string;
     name: string;
+    companyName?: string;
     customerType?: CustomerType;
     category?: string;
     tin?: string;
@@ -142,9 +144,11 @@ export async function createCustomer(
     registrationNumber?: string;
     contactPerson?: string;
     telephone?: string;
+    mobile?: string;
     email?: string;
     website?: string;
     physicalAddress?: string;
+    shippingAddress?: string;
     country?: string;
     province?: string;
     district?: string;
@@ -153,6 +157,7 @@ export async function createCustomer(
     village?: string;
     currency?: string;
     paymentTerms?: string;
+    preferredPaymentMethod?: ArPaymentMethod;
     creditLimit?: number;
     creditPeriodDays?: number;
     arAccountId?: string;
@@ -166,23 +171,36 @@ export async function createCustomer(
     riskCategory?: string;
     collectionPriority?: string;
     openingBalance?: number;
+    /** yyyy-mm-dd the opening balance is owed from; defaults to today. */
+    openingBalanceDate?: string;
     notes?: string;
     externalErpCustomerId?: string;
+    parentId?: string;
+    tags?: string[];
+    taxExempt?: boolean;
+    taxExemptReason?: string;
   },
   actor: Actor = {},
 ) {
+  if (input.parentId) await assertValidParent(companyId, input.parentId);
   const code = input.code?.trim() || (await nextNumber(companyId, "CUSTOMER", "CUS"));
   const existing = await prisma.customer.findFirst({
     where: { companyId, code },
   });
   if (existing) throw new Error("Customer code already exists");
+  await assertNoDuplicateCustomer(companyId, { name: input.name, tin: input.tin });
 
   const opening = roundMoney(input.openingBalance ?? 0);
+  if (opening < 0) throw new Error("Opening balance can't be negative; record a credit note or deposit for money you owe the customer");
+  const openingDate = input.openingBalanceDate ? new Date(`${input.openingBalanceDate}T00:00:00.000Z`) : new Date();
+  if (Number.isNaN(openingDate.getTime())) throw new Error("Opening balance date must be yyyy-mm-dd");
+  if (openingDate > new Date()) throw new Error("Opening balance date can't be in the future");
   const customer = await prisma.customer.create({
     data: {
       companyId,
       code,
       name: input.name.trim(),
+      companyName: input.companyName?.trim() || undefined,
       customerType: input.customerType ?? "CREDIT",
       category: input.category,
       tin: input.tin,
@@ -191,9 +209,11 @@ export async function createCustomer(
       registrationNumber: input.registrationNumber,
       contactPerson: input.contactPerson,
       telephone: input.telephone,
-      email: input.email,
+      mobile: input.mobile,
+      email: input.email?.trim().toLowerCase() || undefined,
       website: input.website,
       physicalAddress: input.physicalAddress,
+      shippingAddress: input.shippingAddress,
       country: input.country,
       province: input.province,
       district: input.district,
@@ -202,6 +222,7 @@ export async function createCustomer(
       village: input.village,
       currency: input.currency ?? "RWF",
       paymentTerms: input.paymentTerms,
+      preferredPaymentMethod: input.preferredPaymentMethod,
       creditLimit: input.creditLimit ?? 0,
       creditPeriodDays: input.creditPeriodDays ?? 30,
       arAccountId: input.arAccountId,
@@ -217,6 +238,10 @@ export async function createCustomer(
       openingBalance: opening,
       notes: input.notes,
       externalErpCustomerId: input.externalErpCustomerId,
+      parentId: input.parentId,
+      tags: normalizeTags(input.tags),
+      taxExempt: input.taxExempt ?? false,
+      taxExemptReason: input.taxExempt ? input.taxExemptReason?.trim() || null : null,
     },
   });
 
@@ -228,7 +253,7 @@ export async function createCustomer(
     const posted = await postBalanced(
       companyId,
       {
-        journalDate: new Date(),
+        journalDate: openingDate,
         description: `Opening balance ${customer.code}`,
         referenceNumber: customer.code,
         sourceDocumentType: "CustomerOpening",
@@ -246,7 +271,7 @@ export async function createCustomer(
       await appendLedger(tx, {
         companyId,
         customerId: customer.id,
-        entryDate: new Date(),
+        entryDate: openingDate,
         docType: "OPENING",
         docId: customer.id,
         docNumber: customer.code,
@@ -259,8 +284,8 @@ export async function createCustomer(
           companyId,
           customerId: customer.id,
           invoiceNumber: await nextNumber(companyId, "AR_INVOICE", "INV"),
-          invoiceDate: new Date(),
-          dueDate: new Date(),
+          invoiceDate: openingDate,
+          dueDate: openingDate,
           currency: customer.currency,
           net: opening,
           gross: opening,
@@ -288,41 +313,109 @@ export async function createCustomer(
   return prisma.customer.findUniqueOrThrow({ where: { id: customer.id } });
 }
 
-export async function updateCustomer(
-  companyId: string,
-  customerId: string,
-  input: Partial<{
-    name: string;
-    customerType: CustomerType;
-    category: string;
-    tin: string;
-    telephone: string;
-    email: string;
-    paymentTerms: string;
-    creditLimit: number;
-    creditPeriodDays: number;
-    creditStatus: "GOOD" | "WATCH" | "ON_HOLD" | "BLOCKED";
-    status: "ACTIVE" | "INACTIVE";
-    notes: string;
-    physicalAddress: string;
-  }>,
-  actor: Actor = {},
-) {
+export type CustomerUpdate = Partial<{
+  name: string;
+  companyName: string | null;
+  customerType: CustomerType;
+  category: string | null;
+  tin: string | null;
+  contactPerson: string | null;
+  telephone: string | null;
+  mobile: string | null;
+  email: string | null;
+  website: string | null;
+  physicalAddress: string | null;
+  shippingAddress: string | null;
+  country: string | null;
+  province: string | null;
+  district: string | null;
+  paymentTerms: string | null;
+  preferredPaymentMethod: ArPaymentMethod | null;
+  creditLimit: number;
+  creditPeriodDays: number;
+  creditStatus: "GOOD" | "WATCH" | "ON_HOLD" | "BLOCKED";
+  status: "ACTIVE" | "INACTIVE";
+  notes: string | null;
+  parentId: string | null;
+  tags: string[];
+  taxExempt: boolean;
+  taxExemptReason: string | null;
+}>;
+
+/** Tags are short labels, trimmed, de-duplicated case-insensitively, at most 10. */
+export function normalizeTags(tags?: string[] | null) {
+  const seen = new Map<string, string>();
+  for (const t of tags ?? []) {
+    const clean = t.trim().replace(/\s+/g, " ").slice(0, 30);
+    if (clean && !seen.has(clean.toLowerCase())) seen.set(clean.toLowerCase(), clean);
+  }
+  return [...seen.values()].slice(0, 10);
+}
+
+/** A parent must be another customer in the same company, and the chain must not loop back to `childId`. */
+export async function assertValidParent(companyId: string, parentId: string, childId?: string) {
+  if (childId && parentId === childId) throw new Error("A customer can't be its own parent");
+  let cursor: string | null = parentId;
+  for (let depth = 0; cursor; depth += 1) {
+    if (depth > 10) throw new Error("Sub-customers can be nested at most 10 levels deep");
+    const row: { id: string; parentId: string | null } | null = await prisma.customer.findFirst({ where: { id: cursor, companyId }, select: { id: true, parentId: true } });
+    if (!row) throw new Error("Parent customer does not exist");
+    if (childId && row.parentId === childId) throw new Error("That would make the customer a sub-customer of its own sub-customer");
+    cursor = row.parentId;
+  }
+}
+
+/**
+ * Refuses a second customer with the same display name or TIN in one company.
+ * Email and phone matches are only warnings (see `findCustomerDuplicates`), since families and branches share them.
+ */
+export async function assertNoDuplicateCustomer(companyId: string, input: { name?: string; tin?: string | null }, exceptId?: string) {
+  const name = input.name?.trim();
+  const tin = input.tin?.trim();
+  const or: Prisma.CustomerWhereInput[] = [];
+  if (name) or.push({ name: { equals: name, mode: "insensitive" } });
+  if (tin) or.push({ tin });
+  if (!or.length) return;
+  const clash = await prisma.customer.findFirst({ where: { companyId, OR: or, ...(exceptId ? { NOT: { id: exceptId } } : {}) } });
+  if (!clash) return;
+  if (tin && clash.tin === tin) throw new Error(`TIN ${tin} already belongs to ${clash.name} (${clash.code})`);
+  throw new Error(`A customer named "${clash.name}" already exists (${clash.code})`);
+}
+
+export async function updateCustomer(companyId: string, customerId: string, input: CustomerUpdate, actor: Actor = {}) {
   const before = await prisma.customer.findFirst({ where: { id: customerId, companyId } });
   if (!before) throw new Error("Customer does not exist");
-  const updated = await prisma.customer.update({
-    where: { id: before.id },
-    data: input,
-  });
+  const data: CustomerUpdate = { ...input };
+  if (data.parentId) await assertValidParent(companyId, data.parentId, before.id);
+  if (data.tags !== undefined) data.tags = normalizeTags(data.tags);
+  if (data.taxExempt === false) data.taxExemptReason = null;
+  if (data.name !== undefined) data.name = data.name.trim();
+  if (data.email) data.email = data.email.trim().toLowerCase();
+  if (data.tin !== undefined && (data.tin ?? "") !== (before.tin ?? "")) {
+    // Posted invoices carry the buyer TIN on the fiscal record; changing it afterwards would break the tie.
+    const invoiced = await prisma.arInvoice.count({ where: { companyId, customerId, status: "POSTED", NOT: { sourceDocumentType: "CustomerOpening" } } });
+    if (invoiced) throw new Error("TIN can't be changed once the customer has posted invoices");
+  }
+  if (data.status === "INACTIVE" && before.status !== "INACTIVE" && Math.abs(money(before.balance)) > 0.005) {
+    throw new Error(`${before.name} still has a balance of ${money(before.balance)}; settle or credit it before making the customer inactive`);
+  }
+  await assertNoDuplicateCustomer(
+    companyId,
+    { name: data.name !== undefined && data.name !== before.name ? data.name : undefined, tin: data.tin !== undefined && data.tin !== before.tin ? data.tin : undefined },
+    before.id,
+  );
+  const updated = await prisma.customer.update({ where: { id: before.id }, data });
+  const changed = Object.keys(data).filter((k) => String((before as Record<string, unknown>)[k] ?? "") !== String((updated as Record<string, unknown>)[k] ?? ""));
+  const pick = (c: Record<string, unknown>) => Object.fromEntries(changed.map((k) => [k, c[k] == null ? null : String(c[k])]));
   await writeAudit({
     companyId,
     erpUserId: actor.erpUserId ?? 0,
     erpRole: actor.erpRole,
-    action: "UPDATE",
+    action: data.status && data.status !== before.status ? (data.status === "INACTIVE" ? "DEACTIVATE" : "ACTIVATE") : "UPDATE",
     entityType: "Customer",
     entityId: updated.id,
-    beforeJson: { name: before.name, creditLimit: money(before.creditLimit), status: before.status },
-    afterJson: { name: updated.name, creditLimit: money(updated.creditLimit), status: updated.status },
+    beforeJson: pick(before as unknown as Record<string, unknown>),
+    afterJson: pick(updated as unknown as Record<string, unknown>),
     ...actor.meta,
   });
   return updated;
@@ -338,6 +431,9 @@ export async function listCustomers(companyId: string, q?: string) {
               { code: { contains: q, mode: "insensitive" } },
               { name: { contains: q, mode: "insensitive" } },
               { tin: { contains: q, mode: "insensitive" } },
+              { companyName: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+              { telephone: { contains: q } },
             ],
           }
         : {}),
@@ -389,12 +485,15 @@ export async function createInvoice(
     date: invoiceDate,
     rate: input.exchangeRate,
   });
-  const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, invoiceDate, "sales") : null;
+  // A tax-exempt customer is invoiced without tax, whatever tax codes the lines or the caller carry.
+  const exempt = customer.taxExempt;
+  const pricedLines = input.lines?.length ? (exempt ? input.lines.map((l) => ({ ...l, taxCode: null })) : input.lines) : undefined;
+  const priced = pricedLines ? await priceDocumentLines(companyId, pricedLines, invoiceDate, "sales") : null;
   if (priced && input.discount) throw new Error("Give discounts on the lines when an invoice has lines");
   if (priced && (input.net != null || input.tax != null)) throw new Error("An invoice with lines takes its net and tax from the lines");
   if (!priced && !(Number(input.net) > 0)) throw new Error("Invoice amount must be positive");
   const net = priced ? priced.net : roundMoney(input.net!);
-  const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
+  const tax = exempt ? 0 : priced ? priced.tax : roundMoney(input.tax ?? 0);
   const discount = priced ? 0 : roundMoney(input.discount ?? 0);
   const gross = roundMoney(net + tax - discount);
   assertCreditAvailable({
@@ -694,6 +793,23 @@ async function reverseReceiptOnce(companyId: string, receiptId: string, actor: A
       credit: 0,
     });
   });
+  // Realized FX booked when this payment's credit was applied later goes with it.
+  const fxApplications = await prisma.journal.findMany({ where: { companyId, sourceDocumentType: "ArCreditApplication", sourceDocumentId: receipt.id, status: "POSTED" } });
+  for (const j of fxApplications) {
+    await postSourceReversal(
+      companyId,
+      j.id,
+      {
+        date: reversalDate,
+        description: `Reverse FX on ${receipt.receiptNumber}`,
+        sourceDocumentType: "ArCreditApplicationReversal",
+        sourceDocumentId: receipt.id,
+        sourceDocumentNumber: receipt.receiptNumber,
+        customerRef: receipt.customerId,
+      },
+      actor,
+    );
+  }
   if (bankLinked.count) {
     await prisma.bankTransaction.updateMany({
       where: { companyId, arReceiptId: receiptId },
@@ -745,6 +861,7 @@ export async function createCreditNote(
       net,
       tax,
       gross,
+      unapplied: invoice ? 0 : gross,
       description: input.description,
       createdByErpUserId: actor.erpUserId,
     },
@@ -1031,9 +1148,9 @@ export async function customerLedger(companyId: string, customerId: string) {
     where: { companyId, customerId },
     orderBy: { createdAt: "asc" },
   });
-  const opening = entries.length ? 0 : 0;
+  // Rows stay in posting order so each running balance reads straight down the list.
   const closing = entries.length ? money(entries[entries.length - 1].runningBalance) : 0;
-  return { openingBalance: opening, entries, closingBalance: closing };
+  return { openingBalance: 0, entries, closingBalance: closing };
 }
 
 export async function customerStatement(
@@ -1048,6 +1165,7 @@ export async function customerStatement(
   });
   const rows = invoices
     .map((invoice) => ({
+      id: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
       invoiceDate: invoice.invoiceDate,
       dueDate: invoice.dueDate,
@@ -1155,6 +1273,7 @@ export async function getInvoice(companyId: string, invoiceId: string) {
       lines: { orderBy: { lineNumber: "asc" } },
       allocations: { include: { receipt: { select: { receiptNumber: true, receiptDate: true, status: true } } } },
       creditNotes: { select: { id: true, creditNoteNumber: true, noteDate: true, gross: true, status: true } },
+      creditApplications: { include: { creditNote: { select: { id: true, creditNoteNumber: true, noteDate: true } } } },
     },
   });
   if (!invoice) throw new Error("Invoice does not exist");
@@ -1509,6 +1628,8 @@ export async function syncSaleRefundToSubledger(eventId: string) {
         net,
         tax,
         gross,
+        // Whatever the original invoice couldn't absorb stays on the customer's account to apply later.
+        unapplied: Math.max(0, roundMoney(onAccount - reducesOutstanding)),
         journalId: event.journalId,
         description: `Refund ${event.sourceDocumentNumber ?? event.sourceDocumentId} on ${invoice.invoiceNumber}`,
         sourceModule: event.sourceModule,
@@ -1551,4 +1672,422 @@ export async function syncSaleRefundToSubledger(eventId: string) {
     }
     return note;
   });
+}
+
+/* ── Apply customer credits ─────────────────────────────────────────────── */
+
+export type CreditSource = "PAYMENT" | "CREDIT_NOTE" | "DEPOSIT";
+
+/** What a customer can apply (unapplied payments, credit notes, deposits) and what it can be applied to. */
+export async function customerCredits(companyId: string, customerId: string) {
+  const customer = await getCustomer(companyId, customerId);
+  const [receipts, notes, deposits, invoices] = await Promise.all([
+    prisma.arReceipt.findMany({ where: { companyId, customerId, status: "POSTED", unallocated: { gt: 0 } }, orderBy: { receiptDate: "asc" } }),
+    prisma.arCreditNote.findMany({ where: { companyId, customerId, status: "POSTED", unapplied: { gt: 0 } }, orderBy: { noteDate: "asc" } }),
+    prisma.arDeposit.findMany({ where: { companyId, customerId, status: "POSTED", remaining: { gt: 0 } }, orderBy: { depositDate: "asc" } }),
+    prisma.arInvoice.findMany({ where: { companyId, customerId, status: "POSTED" }, orderBy: [{ dueDate: "asc" }, { invoiceNumber: "asc" }] }),
+  ]);
+  return {
+    customer: { id: customer.id, code: customer.code, name: customer.name, currency: customer.currency },
+    credits: [
+      ...receipts.map((r) => ({ type: "PAYMENT" as const, id: r.id, number: r.receiptNumber, date: r.receiptDate, currency: r.currency, available: money(r.unallocated), description: r.reference ?? r.description })),
+      ...notes.map((n) => ({ type: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, currency: n.currency, available: money(n.unapplied), description: n.reason })),
+      ...deposits.map((d) => ({ type: "DEPOSIT" as const, id: d.id, number: d.depositNumber, date: d.depositDate, currency: d.currency, available: money(d.remaining), description: d.reference ?? d.description })),
+    ].sort((a, b) => a.date.getTime() - b.date.getTime()),
+    invoices: invoices
+      .map((i) => ({
+        id: i.id,
+        number: i.invoiceNumber,
+        date: i.invoiceDate,
+        dueDate: i.dueDate,
+        currency: i.currency,
+        open: invoiceOutstanding(i),
+        description: i.description,
+        isOpening: i.sourceDocumentType === "CustomerOpening",
+      }))
+      .filter((i) => i.open > 0.005),
+  };
+}
+
+/**
+ * Sets credits the customer already has against open invoices.
+ *
+ * - Unapplied payment: AR was credited when the money came in, so only the subledger allocation changes
+ *   (plus a realized FX line when a foreign payment meets an invoice booked at another rate).
+ * - Credit note: AR was credited when it was issued; the invoice's credited amount goes up.
+ * - Deposit: held as a liability until now, so it posts Dr customer deposits / Cr AR through `allocateDeposit`.
+ *
+ * Runs inside the caller's transaction; any failing row rolls the whole set back.
+ */
+export async function applyCustomerCredits(
+  companyId: string,
+  customerId: string,
+  input: { applications: Array<{ source: CreditSource; sourceId: string; invoiceId: string; amount: number }>; date?: string },
+  actor: Actor = {},
+) {
+  const customer = await getCustomer(companyId, customerId);
+  const rows = input.applications.map((a) => ({ ...a, amount: roundMoney(a.amount) })).filter((a) => a.amount > 0);
+  if (!rows.length) throw new Error("Enter an amount to apply");
+  const applyDate = input.date ? new Date(`${input.date}T00:00:00.000Z`) : new Date();
+  if (Number.isNaN(applyDate.getTime())) throw new Error("Date must be yyyy-mm-dd");
+
+  const invoiceIds = [...new Set(rows.map((r) => r.invoiceId))];
+  const invoices = await prisma.arInvoice.findMany({ where: { companyId, customerId, id: { in: invoiceIds }, status: "POSTED" } });
+  if (invoices.length !== invoiceIds.length) throw new Error("One or more invoices are not open for this customer");
+  const byInvoice = new Map(invoices.map((i) => [i.id, i]));
+
+  // Refuse over-application up front with a clear message; the row-level guards below still catch races.
+  const perInvoice = new Map<string, number>();
+  for (const r of rows) perInvoice.set(r.invoiceId, roundMoney((perInvoice.get(r.invoiceId) ?? 0) + r.amount));
+  for (const [id, total] of perInvoice) {
+    const inv = byInvoice.get(id)!;
+    if (total - invoiceOutstanding(inv) > 0.0001) throw new Error(`Invoice ${inv.invoiceNumber} only has ${invoiceOutstanding(inv)} left to pay`);
+  }
+
+  const applied: Array<{ source: CreditSource; number: string; invoiceNumber: string; amount: number }> = [];
+  for (const r of rows) {
+    const invoice = byInvoice.get(r.invoiceId)!;
+    if (r.source === "DEPOSIT") {
+      const dep = await prisma.arDeposit.findFirst({ where: { id: r.sourceId, companyId, customerId, status: "POSTED" } });
+      if (!dep) throw new Error("Deposit is not available");
+      await allocateDeposit(companyId, dep.id, { invoiceId: invoice.id, amount: r.amount }, actor);
+      applied.push({ source: r.source, number: dep.depositNumber, invoiceNumber: invoice.invoiceNumber, amount: r.amount });
+      continue;
+    }
+
+    if (r.source === "PAYMENT") {
+      const receipt = await prisma.arReceipt.findFirst({ where: { id: r.sourceId, companyId, customerId, status: "POSTED" } });
+      if (!receipt) throw new Error("Payment is not available");
+      if (receipt.currency !== invoice.currency) throw new Error(`Payment ${receipt.receiptNumber} is in ${receipt.currency}; invoice ${invoice.invoiceNumber} is in ${invoice.currency}`);
+      const receiptRate = Number(receipt.exchangeRate);
+      const invoiceRate = Number(invoice.exchangeRate);
+      if (Math.abs(receiptRate - invoiceRate) > 1e-10) {
+        // The payment cleared AR at its own rate and the invoice was booked at another: book the difference.
+        const diff = roundMoney(r.amount * (receiptRate - invoiceRate));
+        if (Math.abs(diff) >= 0.01) {
+          const ar = customer.arAccountId || (await defaultsFor(companyId)).accountsReceivableId;
+          if (!ar) throw new Error("Receivables account is not configured");
+          const { gainId, lossId } = await fxAccounts(companyId);
+          const lines: JournalLineDraft[] =
+            diff > 0
+              ? [
+                  { accountId: ar, description: `FX on ${receipt.receiptNumber} applied to ${invoice.invoiceNumber}`, debit: diff, credit: 0 },
+                  { accountId: gainId, description: "Realized FX gain", debit: 0, credit: diff },
+                ]
+              : [
+                  { accountId: lossId, description: "Realized FX loss", debit: -diff, credit: 0 },
+                  { accountId: ar, description: `FX on ${receipt.receiptNumber} applied to ${invoice.invoiceNumber}`, debit: 0, credit: -diff },
+                ];
+          await postBalanced(
+            companyId,
+            {
+              journalDate: applyDate,
+              description: `Apply ${receipt.receiptNumber} to ${invoice.invoiceNumber} (realized FX)`,
+              referenceNumber: receipt.receiptNumber,
+              currencyCode: await functionalCurrencyOf(companyId),
+              exchangeRate: 1,
+              sourceDocumentType: "ArCreditApplication",
+              sourceDocumentId: receipt.id,
+              sourceDocumentNumber: receipt.receiptNumber,
+              customerRef: customer.id,
+              lines,
+            },
+            actor,
+          );
+        }
+      }
+      await prisma.$transaction(async (tx) => {
+        const taken = await tx.arReceipt.updateMany({
+          where: { id: receipt.id, status: "POSTED", unallocated: { gte: r.amount } },
+          data: { unallocated: { decrement: r.amount } },
+        });
+        if (!taken.count) throw new Error(`Payment ${receipt.receiptNumber} doesn't have ${r.amount} left to apply`);
+        await tx.arAllocation.create({ data: { receiptId: receipt.id, invoiceId: invoice.id, amount: r.amount } });
+        await bumpOpenInvoice(tx, invoice.id, { amountPaid: { increment: r.amount } });
+      });
+      applied.push({ source: r.source, number: receipt.receiptNumber, invoiceNumber: invoice.invoiceNumber, amount: r.amount });
+      continue;
+    }
+
+    const note = await prisma.arCreditNote.findFirst({ where: { id: r.sourceId, companyId, customerId, status: "POSTED" } });
+    if (!note) throw new Error("Credit note is not available");
+    if (note.currency !== invoice.currency) throw new Error(`Credit note ${note.creditNoteNumber} is in ${note.currency}; invoice ${invoice.invoiceNumber} is in ${invoice.currency}`);
+    await prisma.$transaction(async (tx) => {
+      const taken = await tx.arCreditNote.updateMany({
+        where: { id: note.id, status: "POSTED", unapplied: { gte: r.amount } },
+        data: { unapplied: { decrement: r.amount } },
+      });
+      if (!taken.count) throw new Error(`Credit note ${note.creditNoteNumber} doesn't have ${r.amount} left to apply`);
+      await tx.arCreditApplication.create({ data: { creditNoteId: note.id, invoiceId: invoice.id, amount: r.amount, erpUserId: actor.erpUserId } });
+      await bumpOpenInvoice(tx, invoice.id, { amountCredited: { increment: r.amount } });
+    });
+    applied.push({ source: r.source, number: note.creditNoteNumber, invoiceNumber: invoice.invoiceNumber, amount: r.amount });
+  }
+
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId ?? 0,
+    erpRole: actor.erpRole,
+    action: "APPLY_CREDIT",
+    entityType: "Customer",
+    entityId: customer.id,
+    afterJson: { applied },
+    ...actor.meta,
+  });
+  return { applied, total: roundMoney(applied.reduce((s, a) => s + a.amount, 0)) };
+}
+
+
+/* ── Void and un-apply ──────────────────────────────────────────────────── */
+
+/** Posts the mirror image of a posted source journal (invoice, deposit application), in the original currency. */
+async function postSourceReversal(
+  companyId: string,
+  journalId: string,
+  info: { date: Date; description: string; sourceDocumentType: string; sourceDocumentId: string; sourceDocumentNumber: string; customerRef: string },
+  actor: Actor,
+) {
+  const original = await prisma.journal.findFirst({ where: { id: journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
+  if (!original) throw new Error("The original journal could not be found");
+  return postBalanced(
+    companyId,
+    {
+      journalDate: info.date,
+      description: info.description,
+      referenceNumber: info.sourceDocumentNumber,
+      ...(await reversalCurrency(companyId, journalId)),
+      sourceDocumentType: info.sourceDocumentType,
+      sourceDocumentId: info.sourceDocumentId,
+      sourceDocumentNumber: info.sourceDocumentNumber,
+      customerRef: info.customerRef,
+      lines: reverseJournalLines(linesInJournalCurrency(original.lines)),
+    },
+    actor,
+  );
+}
+
+/**
+ * Voids an invoice nothing has been applied to (QuickBooks "Void"): the invoice keeps its number with a zero
+ * balance, its journal is reversed and the customer ledger takes a matching credit.
+ * Payments, credits and deposits must be removed from it first, so their money goes back on account.
+ */
+export async function voidInvoice(companyId: string, invoiceId: string, reason: string | undefined, actor: Actor = {}) {
+  const invoice = await prisma.arInvoice.findFirst({ where: { id: invoiceId, companyId } });
+  if (!invoice) throw new Error("Invoice does not exist");
+  if (invoice.status !== "POSTED") throw new Error(`Invoice ${invoice.invoiceNumber} is already void`);
+  if (invoice.sourceModule && invoice.sourceModule !== "AR") {
+    throw new Error(`Invoice ${invoice.invoiceNumber} came from ${invoice.sourceModule}; cancel it there so both systems agree`);
+  }
+  if (money(invoice.amountPaid) > 0.005 || money(invoice.amountCredited) > 0.005) {
+    throw new Error(`Remove the payments and credits applied to ${invoice.invoiceNumber} before voiding it`);
+  }
+  // The conditional update locks the row, so a payment applied at the same moment can't slip in.
+  const claimed = await prisma.arInvoice.updateMany({
+    where: { id: invoice.id, companyId, status: "POSTED", amountPaid: 0, amountCredited: 0 },
+    data: { status: "REVERSED", description: [invoice.description, `Voided${reason ? `: ${reason}` : ""}`].filter(Boolean).join(" · ") },
+  });
+  if (!claimed.count) throw new Error(`Invoice ${invoice.invoiceNumber} changed while you were voiding it; refresh and try again`);
+  const voidDate = new Date();
+  if (invoice.journalId) {
+    await postSourceReversal(
+      companyId,
+      invoice.journalId,
+      {
+        date: voidDate,
+        description: `Void invoice ${invoice.invoiceNumber}${reason ? ` — ${reason}` : ""}`,
+        sourceDocumentType: "ArInvoiceVoid",
+        sourceDocumentId: invoice.id,
+        sourceDocumentNumber: invoice.invoiceNumber,
+        customerRef: invoice.customerId,
+      },
+      actor,
+    );
+  }
+  await prisma.$transaction(async (tx) => {
+    await appendLedger(tx, {
+      companyId,
+      customerId: invoice.customerId,
+      entryDate: voidDate,
+      docType: "INVOICE_VOID",
+      docId: invoice.id,
+      docNumber: invoice.invoiceNumber,
+      description: reason || "Invoice voided",
+      debit: 0,
+      credit: money(invoice.gross),
+    });
+  });
+  // An estimate, order or delayed charge that became this invoice is live again, as in QuickBooks.
+  const sources = await prisma.commercialDocument.findMany({ where: { companyId, convertedToId: invoice.id, status: "CONVERTED" } });
+  for (const doc of sources) {
+    await prisma.commercialDocument.update({
+      where: { id: doc.id },
+      data: { status: doc.kind === "ESTIMATE" || doc.kind === "PROPOSAL" ? "ACCEPTED" : "OPEN", convertedToType: null, convertedToId: null, convertedToNumber: null },
+    });
+  }
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId ?? 0,
+    erpRole: actor.erpRole,
+    action: "VOID",
+    entityType: "ArInvoice",
+    entityId: invoice.id,
+    beforeJson: { status: "POSTED", gross: money(invoice.gross) },
+    afterJson: { status: "REVERSED", reason },
+    ...actor.meta,
+  });
+  return prisma.arInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+}
+
+export type ApplicationKind = "PAYMENT" | "CREDIT_NOTE" | "DEPOSIT";
+
+/** Everything applied to one invoice, each with whether it can be removed here. */
+export async function invoiceApplications(companyId: string, invoiceId: string) {
+  const invoice = await prisma.arInvoice.findFirst({ where: { id: invoiceId, companyId } });
+  if (!invoice) throw new Error("Invoice does not exist");
+  const functional = await functionalCurrencyOf(companyId);
+  const [allocations, creditApps, notesOnIssue, depositAllocs] = await Promise.all([
+    prisma.arAllocation.findMany({ where: { invoiceId }, include: { receipt: true }, orderBy: { createdAt: "asc" } }),
+    prisma.arCreditApplication.findMany({ where: { invoiceId }, include: { creditNote: true }, orderBy: { createdAt: "asc" } }),
+    prisma.arCreditNote.findMany({ where: { companyId, invoiceId, status: "POSTED" }, include: { applications: true } }),
+    prisma.arDepositAllocation.findMany({ where: { invoiceId }, include: { deposit: true }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const rows: Array<{ kind: ApplicationKind | "CREDIT_ON_ISSUE"; id: string; sourceId: string; sourceNumber: string; date: Date; amount: number; removable: boolean; reason?: string }> = [];
+  for (const a of allocations) {
+    if (a.receipt.companyId !== companyId) continue;
+    const fxLocked = a.receipt.currency !== functional && Math.abs(Number(a.receipt.exchangeRate) - Number(invoice.exchangeRate)) > 1e-10;
+    rows.push({
+      kind: "PAYMENT",
+      id: a.id,
+      sourceId: a.receiptId,
+      sourceNumber: a.receipt.receiptNumber,
+      date: a.receipt.receiptDate,
+      amount: money(a.amount),
+      removable: a.receipt.status === "POSTED" && !fxLocked,
+      reason: a.receipt.status !== "POSTED" ? "Payment is reversed" : fxLocked ? "Booked a realized FX difference; reverse the payment instead" : undefined,
+    });
+  }
+  for (const c of creditApps) {
+    rows.push({ kind: "CREDIT_NOTE", id: c.id, sourceId: c.creditNoteId, sourceNumber: c.creditNote.creditNoteNumber, date: c.createdAt, amount: money(c.amount), removable: c.creditNote.status === "POSTED" });
+  }
+  for (const n of notesOnIssue) {
+    const onIssue = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0));
+    if (onIssue <= 0.005) continue;
+    const external = Boolean(n.sourceModule && n.sourceModule !== "AR");
+    rows.push({
+      kind: "CREDIT_ON_ISSUE",
+      id: n.id,
+      sourceId: n.id,
+      sourceNumber: n.creditNoteNumber,
+      date: n.noteDate,
+      amount: onIssue,
+      removable: !external,
+      reason: external ? `From ${n.sourceModule}` : "Issued against this invoice",
+    });
+  }
+  for (const d of depositAllocs) {
+    if (d.deposit.companyId !== companyId) continue;
+    rows.push({ kind: "DEPOSIT", id: d.id, sourceId: d.depositId, sourceNumber: d.deposit.depositNumber, date: d.createdAt, amount: money(d.amount), removable: d.deposit.status === "POSTED" && Boolean(d.journalId) });
+  }
+  return { invoiceId, status: invoice.status, outstanding: invoiceOutstanding(invoice), rows };
+}
+
+/**
+ * Takes a payment, credit note or deposit back off an invoice (QuickBooks "unapply"). The money goes back on
+ * the customer's account as credit. Payments and credit notes only move in the subledger; a deposit's
+ * application journal is reversed and it returns to customer deposits.
+ */
+export async function unapplyFromInvoice(companyId: string, kind: ApplicationKind | "CREDIT_ON_ISSUE", applicationId: string, actor: Actor = {}) {
+  let detail: { customerId: string; sourceNumber: string; invoiceNumber: string; amount: number };
+  if (kind === "CREDIT_ON_ISSUE") {
+    // A credit note issued against an invoice: take it off and keep it on account, like a later application.
+    const n = await prisma.arCreditNote.findFirst({ where: { id: applicationId, companyId, status: "POSTED" }, include: { applications: true, invoice: true } });
+    if (!n || !n.invoice) throw new Error("This credit note is no longer applied to the invoice");
+    if (n.sourceModule && n.sourceModule !== "AR") throw new Error(`Credit note ${n.creditNoteNumber} came from ${n.sourceModule}; it can't be moved here`);
+    const amount = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0));
+    if (amount <= 0.005) throw new Error("This credit note is no longer applied to the invoice");
+    const invoice = n.invoice;
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.arCreditNote.updateMany({ where: { id: n.id, invoiceId: invoice.id }, data: { invoiceId: null, unapplied: { increment: amount } } });
+      if (!claimed.count) throw new Error("This credit note is no longer applied to the invoice");
+      await tx.arInvoice.update({ where: { id: invoice.id }, data: { amountCredited: { decrement: amount } } });
+    });
+    detail = { customerId: n.customerId, sourceNumber: n.creditNoteNumber, invoiceNumber: invoice.invoiceNumber, amount };
+  } else if (kind === "PAYMENT") {
+    const a = await prisma.arAllocation.findFirst({ where: { id: applicationId, receipt: { companyId } }, include: { receipt: true, invoice: true } });
+    if (!a) throw new Error("This payment is no longer applied to the invoice");
+    if (a.receipt.status !== "POSTED") throw new Error(`Payment ${a.receipt.receiptNumber} is reversed`);
+    const functional = await functionalCurrencyOf(companyId);
+    if (a.receipt.currency !== functional && Math.abs(Number(a.receipt.exchangeRate) - Number(a.invoice.exchangeRate)) > 1e-10) {
+      throw new Error(`Payment ${a.receipt.receiptNumber} booked a realized FX difference on this invoice; reverse the payment instead`);
+    }
+    const amount = money(a.amount);
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.arAllocation.deleteMany({ where: { id: a.id } });
+      if (!gone.count) throw new Error("This payment is no longer applied to the invoice");
+      await tx.arReceipt.update({ where: { id: a.receiptId }, data: { unallocated: { increment: amount } } });
+      await tx.arInvoice.update({ where: { id: a.invoiceId }, data: { amountPaid: { decrement: amount } } });
+    });
+    detail = { customerId: a.receipt.customerId, sourceNumber: a.receipt.receiptNumber, invoiceNumber: a.invoice.invoiceNumber, amount };
+  } else if (kind === "CREDIT_NOTE") {
+    const c = await prisma.arCreditApplication.findFirst({ where: { id: applicationId, creditNote: { companyId } }, include: { creditNote: true, invoice: true } });
+    if (!c) throw new Error("This credit note is no longer applied to the invoice");
+    const amount = money(c.amount);
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.arCreditApplication.deleteMany({ where: { id: c.id } });
+      if (!gone.count) throw new Error("This credit note is no longer applied to the invoice");
+      await tx.arCreditNote.update({ where: { id: c.creditNoteId }, data: { unapplied: { increment: amount } } });
+      await tx.arInvoice.update({ where: { id: c.invoiceId }, data: { amountCredited: { decrement: amount } } });
+    });
+    detail = { customerId: c.creditNote.customerId, sourceNumber: c.creditNote.creditNoteNumber, invoiceNumber: c.invoice.invoiceNumber, amount };
+  } else {
+    const d = await prisma.arDepositAllocation.findFirst({ where: { id: applicationId, deposit: { companyId } }, include: { deposit: true } });
+    if (!d) throw new Error("This deposit is no longer applied to the invoice");
+    if (d.deposit.status !== "POSTED") throw new Error(`Deposit ${d.deposit.depositNumber} is refunded`);
+    if (!d.journalId) throw new Error("This deposit application has no journal to reverse");
+    const invoice = await prisma.arInvoice.findFirstOrThrow({ where: { id: d.invoiceId, companyId } });
+    const amount = money(d.amount);
+    const when = new Date();
+    await postSourceReversal(
+      companyId,
+      d.journalId,
+      {
+        date: when,
+        description: `Unapply deposit ${d.deposit.depositNumber} from ${invoice.invoiceNumber}`,
+        sourceDocumentType: "ArDepositUnapply",
+        sourceDocumentId: d.id,
+        sourceDocumentNumber: d.deposit.depositNumber,
+        customerRef: d.deposit.customerId,
+      },
+      actor,
+    );
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.arDepositAllocation.deleteMany({ where: { id: d.id } });
+      if (!gone.count) throw new Error("This deposit is no longer applied to the invoice");
+      await tx.arDeposit.update({ where: { id: d.depositId }, data: { remaining: { increment: amount } } });
+      await tx.arInvoice.update({ where: { id: d.invoiceId }, data: { amountPaid: { decrement: amount } } });
+      await appendLedger(tx, {
+        companyId,
+        customerId: d.deposit.customerId,
+        entryDate: when,
+        docType: "DEPOSIT_UNAPPLY",
+        docId: d.id,
+        docNumber: d.deposit.depositNumber,
+        description: `Deposit taken back off ${invoice.invoiceNumber}`,
+        debit: amount,
+        credit: 0,
+      });
+    });
+    detail = { customerId: d.deposit.customerId, sourceNumber: d.deposit.depositNumber, invoiceNumber: invoice.invoiceNumber, amount };
+  }
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId ?? 0,
+    erpRole: actor.erpRole,
+    action: "UNAPPLY_CREDIT",
+    entityType: "Customer",
+    entityId: detail.customerId,
+    afterJson: { removed: [{ number: detail.sourceNumber, invoiceNumber: detail.invoiceNumber, amount: detail.amount }] },
+    ...actor.meta,
+  });
+  return detail;
 }

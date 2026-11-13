@@ -50,6 +50,8 @@ const moneyBody = z.object({
   chequeNumber: text(40),
   partyType: text(40),
   partyName: text(200),
+  /** Shows the payment on this customer's profile (refund receipts); posts nothing to receivables. */
+  relatedCustomerId: z.string().min(1).optional(),
   description: text(),
 });
 

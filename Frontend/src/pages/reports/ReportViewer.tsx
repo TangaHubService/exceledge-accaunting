@@ -277,6 +277,7 @@ function toCsv(title: string, built: Built) {
 
 export function ReportViewer({ slug }: { slug: string }) {
   const { query } = useLocation();
+  const customerFilter = query.get("customer");
   const { email } = useSession();
   const { toast } = useFeedback();
   const { name: company } = useCompany();
@@ -286,7 +287,7 @@ export function ReportViewer({ slug }: { slug: string }) {
   const pnlMode = PNL_MODES[slug];
   const isTerms = slug === "terms-list";
   const baseTitle = reportNameFor(slug) ?? source?.title ?? query.get("type") ?? humanize(slug.replace(/-/g, "_"));
-  const title = saved?.name ?? baseTitle;
+  const title = saved?.name ?? (customerFilter ? `${baseTitle}: ${customerFilter}` : baseTitle);
 
   const [from, setFrom] = useState(saved?.from ?? "");
   const [to, setTo] = useState(saved?.to ?? "");
@@ -306,11 +307,13 @@ export function ReportViewer({ slug }: { slug: string }) {
     if (isTerms) return TERMS_BUILT;
     if (pnlMode) return monthly.rows && pnlBuilt(monthly.rows, pnlMode).built;
     if (!source || resource.data === undefined) return undefined;
-    const b = source.build(resource.data);
+    const raw = source.build(resource.data);
+    // ?customer=<name> (from a customer's profile) narrows customer reports to that customer.
+    const b = customerFilter ? { ...raw, rows: raw.rows.filter((r) => (r.customerName ?? r.customer ?? customerFilter) === customerFilter) } : raw;
     if (!b.dateKey || (!from && !to)) return b;
     const key = b.dateKey;
     return { ...b, rows: b.rows.filter((r) => { const d = String(r[key] ?? "").slice(0, 10); return (!from || d >= from) && (!to || d <= to); }) };
-  }, [isTerms, pnlMode, monthly.rows, source, resource.data, from, to]);
+  }, [isTerms, pnlMode, monthly.rows, source, resource.data, from, to, customerFilter]);
 
   const connected = Boolean(source || pnlMode || isTerms);
   const loading = pnlMode ? monthly.loading : source ? resource.loading && resource.data === undefined : false;

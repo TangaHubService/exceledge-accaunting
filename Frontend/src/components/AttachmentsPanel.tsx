@@ -6,12 +6,13 @@ import { useResource, useSession } from "../lib/session";
 import { useFeedback } from "./feedback";
 import { Loadable } from "./ui";
 
-export type AttachableType = "Journal" | "ApBill" | "ArInvoice" | "Expense" | "FixedAsset" | "BankReconciliation" | "ControlTest";
+export type AttachableType = "Journal" | "ApBill" | "ArInvoice" | "Customer" | "Expense" | "FixedAsset" | "BankReconciliation" | "ControlTest";
 
 const CAPABILITIES: Record<AttachableType, { view: AccountingCapability; attach: AccountingCapability }> = {
   Journal: { view: "journal:view", attach: "journal:create" },
   ApBill: { view: "ap:view", attach: "ap:manage" },
   ArInvoice: { view: "ar:view", attach: "ar:manage" },
+  Customer: { view: "ar:view", attach: "ar:manage" },
   Expense: { view: "expense:view", attach: "expense:manage" },
   FixedAsset: { view: "fa:view", attach: "fa:manage" },
   BankReconciliation: { view: "bank:view", attach: "bank:manage" },

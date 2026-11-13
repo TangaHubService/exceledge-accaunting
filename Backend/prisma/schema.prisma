@@ -97,133 +97,135 @@ enum OpeningBalanceBatchStatus {
 
 /// Accounting company linked to an ERP Organization (identity stays in ERP).
 model Company {
-  id                       String   @id @default(cuid())
-  externalErpOrganizationId String  @unique
-  name                     String?
-  isActive                 Boolean  @default(true)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  externalErpOrganizationId String   @unique
+  name                      String?
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
-  profile              CompanyProfile?
-  businessInfo         BusinessAccountingInfo?
-  currencySettings     CurrencySettings?
-  policies             AccountingPolicy?
-  localization         LocalizationSettings?
-  defaultAccounts      DefaultPostingAccounts?
-  inventorySettings    InventoryAccountingSettings?
-  partyDefaults        PartyDefaults?
-  bankingSettings      BankingPaymentSettings?
-  approvalControls     ApprovalPostingControls?
-  activation           AccountingActivation?
-  financialYears       FinancialYear[]
-  sectionStatuses      SetupSectionStatus[]
-  numberSequences      NumberSequence[]
-  accounts             Account[]
+  profile               CompanyProfile?
+  businessInfo          BusinessAccountingInfo?
+  currencySettings      CurrencySettings?
+  policies              AccountingPolicy?
+  localization          LocalizationSettings?
+  defaultAccounts       DefaultPostingAccounts?
+  inventorySettings     InventoryAccountingSettings?
+  partyDefaults         PartyDefaults?
+  bankingSettings       BankingPaymentSettings?
+  approvalControls      ApprovalPostingControls?
+  activation            AccountingActivation?
+  financialYears        FinancialYear[]
+  sectionStatuses       SetupSectionStatus[]
+  numberSequences       NumberSequence[]
+  accounts              Account[]
   openingBalanceBatches OpeningBalanceBatch[]
-  auditEvents          AuditEvent[]
-  branches             CompanyBranch[]
-  journals             Journal[]
-  journalLines         JournalLine[]
-  glEntries            GlEntry[]
-  integrationEvents    IntegrationEvent[]
-  postingExceptions    PostingException[]
-  sourceDocumentLinks  SourceDocumentLink[]
-  customers            Customer[]
-  arInvoices           ArInvoice[]
-  arReceipts           ArReceipt[]
-  arCreditNotes        ArCreditNote[]
-  arDebitNotes         ArDebitNote[]
-  arDeposits           ArDeposit[]
-  arLedgerEntries      ArLedgerEntry[]
-  suppliers            Supplier[]
-  apBills              ApBill[]
-  apPayments           ApPayment[]
-  apCreditNotes        ApCreditNote[]
-  apDebitNotes         ApDebitNote[]
-  apAdvances           ApAdvance[]
-  apLedgerEntries      ApLedgerEntry[]
-  inventoryItems       InventoryItem[]
-  inventoryLocations   InventoryLocation[]
-  inventoryBalances    InventoryBalance[]
-  inventoryMovements   InventoryMovement[]
-  inventoryCostLayers  InventoryCostLayer[]
-  financialAccounts    FinancialAccount[]
-  bankTransactions     BankTransaction[]
-  bankStatements       BankStatement[]
-  bankStatementLines   BankStatementLine[]
-  bankMatches          BankMatch[]
-  bankReconciliations  BankReconciliation[]
-  taxCodes             TaxCode[]
-  taxSettings          TaxSettings?
-  taxPayments          TaxPayment[]
-  taxAdjustments       TaxAdjustment[]
-  taxFilings           TaxFiling[]
-  fiscalDocuments      FiscalDocument[]
-  expenseCategories    ExpenseCategory[]
-  expenses             Expense[]
-  recurringExpenses    RecurringExpense[]
-  fixedAssetCategories FixedAssetCategory[]
-  fixedAssets          FixedAsset[]
-  faDepreciationRuns   FixedAssetDepreciationRun[]
-  faMaintenances       FixedAssetMaintenance[]
-  faTransfers          FixedAssetTransfer[]
-  faRevaluations       FixedAssetRevaluation[]
-  faImpairments        FixedAssetImpairment[]
-  recurringJournals    RecurringJournal[]
-  periodCloses         PeriodClose[]
-  periodCloseOverrides PeriodCloseOverride[]
-  exchangeRates        ExchangeRate[]
-  fxRevaluations       FxRevaluation[]
-  budgets              Budget[]
-  dimensions           Dimension[]
-  controlItems         ControlItem[]
-  approvalRequests     ApprovalRequest[]
-  notifications        Notification[]
-  documents            AccountingDocument[]
-  importBatches        ImportBatch[]
-  ownedGroups          CompanyGroup[]
-  groupMemberships     GroupMember[]
-  eliminations         Elimination[]
-  forecastScenarios    ForecastScenario[]
-  anomalyFlags         AnomalyFlag[]
-  integrityScans       IntegrityScan[]
-  esgMeasures          EsgMeasure[]
-  workflowTemplates    WorkflowTemplate[]
-  workflowInstances    WorkflowInstance[]
-  apiCredentials       ApiCredential[]
-  signatures           SignatureRecord[]
-  automationJobs       AutomationJob[]
-  goodsReceipts        GoodsReceipt[]
-  kpiTargets           KpiTarget[]
-  risks                RiskItem[]
-  controlTests         ControlTest[]
-  apiKeyUsage          ApiKeyUsage[]
-  webhookEndpoints     WebhookEndpoint[]
-  webhookDeliveries    WebhookDelivery[]
-  notificationSettings NotificationSettings?
-  notificationEmails   NotificationEmail[]
-  commercialDocuments CommercialDocument[]
-  itemReceipts ItemReceipt[]
-  inventoryAdjustments InventoryAdjustment[]
-  projects Project[]
-  tasks Task[]
-  employees Employee[]
-  timeActivities TimeActivity[]
-  workspaceRecords WorkspaceRecord[]
+  auditEvents           AuditEvent[]
+  branches              CompanyBranch[]
+  journals              Journal[]
+  journalLines          JournalLine[]
+  glEntries             GlEntry[]
+  integrationEvents     IntegrationEvent[]
+  postingExceptions     PostingException[]
+  sourceDocumentLinks   SourceDocumentLink[]
+  customers             Customer[]
+  customerNotes         CustomerNote[]
+  customerContacts      CustomerContact[]
+  arInvoices            ArInvoice[]
+  arReceipts            ArReceipt[]
+  arCreditNotes         ArCreditNote[]
+  arDebitNotes          ArDebitNote[]
+  arDeposits            ArDeposit[]
+  arLedgerEntries       ArLedgerEntry[]
+  suppliers             Supplier[]
+  apBills               ApBill[]
+  apPayments            ApPayment[]
+  apCreditNotes         ApCreditNote[]
+  apDebitNotes          ApDebitNote[]
+  apAdvances            ApAdvance[]
+  apLedgerEntries       ApLedgerEntry[]
+  inventoryItems        InventoryItem[]
+  inventoryLocations    InventoryLocation[]
+  inventoryBalances     InventoryBalance[]
+  inventoryMovements    InventoryMovement[]
+  inventoryCostLayers   InventoryCostLayer[]
+  financialAccounts     FinancialAccount[]
+  bankTransactions      BankTransaction[]
+  bankStatements        BankStatement[]
+  bankStatementLines    BankStatementLine[]
+  bankMatches           BankMatch[]
+  bankReconciliations   BankReconciliation[]
+  taxCodes              TaxCode[]
+  taxSettings           TaxSettings?
+  taxPayments           TaxPayment[]
+  taxAdjustments        TaxAdjustment[]
+  taxFilings            TaxFiling[]
+  fiscalDocuments       FiscalDocument[]
+  expenseCategories     ExpenseCategory[]
+  expenses              Expense[]
+  recurringExpenses     RecurringExpense[]
+  fixedAssetCategories  FixedAssetCategory[]
+  fixedAssets           FixedAsset[]
+  faDepreciationRuns    FixedAssetDepreciationRun[]
+  faMaintenances        FixedAssetMaintenance[]
+  faTransfers           FixedAssetTransfer[]
+  faRevaluations        FixedAssetRevaluation[]
+  faImpairments         FixedAssetImpairment[]
+  recurringJournals     RecurringJournal[]
+  periodCloses          PeriodClose[]
+  periodCloseOverrides  PeriodCloseOverride[]
+  exchangeRates         ExchangeRate[]
+  fxRevaluations        FxRevaluation[]
+  budgets               Budget[]
+  dimensions            Dimension[]
+  controlItems          ControlItem[]
+  approvalRequests      ApprovalRequest[]
+  notifications         Notification[]
+  documents             AccountingDocument[]
+  importBatches         ImportBatch[]
+  ownedGroups           CompanyGroup[]
+  groupMemberships      GroupMember[]
+  eliminations          Elimination[]
+  forecastScenarios     ForecastScenario[]
+  anomalyFlags          AnomalyFlag[]
+  integrityScans        IntegrityScan[]
+  esgMeasures           EsgMeasure[]
+  workflowTemplates     WorkflowTemplate[]
+  workflowInstances     WorkflowInstance[]
+  apiCredentials        ApiCredential[]
+  signatures            SignatureRecord[]
+  automationJobs        AutomationJob[]
+  goodsReceipts         GoodsReceipt[]
+  kpiTargets            KpiTarget[]
+  risks                 RiskItem[]
+  controlTests          ControlTest[]
+  apiKeyUsage           ApiKeyUsage[]
+  webhookEndpoints      WebhookEndpoint[]
+  webhookDeliveries     WebhookDelivery[]
+  notificationSettings  NotificationSettings?
+  notificationEmails    NotificationEmail[]
+  commercialDocuments   CommercialDocument[]
+  itemReceipts          ItemReceipt[]
+  inventoryAdjustments  InventoryAdjustment[]
+  projects              Project[]
+  tasks                 Task[]
+  employees             Employee[]
+  timeActivities        TimeActivity[]
+  workspaceRecords      WorkspaceRecord[]
 
   @@map("companies")
 }
 
 model CompanyBranch {
-  id                 String   @id @default(cuid())
-  companyId          String
+  id                  String   @id @default(cuid())
+  companyId           String
   externalErpBranchId String
-  name               String?
-  code               String?
+  name                String?
+  code                String?
   /// Inactive branches stay on past postings but cannot be used on new ones
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -232,29 +234,29 @@ model CompanyBranch {
 }
 
 model CompanyProfile {
-  id                    String    @id @default(cuid())
-  companyId             String    @unique
-  registeredName        String?
-  tradingName           String?
-  registrationNumber    String?
+  id                      String    @id @default(cuid())
+  companyId               String    @unique
+  registeredName          String?
+  tradingName             String?
+  registrationNumber      String?
   taxIdentificationNumber String?
-  logoUrl               String?
-  businessEmail         String?
-  telephone             String?
-  website               String?
-  registeredAddress     String?
-  operatingAddress      String?
-  country               String?
-  region                String?
-  district              String?
-  city                  String?
-  postalCode            String?
-  industry              String?
-  businessActivity      String?
-  incorporationDate     DateTime?
-  operationsStartDate   DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  logoUrl                 String?
+  businessEmail           String?
+  telephone               String?
+  website                 String?
+  registeredAddress       String?
+  operatingAddress        String?
+  country                 String?
+  region                  String?
+  district                String?
+  city                    String?
+  postalCode              String?
+  industry                String?
+  businessActivity        String?
+  incorporationDate       DateTime?
+  operationsStartDate     DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -262,23 +264,23 @@ model CompanyProfile {
 }
 
 model BusinessAccountingInfo {
-  id                       String              @id @default(cuid())
-  companyId                String              @unique
-  businessType             String?
-  legalStructure           String?
-  industry                 String?
+  id                         String             @id @default(cuid())
+  companyId                  String             @unique
+  businessType               String?
+  legalStructure             String?
+  industry                   String?
   accountingCommencementDate DateTime?
-  numberOfBranches         Int?
-  headOffice               String?
-  reportingStructure       String?
-  accountingBasis          AccountingBasis     @default(ACCRUAL)
-  reportingFramework       ReportingFramework  @default(IFRS_SME)
-  defaultLanguage          String              @default("en")
-  dateFormat               String              @default("YYYY-MM-DD")
-  numberFormat             String              @default("#,##0.00")
-  timeZone                 String              @default("Africa/Kigali")
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
+  numberOfBranches           Int?
+  headOffice                 String?
+  reportingStructure         String?
+  accountingBasis            AccountingBasis    @default(ACCRUAL)
+  reportingFramework         ReportingFramework @default(IFRS_SME)
+  defaultLanguage            String             @default("en")
+  dateFormat                 String             @default("YYYY-MM-DD")
+  numberFormat               String             @default("#,##0.00")
+  timeZone                   String             @default("Africa/Kigali")
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -286,20 +288,20 @@ model BusinessAccountingInfo {
 }
 
 model FinancialYear {
-  id                String          @id @default(cuid())
-  companyId         String
-  name              String
-  startDate         DateTime
-  endDate           DateTime
-  periodFrequency   PeriodFrequency @default(MONTHLY)
-  closingPolicy     String?
+  id                  String          @id @default(cuid())
+  companyId           String
+  name                String
+  startDate           DateTime
+  endDate             DateTime
+  periodFrequency     PeriodFrequency @default(MONTHLY)
+  closingPolicy       String?
   transactionLockDate DateTime?
-  isCurrent         Boolean         @default(false)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  isCurrent           Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  company  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  periods  AccountingPeriod[]
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periods AccountingPeriod[]
 
   @@index([companyId, startDate, endDate])
   @@map("financial_years")
@@ -325,20 +327,20 @@ model AccountingPeriod {
 }
 
 model CurrencySettings {
-  id                        String   @id @default(cuid())
-  companyId                 String   @unique
-  functionalCurrency        String
-  reportingCurrency         String?
-  multiCurrencyEnabled      Boolean  @default(false)
-  currencySymbol            String?
-  displayFormat             String?
-  decimalPrecision          Int      @default(2)
-  exchangeRateSource        String?
+  id                          String   @id @default(cuid())
+  companyId                   String   @unique
+  functionalCurrency          String
+  reportingCurrency           String?
+  multiCurrencyEnabled        Boolean  @default(false)
+  currencySymbol              String?
+  displayFormat               String?
+  decimalPrecision            Int      @default(2)
+  exchangeRateSource          String?
   exchangeRateUpdateFrequency String?
-  fxGainAccountId           String?
-  fxLossAccountId           String?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  fxGainAccountId             String?
+  fxLossAccountId             String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -346,23 +348,23 @@ model CurrencySettings {
 }
 
 model AccountingPolicy {
-  id                         String                   @id @default(cuid())
-  companyId                  String                   @unique
-  accountingBasis            AccountingBasis          @default(ACCRUAL)
-  inventoryValuationMethod   InventoryValuationMethod @default(WEIGHTED_AVERAGE)
-  depreciationPolicy         String?
-  revenueRecognitionMethod   String?
-  expenseRecognitionMethod   String?
-  badDebtPolicy              String?
-  fxRevaluationPolicy        String?
-  documentRetentionPeriod    String?
-  materialityThreshold       Decimal?                 @db.Decimal(18, 4)
-  roundingPolicy             String?
-  periodClosingPolicy        String?
+  id                       String                   @id @default(cuid())
+  companyId                String                   @unique
+  accountingBasis          AccountingBasis          @default(ACCRUAL)
+  inventoryValuationMethod InventoryValuationMethod @default(WEIGHTED_AVERAGE)
+  depreciationPolicy       String?
+  revenueRecognitionMethod String?
+  expenseRecognitionMethod String?
+  badDebtPolicy            String?
+  fxRevaluationPolicy      String?
+  documentRetentionPeriod  String?
+  materialityThreshold     Decimal?                 @db.Decimal(18, 4)
+  roundingPolicy           String?
+  periodClosingPolicy      String?
   /// QuickBooks "Enable account numbers": when off, numbers are assigned automatically and hidden.
-  useAccountNumbers          Boolean                  @default(true)
-  createdAt                  DateTime                 @default(now())
-  updatedAt                  DateTime                 @updatedAt
+  useAccountNumbers        Boolean                  @default(true)
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -370,21 +372,21 @@ model AccountingPolicy {
 }
 
 model LocalizationSettings {
-  id                         String   @id @default(cuid())
-  companyId                  String   @unique
-  countryOfRegistration      String
-  localizationPackage        String
-  taxAuthority               String?
-  taxRegistrationNumbers     Json?
-  taxpayerCategory           String?
-  taxFilingFrequency         String?
-  electronicInvoicingRequired Boolean @default(false)
-  governmentIntegrationStatus String?
+  id                             String   @id @default(cuid())
+  companyId                      String   @unique
+  countryOfRegistration          String
+  localizationPackage            String
+  taxAuthority                   String?
+  taxRegistrationNumbers         Json?
+  taxpayerCategory               String?
+  taxFilingFrequency             String?
+  electronicInvoicingRequired    Boolean  @default(false)
+  governmentIntegrationStatus    String?
   statutoryReportingRequirements Json?
-  payrollCompliancePackage   String?
-  defaultTaxCodes            Json?
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  payrollCompliancePackage       String?
+  defaultTaxCodes                Json?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -421,9 +423,9 @@ model Account {
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  parent   Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children Account[] @relation("AccountHierarchy")
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children     Account[]     @relation("AccountHierarchy")
   journalLines JournalLine[]
   glEntries    GlEntry[]
 
@@ -435,73 +437,73 @@ model Account {
 }
 
 model DefaultPostingAccounts {
-  id                         String   @id @default(cuid())
-  companyId                  String   @unique
+  id                             String   @id @default(cuid())
+  companyId                      String   @unique
   // Sales / AR
-  accountsReceivableId       String?
-  salesRevenueId             String?
-  serviceRevenueId           String?
-  salesDiscountsId           String?
-  salesReturnsId             String?
-  customerDepositsId         String?
-  badDebtExpenseId           String?
-  allowanceDoubtfulDebtsId   String?
+  accountsReceivableId           String?
+  salesRevenueId                 String?
+  serviceRevenueId               String?
+  salesDiscountsId               String?
+  salesReturnsId                 String?
+  customerDepositsId             String?
+  badDebtExpenseId               String?
+  allowanceDoubtfulDebtsId       String?
   // Purchases / AP
-  accountsPayableId          String?
-  purchasesId                String?
-  purchaseDiscountsId        String?
-  purchaseReturnsId          String?
-  supplierAdvancesId         String?
-  accruedExpensesId          String?
+  accountsPayableId              String?
+  purchasesId                    String?
+  purchaseDiscountsId            String?
+  purchaseReturnsId              String?
+  supplierAdvancesId             String?
+  accruedExpensesId              String?
   // Cash / Banking
-  defaultCashAccountId       String?
-  defaultBankAccountId       String?
-  pettyCashAccountId         String?
-  mobileMoneyClearingId      String?
-  undepositedFundsId         String?
-  bankChargesId              String?
-  interestIncomeId           String?
-  paymentProcessingChargesId String?
+  defaultCashAccountId           String?
+  defaultBankAccountId           String?
+  pettyCashAccountId             String?
+  mobileMoneyClearingId          String?
+  undepositedFundsId             String?
+  bankChargesId                  String?
+  interestIncomeId               String?
+  paymentProcessingChargesId     String?
   // Inventory
-  inventoryAssetId           String?
-  costOfSalesId              String?
-  inventoryAdjustmentId      String?
-  inventoryGainId           String?
-  inventoryLossId           String?
-  inventoryWriteOffId        String?
-  grniId                     String?
-  goodsInTransitId           String?
+  inventoryAssetId               String?
+  costOfSalesId                  String?
+  inventoryAdjustmentId          String?
+  inventoryGainId                String?
+  inventoryLossId                String?
+  inventoryWriteOffId            String?
+  grniId                         String?
+  goodsInTransitId               String?
   // Taxes
-  outputTaxPayableId         String?
-  inputTaxReceivableId       String?
-  withholdingTaxPayableId    String?
-  withholdingTaxReceivableId String?
-  payrollTaxPayableId        String?
-  otherStatutoryLiabilitiesId String?
+  outputTaxPayableId             String?
+  inputTaxReceivableId           String?
+  withholdingTaxPayableId        String?
+  withholdingTaxReceivableId     String?
+  payrollTaxPayableId            String?
+  otherStatutoryLiabilitiesId    String?
   // Payroll
-  salariesWagesExpenseId     String?
-  payrollPayableId           String?
-  employeeBenefitsExpenseId  String?
-  employeeDeductionsPayableId String?
+  salariesWagesExpenseId         String?
+  payrollPayableId               String?
+  employeeBenefitsExpenseId      String?
+  employeeDeductionsPayableId    String?
   employerContributionsExpenseId String?
   // Fixed assets
-  fixedAssetCostId           String?
-  accumulatedDepreciationId  String?
-  depreciationExpenseId      String?
-  assetDisposalId            String?
-  gainOnDisposalId           String?
-  lossOnDisposalId           String?
-  assetRevaluationReserveId  String?
-  revaluationLossId          String?
+  fixedAssetCostId               String?
+  accumulatedDepreciationId      String?
+  depreciationExpenseId          String?
+  assetDisposalId                String?
+  gainOnDisposalId               String?
+  lossOnDisposalId               String?
+  assetRevaluationReserveId      String?
+  revaluationLossId              String?
   // General
-  retainedEarningsId         String?
-  currentYearEarningsId      String?
-  suspenseAccountId          String?
-  roundingDifferenceId       String?
-  fxGainId                   String?
-  fxLossId                   String?
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  retainedEarningsId             String?
+  currentYearEarningsId          String?
+  suspenseAccountId              String?
+  roundingDifferenceId           String?
+  fxGainId                       String?
+  fxLossId                       String?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -509,23 +511,23 @@ model DefaultPostingAccounts {
 }
 
 model InventoryAccountingSettings {
-  id                            String                   @id @default(cuid())
-  companyId                     String                   @unique
-  valuationMethod               InventoryValuationMethod @default(WEIGHTED_AVERAGE)
-  automaticCogsPosting          Boolean                  @default(true)
-  negativeInventoryPolicy       String                   @default("PREVENT")
-  adjustmentRequiresApproval    Boolean                  @default(true)
-  stockCountRequiresApproval    Boolean                  @default(true)
-  inventoryAssetAccountId       String?
-  costOfSalesAccountId          String?
-  adjustmentAccountId           String?
-  writeOffAccountId             String?
-  gainAccountId                 String?
-  lossAccountId                 String?
-  grniAccountId                 String?
-  goodsInTransitAccountId       String?
-  createdAt                     DateTime                 @default(now())
-  updatedAt                     DateTime                 @updatedAt
+  id                         String                   @id @default(cuid())
+  companyId                  String                   @unique
+  valuationMethod            InventoryValuationMethod @default(WEIGHTED_AVERAGE)
+  automaticCogsPosting       Boolean                  @default(true)
+  negativeInventoryPolicy    String                   @default("PREVENT")
+  adjustmentRequiresApproval Boolean                  @default(true)
+  stockCountRequiresApproval Boolean                  @default(true)
+  inventoryAssetAccountId    String?
+  costOfSalesAccountId       String?
+  adjustmentAccountId        String?
+  writeOffAccountId          String?
+  gainAccountId              String?
+  lossAccountId              String?
+  grniAccountId              String?
+  goodsInTransitAccountId    String?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -533,27 +535,27 @@ model InventoryAccountingSettings {
 }
 
 model PartyDefaults {
-  id                        String   @id @default(cuid())
-  companyId                 String   @unique
-  defaultArAccountId        String?
-  customerPaymentTerms      String?
-  defaultCreditLimit        Decimal? @db.Decimal(18, 4)
-  defaultCustomerCurrency   String?
-  defaultSalesTaxCode       String?
-  defaultPriceList          String?
-  customerNumberingFormat   String?
-  creditControlPolicy       String?
-  statementDeliveryMethod   String?
-  defaultApAccountId        String?
-  supplierPaymentTerms      String?
-  defaultSupplierCurrency   String?
-  defaultPurchaseTaxCode    String?
-  supplierNumberingFormat   String?
-  withholdingTaxStatus      String?
-  supplierPaymentMethod     String?
-  supplierApprovalRequired  Boolean  @default(true)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  companyId                String   @unique
+  defaultArAccountId       String?
+  customerPaymentTerms     String?
+  defaultCreditLimit       Decimal? @db.Decimal(18, 4)
+  defaultCustomerCurrency  String?
+  defaultSalesTaxCode      String?
+  defaultPriceList         String?
+  customerNumberingFormat  String?
+  creditControlPolicy      String?
+  statementDeliveryMethod  String?
+  defaultApAccountId       String?
+  supplierPaymentTerms     String?
+  defaultSupplierCurrency  String?
+  defaultPurchaseTaxCode   String?
+  supplierNumberingFormat  String?
+  withholdingTaxStatus     String?
+  supplierPaymentMethod    String?
+  supplierApprovalRequired Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -585,21 +587,21 @@ model BankingPaymentSettings {
 }
 
 model NumberSequence {
-  id              String   @id @default(cuid())
-  companyId       String
-  documentType    String
-  prefix          String?
-  includeYear     Boolean  @default(true)
-  includeMonth    Boolean  @default(false)
-  includeBranch   Boolean  @default(false)
-  sequenceLength  Int      @default(6)
-  startingNumber  Int      @default(1)
-  nextNumber      Int      @default(1)
-  resetFrequency  String   @default("YEARLY")
+  id             String   @id @default(cuid())
+  companyId      String
+  documentType   String
+  prefix         String?
+  includeYear    Boolean  @default(true)
+  includeMonth   Boolean  @default(false)
+  includeBranch  Boolean  @default(false)
+  sequenceLength Int      @default(6)
+  startingNumber Int      @default(1)
+  nextNumber     Int      @default(1)
+  resetFrequency String   @default("YEARLY")
   /// Counters never start below this, so numbers issued before per-period counters cannot repeat
-  legacyFloor     Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  legacyFloor    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   company  Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   counters NumberSequenceCounter[]
@@ -622,29 +624,29 @@ model NumberSequenceCounter {
 }
 
 model ApprovalPostingControls {
-  id                            String   @id @default(cuid())
-  companyId                     String   @unique
-  automaticPostingEnabled       Boolean  @default(false)
-  manualPostingRequired         Boolean  @default(true)
-  approvalWorkflowEnabled       Boolean  @default(true)
-  approvalLevels                Int      @default(1)
-  amountBasedApprovalLimits     Json?
-  backdatedTransactionPolicy    String   @default("REQUIRE_APPROVAL")
-  futureDatedTransactionPolicy  String   @default("ALLOW")
-  transactionEditingPolicy      String   @default("DRAFT_ONLY")
-  transactionDeletionPolicy     String   @default("DRAFT_ONLY")
-  supportingDocumentRequired    Boolean  @default(false)
-  periodLockEnforcement         Boolean  @default(true)
+  id                           String   @id @default(cuid())
+  companyId                    String   @unique
+  automaticPostingEnabled      Boolean  @default(false)
+  manualPostingRequired        Boolean  @default(true)
+  approvalWorkflowEnabled      Boolean  @default(true)
+  approvalLevels               Int      @default(1)
+  amountBasedApprovalLimits    Json?
+  backdatedTransactionPolicy   String   @default("REQUIRE_APPROVAL")
+  futureDatedTransactionPolicy String   @default("ALLOW")
+  transactionEditingPolicy     String   @default("DRAFT_ONLY")
+  transactionDeletionPolicy    String   @default("DRAFT_ONLY")
+  supportingDocumentRequired   Boolean  @default(false)
+  periodLockEnforcement        Boolean  @default(true)
   /// The person who keyed a manual journal cannot post it
-  requireDifferentPoster        Boolean  @default(true)
+  requireDifferentPoster       Boolean  @default(true)
   /// Document types (ApBill, TaxAdjustment, FixedAssetImpairment) whose posting waits for approval
-  approvalRequiredFor           String[] @default([])
+  approvalRequiredFor          String[] @default([])
   /// OFF, WARN or BLOCK: what happens when a posting takes spending over the active budget
-  budgetControl                 String   @default("OFF")
+  budgetControl                String   @default("OFF")
   /// Closing a period needs a second person with close:manage to approve the request
-  closeApprovalRequired         Boolean  @default(false)
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  closeApprovalRequired        Boolean  @default(false)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -652,18 +654,18 @@ model ApprovalPostingControls {
 }
 
 model OpeningBalanceBatch {
-  id          String                    @id @default(cuid())
-  companyId   String
-  name        String
-  status      OpeningBalanceBatchStatus @default(DRAFT)
-  notes       String?
+  id                  String                    @id @default(cuid())
+  companyId           String
+  name                String
+  status              OpeningBalanceBatchStatus @default(DRAFT)
+  notes               String?
   createdByErpUserId  Int?
   approvedByErpUserId Int?
   approvedAt          DateTime?
   journalId           String?
   postedAt            DateTime?
-  createdAt   DateTime                  @default(now())
-  updatedAt   DateTime                  @updatedAt
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
 
   company Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lines   OpeningBalanceLine[]
@@ -689,14 +691,14 @@ model OpeningBalanceLine {
 }
 
 model SetupSectionStatus {
-  id          String                  @id @default(cuid())
-  companyId   String
-  sectionKey  SetupSectionKey
-  status      SetupSectionStatusValue @default(NOT_STARTED)
-  lastError   String?
+  id                 String                  @id @default(cuid())
+  companyId          String
+  sectionKey         SetupSectionKey
+  status             SetupSectionStatusValue @default(NOT_STARTED)
+  lastError          String?
   updatedByErpUserId Int?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -705,14 +707,14 @@ model SetupSectionStatus {
 }
 
 model AccountingActivation {
-  id                 String           @id @default(cuid())
-  companyId          String           @unique
-  status             ActivationStatus @default(NOT_ACTIVATED)
-  activatedAt        DateTime?
+  id                   String           @id @default(cuid())
+  companyId            String           @unique
+  status               ActivationStatus @default(NOT_ACTIVATED)
+  activatedAt          DateTime?
   activatedByErpUserId Int?
-  lastValidationJson Json?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  lastValidationJson   Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -811,17 +813,17 @@ model IntegrationEvent {
 }
 
 model PostingException {
-  id                 String                 @id @default(cuid())
-  companyId          String
-  integrationEventId String?
-  journalId          String?
-  reason             String
-  detailsJson        Json?
-  status             PostingExceptionStatus @default(OPEN)
-  resolvedAt         DateTime?
+  id                  String                 @id @default(cuid())
+  companyId           String
+  integrationEventId  String?
+  journalId           String?
+  reason              String
+  detailsJson         Json?
+  status              PostingExceptionStatus @default(OPEN)
+  resolvedAt          DateTime?
   resolvedByErpUserId Int?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -859,10 +861,10 @@ model Journal {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  lines              JournalLine[]
-  glEntries          GlEntry[]
-  integrationEvents  IntegrationEvent[]
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines               JournalLine[]
+  glEntries           GlEntry[]
+  integrationEvents   IntegrationEvent[]
   sourceDocumentLinks SourceDocumentLink[]
 
   @@unique([companyId, journalNumber])
@@ -873,24 +875,24 @@ model Journal {
 }
 
 model JournalLine {
-  id          String   @id @default(cuid())
-  companyId   String
-  journalId   String
-  lineNumber  Int
-  accountId   String
-  description String?
-  debit       Decimal  @default(0) @db.Decimal(18, 4)
-  credit      Decimal  @default(0) @db.Decimal(18, 4)
+  id            String   @id @default(cuid())
+  companyId     String
+  journalId     String
+  lineNumber    Int
+  accountId     String
+  description   String?
+  debit         Decimal  @default(0) @db.Decimal(18, 4)
+  credit        Decimal  @default(0) @db.Decimal(18, 4)
   /// Debit-positive amount in the journal's currency when it differs from the functional currency
   amountForeign Decimal? @db.Decimal(18, 4)
-  taxCode     String?
-  customerRef String?
-  supplierRef String?
-  project     String?
-  costCentre  String?
-  branchId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  taxCode       String?
+  customerRef   String?
+  supplierRef   String?
+  project       String?
+  costCentre    String?
+  branchId      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   journal Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
@@ -902,27 +904,27 @@ model JournalLine {
 }
 
 model GlEntry {
-  id                   String   @id @default(cuid())
-  companyId            String
-  accountId            String
-  journalId            String
-  journalLineId        String?
-  postingDate          DateTime
-  transactionDate      DateTime
-  journalNumber        String
-  referenceNumber      String?
-  sourceModule         String?
-  sourceDocumentType   String?
-  sourceDocumentId     String?
-  description          String?
-  debit                Decimal  @default(0) @db.Decimal(18, 4)
-  credit               Decimal  @default(0) @db.Decimal(18, 4)
-  runningBalance       Decimal  @default(0) @db.Decimal(18, 4)
-  costCentre           String?
-  project              String?
-  branchId             String?
-  createdByErpUserId   Int?
-  createdAt            DateTime @default(now())
+  id                 String   @id @default(cuid())
+  companyId          String
+  accountId          String
+  journalId          String
+  journalLineId      String?
+  postingDate        DateTime
+  transactionDate    DateTime
+  journalNumber      String
+  referenceNumber    String?
+  sourceModule       String?
+  sourceDocumentType String?
+  sourceDocumentId   String?
+  description        String?
+  debit              Decimal  @default(0) @db.Decimal(18, 4)
+  credit             Decimal  @default(0) @db.Decimal(18, 4)
+  runningBalance     Decimal  @default(0) @db.Decimal(18, 4)
+  costCentre         String?
+  project            String?
+  branchId           String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   account Account @relation(fields: [accountId], references: [id])
@@ -934,14 +936,14 @@ model GlEntry {
 }
 
 model SourceDocumentLink {
-  id                 String   @id @default(cuid())
-  companyId          String
-  journalId          String
-  sourceModule       String
-  sourceDocumentType String
-  sourceDocumentId   String
+  id                   String   @id @default(cuid())
+  companyId            String
+  journalId            String
+  sourceModule         String
+  sourceDocumentType   String
+  sourceDocumentId     String
   sourceDocumentNumber String?
-  createdAt          DateTime @default(now())
+  createdAt            DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   journal Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
@@ -990,65 +992,113 @@ enum ArPaymentMethod {
 }
 
 model Customer {
-  id                    String         @id @default(cuid())
-  companyId             String
-  code                  String
-  name                  String
-  customerType          CustomerType   @default(CREDIT)
-  category              String?
-  tin                   String?
-  vatNumber             String?
-  nationalId            String?
-  registrationNumber    String?
-  contactPerson         String?
-  telephone             String?
-  email                 String?
-  website               String?
-  physicalAddress       String?
-  country               String?
-  province              String?
-  district              String?
-  sector                String?
-  cell                  String?
-  village               String?
-  currency              String         @default("RWF")
-  paymentTerms          String?
-  creditLimit           Decimal        @default(0) @db.Decimal(18, 4)
-  creditPeriodDays      Int            @default(30)
-  arAccountId           String?
-  taxCategory           String?
-  defaultSalesAccountId String?
-  defaultPriceList      String?
-  salesRepresentative   String?
-  branchId              String?
-  costCentre            String?
-  status                CustomerStatus @default(ACTIVE)
-  creditStatus          CreditStatus   @default(GOOD)
-  riskCategory          String?
-  collectionPriority    String?
-  openingBalance        Decimal        @default(0) @db.Decimal(18, 4)
-  balance               Decimal        @default(0) @db.Decimal(18, 4)
-  notes                 String?
-  externalErpCustomerId String?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  id                     String           @id @default(cuid())
+  companyId              String
+  code                   String
+  name                   String
+  companyName            String?
+  customerType           CustomerType     @default(CREDIT)
+  category               String?
+  tin                    String?
+  vatNumber              String?
+  nationalId             String?
+  registrationNumber     String?
+  contactPerson          String?
+  telephone              String?
+  mobile                 String?
+  email                  String?
+  website                String?
+  physicalAddress        String?
+  shippingAddress        String?
+  country                String?
+  province               String?
+  district               String?
+  sector                 String?
+  cell                   String?
+  village                String?
+  currency               String           @default("RWF")
+  paymentTerms           String?
+  preferredPaymentMethod ArPaymentMethod?
+  creditLimit            Decimal          @default(0) @db.Decimal(18, 4)
+  creditPeriodDays       Int              @default(30)
+  arAccountId            String?
+  taxCategory            String?
+  defaultSalesAccountId  String?
+  defaultPriceList       String?
+  salesRepresentative    String?
+  branchId               String?
+  costCentre             String?
+  status                 CustomerStatus   @default(ACTIVE)
+  creditStatus           CreditStatus     @default(GOOD)
+  riskCategory           String?
+  collectionPriority     String?
+  openingBalance         Decimal          @default(0) @db.Decimal(18, 4)
+  balance                Decimal          @default(0) @db.Decimal(18, 4)
+  notes                  String?
+  parentId               String?
+  tags                   String[]         @default([])
+  taxExempt              Boolean          @default(false)
+  taxExemptReason        String?
+  externalErpCustomerId  String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
 
-  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  invoices    ArInvoice[]
-  receipts    ArReceipt[]
-  creditNotes ArCreditNote[]
-  debitNotes  ArDebitNote[]
-  deposits    ArDeposit[]
-  ledger      ArLedgerEntry[]
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoices            ArInvoice[]
+  receipts            ArReceipt[]
+  creditNotes         ArCreditNote[]
+  debitNotes          ArDebitNote[]
+  deposits            ArDeposit[]
+  ledger              ArLedgerEntry[]
   commercialDocuments CommercialDocument[]
-  projects Project[]
-  timeActivities TimeActivity[]
+  projects            Project[]
+  timeActivities      TimeActivity[]
+  customerNotes       CustomerNote[]
+  contacts            CustomerContact[]
+  parent              Customer?            @relation("SubCustomers", fields: [parentId], references: [id], onDelete: SetNull)
+  children            Customer[]           @relation("SubCustomers")
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpCustomerId])
   @@index([companyId, status])
   @@index([companyId, name])
+  @@index([companyId, parentId])
   @@map("customers")
+}
+
+/// Extra people at a customer (accounts payable clerk, site manager), beyond the main contact.
+model CustomerContact {
+  id         String   @id @default(cuid())
+  companyId  String
+  customerId String
+  name       String
+  role       String?
+  email      String?
+  phone      String?
+  createdAt  DateTime @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, customerId])
+  @@map("customer_contacts")
+}
+
+/// Dated notes on a customer (call logs, promises to pay, reminders). Append-only; author is the ERP user.
+model CustomerNote {
+  id         String   @id @default(cuid())
+  companyId  String
+  customerId String
+  body       String
+  erpUserId  Int
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, customerId, createdAt])
+  @@map("customer_notes")
 }
 
 model ArInvoice {
@@ -1077,11 +1127,12 @@ model ArInvoice {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer    Customer        @relation(fields: [customerId], references: [id])
-  allocations ArAllocation[]
-  creditNotes ArCreditNote[]
-  lines       ArInvoiceLine[]
+  company            Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer           Customer              @relation(fields: [customerId], references: [id])
+  allocations        ArAllocation[]
+  creditNotes        ArCreditNote[]
+  lines              ArInvoiceLine[]
+  creditApplications ArCreditApplication[]
 
   @@unique([companyId, invoiceNumber])
   @@index([companyId, customerId, status])
@@ -1170,6 +1221,8 @@ model ArCreditNote {
   net                Decimal          @default(0) @db.Decimal(18, 4)
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
+  /// Credit still on the customer's account, not yet set against an invoice.
+  unapplied          Decimal          @default(0) @db.Decimal(18, 4)
   status             ArDocumentStatus @default(POSTED)
   journalId          String?
   description        String?
@@ -1180,14 +1233,32 @@ model ArCreditNote {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer Customer  @relation(fields: [customerId], references: [id])
-  invoice  ArInvoice? @relation(fields: [invoiceId], references: [id])
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer     Customer              @relation(fields: [customerId], references: [id])
+  invoice      ArInvoice?            @relation(fields: [invoiceId], references: [id])
+  applications ArCreditApplication[]
 
   @@unique([companyId, creditNoteNumber])
   @@index([companyId, customerId])
   @@index([companyId, sourceDocumentType, sourceDocumentId])
   @@map("ar_credit_notes")
+}
+
+/// A credit note applied to an invoice after it was issued (QuickBooks "apply credits").
+model ArCreditApplication {
+  id           String   @id @default(cuid())
+  creditNoteId String
+  invoiceId    String
+  amount       Decimal  @db.Decimal(18, 4)
+  erpUserId    Int?
+  createdAt    DateTime @default(now())
+
+  creditNote ArCreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  invoice    ArInvoice    @relation(fields: [invoiceId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([invoiceId])
+  @@map("ar_credit_applications")
 }
 
 model ArDebitNote {
@@ -1353,16 +1424,16 @@ model Supplier {
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
 
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  bills       ApBill[]
-  payments    ApPayment[]
-  creditNotes ApCreditNote[]
-  debitNotes  ApDebitNote[]
-  advances    ApAdvance[]
-  ledger      ApLedgerEntry[]
-  goodsReceipts GoodsReceipt[]
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bills               ApBill[]
+  payments            ApPayment[]
+  creditNotes         ApCreditNote[]
+  debitNotes          ApDebitNote[]
+  advances            ApAdvance[]
+  ledger              ApLedgerEntry[]
+  goodsReceipts       GoodsReceipt[]
   commercialDocuments CommercialDocument[]
-  itemReceipts ItemReceipt[]
+  itemReceipts        ItemReceipt[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpSupplierId])
@@ -1664,13 +1735,13 @@ model InventoryItem {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  balances  InventoryBalance[]
-  movements InventoryMovement[]
-  layers    InventoryCostLayer[]
-  commercialLines CommercialDocumentLine[]
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  balances         InventoryBalance[]
+  movements        InventoryMovement[]
+  layers           InventoryCostLayer[]
+  commercialLines  CommercialDocumentLine[]
   itemReceiptLines ItemReceiptLine[]
-  adjustmentLines InventoryAdjustmentLine[]
+  adjustmentLines  InventoryAdjustmentLine[]
 
   @@unique([companyId, externalProductId])
   @@index([companyId, name])
@@ -1834,11 +1905,11 @@ model FinancialAccount {
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
-  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  transactions     BankTransaction[]    @relation("BankTransactionAccount")
-  transfersIn      BankTransaction[]    @relation("BankTransactionCounterAccount")
-  statements       BankStatement[]
-  reconciliations  BankReconciliation[]
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions    BankTransaction[]    @relation("BankTransactionAccount")
+  transfersIn     BankTransaction[]    @relation("BankTransactionCounterAccount")
+  statements      BankStatement[]
+  reconciliations BankReconciliation[]
 
   @@unique([companyId, glAccountId])
   @@unique([companyId, name])
@@ -1864,6 +1935,8 @@ model BankTransaction {
   partyName                 String?
   /// Set when the money was received from a customer or paid to a supplier through their control account.
   customerId                String?
+  /// Display-only link for money paid back to a customer (refund receipts); posts nothing to receivables.
+  relatedCustomerId         String?
   supplierId                String?
   arReceiptId               String?
   apPaymentId               String?
@@ -2044,20 +2117,20 @@ enum TaxPaymentStatus {
 
 /// Company tax settings. Rates live on TaxCode; this only holds registration and filing preferences.
 model TaxSettings {
-  id                   String   @id @default(cuid())
-  companyId            String   @unique
-  taxAuthority         String?
-  tin                  String?
-  vatRegistered        Boolean  @default(false)
-  vatFilingFrequency   String?
-  taxCurrency          String   @default("RWF")
-  roundingMethod       String?
+  id                     String   @id @default(cuid())
+  companyId              String   @unique
+  taxAuthority           String?
+  tin                    String?
+  vatRegistered          Boolean  @default(false)
+  vatFilingFrequency     String?
+  taxCurrency            String   @default("RWF")
+  roundingMethod         String?
   defaultOutputTaxCodeId String?
   defaultInputTaxCodeId  String?
   defaultWhtTaxCodeId    String?
-  notes                String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2066,22 +2139,22 @@ model TaxSettings {
 
 /// A tax code the company has configured. Rate is stored and applied; Accounting never invents a statutory rate.
 model TaxCode {
-  id            String    @id @default(cuid())
-  companyId     String
-  code          String
-  name          String
-  taxType       TaxType
-  ratePercent   Decimal   @db.Decimal(9, 4)
-  glAccountId   String?
-  authority     String?
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  isActive      Boolean   @default(true)
-  appliesTo     String?
-  notes         String?
+  id                 String    @id @default(cuid())
+  companyId          String
+  code               String
+  name               String
+  taxType            TaxType
+  ratePercent        Decimal   @db.Decimal(9, 4)
+  glAccountId        String?
+  authority          String?
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  isActive           Boolean   @default(true)
+  appliesTo          String?
+  notes              String?
   createdByErpUserId Int?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2091,31 +2164,31 @@ model TaxCode {
 }
 
 model TaxPayment {
-  id                 String           @id @default(cuid())
-  companyId          String
-  number             String
-  paymentDate        DateTime
-  taxType            TaxType
-  taxCodeId          String?
-  taxAccountId       String
-  bankAccountId      String
-  financialAccountId String?
-  amount             Decimal          @db.Decimal(18, 4)
-  isRefund           Boolean          @default(false)
-  reference          String?
-  description        String?
-  periodFrom         DateTime?
-  periodTo           DateTime?
-  filingId           String?
-  status             TaxPaymentStatus @default(POSTED)
-  journalId          String?
-  reversalJournalId  String?
-  reversedAt         DateTime?
+  id                  String           @id @default(cuid())
+  companyId           String
+  number              String
+  paymentDate         DateTime
+  taxType             TaxType
+  taxCodeId           String?
+  taxAccountId        String
+  bankAccountId       String
+  financialAccountId  String?
+  amount              Decimal          @db.Decimal(18, 4)
+  isRefund            Boolean          @default(false)
+  reference           String?
+  description         String?
+  periodFrom          DateTime?
+  periodTo            DateTime?
+  filingId            String?
+  status              TaxPaymentStatus @default(POSTED)
+  journalId           String?
+  reversalJournalId   String?
+  reversedAt          DateTime?
   reversedByErpUserId Int?
-  reversalReason     String?
-  createdByErpUserId Int?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  reversalReason      String?
+  createdByErpUserId  Int?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2126,7 +2199,7 @@ model TaxPayment {
 }
 
 model TaxAdjustment {
-  id                 String   @id @default(cuid())
+  id                 String             @id @default(cuid())
   companyId          String
   number             String
   adjustmentDate     DateTime
@@ -2134,16 +2207,16 @@ model TaxAdjustment {
   taxCodeId          String?
   taxAccountId       String
   contraAccountId    String
-  amount             Decimal  @db.Decimal(18, 4)
+  amount             Decimal            @db.Decimal(18, 4)
   /// true = increase the tax liability / decrease recoverable; false = the opposite
-  increasesLiability Boolean  @default(true)
+  increasesLiability Boolean            @default(true)
   reason             String
   reference          String?
   status             ApprovalGateStatus @default(POSTED)
   journalId          String?
   createdByErpUserId Int?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2153,24 +2226,24 @@ model TaxAdjustment {
 }
 
 model TaxFiling {
-  id                 String          @id @default(cuid())
-  companyId          String
-  number             String
-  kind               TaxFilingKind
-  status             TaxFilingStatus @default(DRAFT)
-  periodFrom         DateTime
-  periodTo           DateTime
-  dueDate            DateTime?
-  preparedAt         DateTime?
+  id                  String          @id @default(cuid())
+  companyId           String
+  number              String
+  kind                TaxFilingKind
+  status              TaxFilingStatus @default(DRAFT)
+  periodFrom          DateTime
+  periodTo            DateTime
+  dueDate             DateTime?
+  preparedAt          DateTime?
   preparedByErpUserId Int?
-  filedAt            DateTime?
-  filedByErpUserId   Int?
-  filingReference    String?
+  filedAt             DateTime?
+  filedByErpUserId    Int?
+  filingReference     String?
   /// Snapshot of the return figures at prepare/file time
-  summary            Json?
-  notes              String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  summary             Json?
+  notes               String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2302,9 +2375,9 @@ model Expense {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category         ExpenseCategory   @relation(fields: [categoryId], references: [id])
-  recurringExpense RecurringExpense? @relation(fields: [recurringExpenseId], references: [id])
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category         ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  recurringExpense RecurringExpense?   @relation(fields: [recurringExpenseId], references: [id])
   allocations      ExpenseAllocation[]
 
   @@unique([companyId, number])
@@ -2316,16 +2389,16 @@ model Expense {
 }
 
 model ExpenseAllocation {
-  id          String  @id @default(cuid())
-  expenseId   String
-  companyId   String
-  branch      String?
-  department  String?
-  costCentre  String?
-  project     String?
-  amount      Decimal @db.Decimal(18, 4)
-  percent     Decimal @db.Decimal(8, 4)
-  notes       String?
+  id         String  @id @default(cuid())
+  expenseId  String
+  companyId  String
+  branch     String?
+  department String?
+  costCentre String?
+  project    String?
+  amount     Decimal @db.Decimal(18, 4)
+  percent    Decimal @db.Decimal(8, 4)
+  notes      String?
 
   expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 
@@ -2334,16 +2407,16 @@ model ExpenseAllocation {
 }
 
 model RecurringExpense {
-  id                 String              @id @default(cuid())
+  id                 String             @id @default(cuid())
   companyId          String
   number             String
   name               String
   categoryId         String
   expenseAccountId   String?
-  paymentMode        ExpensePaymentMode  @default(IMMEDIATE)
+  paymentMode        ExpensePaymentMode @default(IMMEDIATE)
   frequency          RecurringFrequency
-  amount             Decimal             @db.Decimal(18, 4)
-  taxAmount          Decimal             @default(0) @db.Decimal(18, 4)
+  amount             Decimal            @db.Decimal(18, 4)
+  taxAmount          Decimal            @default(0) @db.Decimal(18, 4)
   payeeName          String?
   supplierId         String?
   creditAccountId    String?
@@ -2357,11 +2430,11 @@ model RecurringExpense {
   endDate            DateTime?
   nextRunDate        DateTime
   lastGeneratedAt    DateTime?
-  autoPost           Boolean             @default(false)
-  isActive           Boolean             @default(true)
+  autoPost           Boolean            @default(false)
+  isActive           Boolean            @default(true)
   createdByErpUserId Int?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   expenses Expense[]
@@ -2409,22 +2482,22 @@ enum AssetAcquisitionMethod {
 }
 
 model FixedAssetCategory {
-  id                     String             @id @default(cuid())
-  companyId              String
-  code                   String
-  name                   String
-  usefulLifeMonths       Int                @default(0)
-  depreciationMethod     DepreciationMethod @default(STRAIGHT_LINE)
-  residualPercent        Decimal            @default(0) @db.Decimal(9, 4)
-  ratePercent            Decimal?           @db.Decimal(9, 4)
-  assetAccountId         String?
-  accumDepAccountId      String?
-  depExpenseAccountId    String?
-  isActive               Boolean            @default(true)
-  notes                  String?
-  createdByErpUserId     Int?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  id                  String             @id @default(cuid())
+  companyId           String
+  code                String
+  name                String
+  usefulLifeMonths    Int                @default(0)
+  depreciationMethod  DepreciationMethod @default(STRAIGHT_LINE)
+  residualPercent     Decimal            @default(0) @db.Decimal(9, 4)
+  ratePercent         Decimal?           @db.Decimal(9, 4)
+  assetAccountId      String?
+  accumDepAccountId   String?
+  depExpenseAccountId String?
+  isActive            Boolean            @default(true)
+  notes               String?
+  createdByErpUserId  Int?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assets  FixedAsset[]
@@ -2435,7 +2508,7 @@ model FixedAssetCategory {
 }
 
 model FixedAsset {
-  id                      String                  @id @default(cuid())
+  id                      String                 @id @default(cuid())
   companyId               String
   number                  String
   name                    String
@@ -2446,21 +2519,21 @@ model FixedAsset {
   supplierId              String?
   supplierName            String?
   purchaseDate            DateTime?
-  acquisitionCost         Decimal                 @db.Decimal(18, 4)
-  currencyCode            String                  @default("RWF")
-  acquisitionMethod       AssetAcquisitionMethod  @default(PURCHASE)
-  residualValue           Decimal                 @default(0) @db.Decimal(18, 4)
-  usefulLifeMonths        Int                     @default(0)
-  depreciationMethod      DepreciationMethod      @default(STRAIGHT_LINE)
-  depreciationFrequency   DepreciationFrequency   @default(MONTHLY)
-  ratePercent             Decimal?                @db.Decimal(9, 4)
-  totalUnits              Decimal?                @db.Decimal(18, 4)
-  unitsDepreciated        Decimal                 @default(0) @db.Decimal(18, 4)
-  depreciatedMonths       Int                     @default(0)
-  depreciationBase        Decimal?                @db.Decimal(18, 4)
-  depreciationBaseMonth   Int                     @default(0)
-  revaluationSurplus      Decimal                 @default(0) @db.Decimal(18, 4)
-  revaluationLossInPl     Decimal                 @default(0) @db.Decimal(18, 4)
+  acquisitionCost         Decimal                @db.Decimal(18, 4)
+  currencyCode            String                 @default("RWF")
+  acquisitionMethod       AssetAcquisitionMethod @default(PURCHASE)
+  residualValue           Decimal                @default(0) @db.Decimal(18, 4)
+  usefulLifeMonths        Int                    @default(0)
+  depreciationMethod      DepreciationMethod     @default(STRAIGHT_LINE)
+  depreciationFrequency   DepreciationFrequency  @default(MONTHLY)
+  ratePercent             Decimal?               @db.Decimal(9, 4)
+  totalUnits              Decimal?               @db.Decimal(18, 4)
+  unitsDepreciated        Decimal                @default(0) @db.Decimal(18, 4)
+  depreciatedMonths       Int                    @default(0)
+  depreciationBase        Decimal?               @db.Decimal(18, 4)
+  depreciationBaseMonth   Int                    @default(0)
+  revaluationSurplus      Decimal                @default(0) @db.Decimal(18, 4)
+  revaluationLossInPl     Decimal                @default(0) @db.Decimal(18, 4)
   assetAccountId          String?
   accumDepAccountId       String?
   depExpenseAccountId     String?
@@ -2473,30 +2546,30 @@ model FixedAsset {
   assignedEmployee        String?
   warrantyExpiry          DateTime?
   insuranceDetails        String?
-  status                  AssetStatus             @default(REGISTERED)
+  status                  AssetStatus            @default(REGISTERED)
   capitalizedAt           DateTime?
   capitalizationJournalId String?
-  accumulatedDepreciation Decimal                 @default(0) @db.Decimal(18, 4)
+  accumulatedDepreciation Decimal                @default(0) @db.Decimal(18, 4)
   lastDepreciationPeriod  String?
   disposedAt              DateTime?
   disposalMethod          DisposalMethod?
-  disposalProceeds        Decimal?                @db.Decimal(18, 4)
+  disposalProceeds        Decimal?               @db.Decimal(18, 4)
   disposalJournalId       String?
   disposalNotes           String?
   sourceDocumentType      String?
   sourceDocumentId        String?
   createdByErpUserId      Int?
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
-  company        Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category       FixedAssetCategory          @relation(fields: [categoryId], references: [id])
-  depreciations  FixedAssetDepreciation[]
-  maintenances   FixedAssetMaintenance[]
-  transfers      FixedAssetTransfer[]
-  revaluations   FixedAssetRevaluation[]
-  impairments    FixedAssetImpairment[]
-  usages         FixedAssetUsage[]
+  company       Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category      FixedAssetCategory       @relation(fields: [categoryId], references: [id])
+  depreciations FixedAssetDepreciation[]
+  maintenances  FixedAssetMaintenance[]
+  transfers     FixedAssetTransfer[]
+  revaluations  FixedAssetRevaluation[]
+  impairments   FixedAssetImpairment[]
+  usages        FixedAssetUsage[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -2506,18 +2579,18 @@ model FixedAsset {
 }
 
 model FixedAssetDepreciationRun {
-  id                 String   @id @default(cuid())
-  companyId          String
-  period             String
-  assetCount         Int      @default(0)
-  totalAmount        Decimal  @default(0) @db.Decimal(18, 4)
-  journalId          String?
-  postedAt           DateTime @default(now())
-  postedByErpUserId  Int?
-  notes              String?
+  id                String   @id @default(cuid())
+  companyId         String
+  period            String
+  assetCount        Int      @default(0)
+  totalAmount       Decimal  @default(0) @db.Decimal(18, 4)
+  journalId         String?
+  postedAt          DateTime @default(now())
+  postedByErpUserId Int?
+  notes             String?
 
-  company        Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  depreciations  FixedAssetDepreciation[]
+  company       Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depreciations FixedAssetDepreciation[]
 
   @@unique([companyId, period])
   @@index([companyId, postedAt])
@@ -2525,14 +2598,14 @@ model FixedAssetDepreciationRun {
 }
 
 model FixedAssetDepreciation {
-  id          String   @id @default(cuid())
-  companyId   String
-  assetId     String
-  runId       String
-  period      String
-  amount      Decimal  @db.Decimal(18, 4)
-  journalId   String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String
+  assetId   String
+  runId     String
+  period    String
+  amount    Decimal  @db.Decimal(18, 4)
+  journalId String?
+  createdAt DateTime @default(now())
 
   asset FixedAsset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
   run   FixedAssetDepreciationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
@@ -2543,18 +2616,18 @@ model FixedAssetDepreciation {
 }
 
 model FixedAssetMaintenance {
-  id                 String   @id @default(cuid())
-  companyId          String
-  assetId            String
-  maintenanceDate    DateTime
-  maintenanceType    String
-  serviceProvider    String?
-  description        String?
-  cost               Decimal  @default(0) @db.Decimal(18, 4)
+  id                  String    @id @default(cuid())
+  companyId           String
+  assetId             String
+  maintenanceDate     DateTime
+  maintenanceType     String
+  serviceProvider     String?
+  description         String?
+  cost                Decimal   @default(0) @db.Decimal(18, 4)
   nextMaintenanceDate DateTime?
-  expenseJournalId   String?
-  createdByErpUserId Int?
-  createdAt          DateTime @default(now())
+  expenseJournalId    String?
+  createdByErpUserId  Int?
+  createdAt           DateTime  @default(now())
 
   company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   asset   FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -2593,20 +2666,20 @@ model FixedAssetTransfer {
 }
 
 model FixedAssetRevaluation {
-  id                   String   @id @default(cuid())
-  companyId            String
-  assetId              String
-  effectiveDate        DateTime
-  previousCarrying     Decimal  @db.Decimal(18, 4)
-  fairValue            Decimal  @db.Decimal(18, 4)
-  amount               Decimal  @db.Decimal(18, 4)
-  increase             Boolean
-  reserveAmount        Decimal  @default(0) @db.Decimal(18, 4)
-  plAmount             Decimal  @default(0) @db.Decimal(18, 4)
-  valuationReference   String?
-  journalId            String?
-  createdByErpUserId   Int?
-  createdAt            DateTime @default(now())
+  id                 String   @id @default(cuid())
+  companyId          String
+  assetId            String
+  effectiveDate      DateTime
+  previousCarrying   Decimal  @db.Decimal(18, 4)
+  fairValue          Decimal  @db.Decimal(18, 4)
+  amount             Decimal  @db.Decimal(18, 4)
+  increase           Boolean
+  reserveAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  plAmount           Decimal  @default(0) @db.Decimal(18, 4)
+  valuationReference String?
+  journalId          String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
 
   company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   asset   FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -2616,17 +2689,17 @@ model FixedAssetRevaluation {
 }
 
 model FixedAssetImpairment {
-  id                 String   @id @default(cuid())
+  id                 String             @id @default(cuid())
   companyId          String
   assetId            String
   impairmentDate     DateTime
-  recoverableAmount  Decimal  @db.Decimal(18, 4)
-  lossAmount         Decimal  @db.Decimal(18, 4)
+  recoverableAmount  Decimal            @db.Decimal(18, 4)
+  lossAmount         Decimal            @db.Decimal(18, 4)
   reason             String?
   status             ApprovalGateStatus @default(POSTED)
   journalId          String?
   createdByErpUserId Int?
-  createdAt          DateTime @default(now())
+  createdAt          DateTime           @default(now())
 
   company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   asset   FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -2743,26 +2816,26 @@ model RecurringJournalLine {
 }
 
 model PeriodClose {
-  id                 String      @id @default(cuid())
-  companyId          String
-  periodId           String
-  kind               CloseKind
-  status             CloseStatus @default(CLOSED)
+  id                   String      @id @default(cuid())
+  companyId            String
+  periodId             String
+  kind                 CloseKind
+  status               CloseStatus @default(CLOSED)
   /// Checklist as it stood when the close was requested, replaced by the one at the moment of closing
-  checklistJson      Json
-  journalId          String?
+  checklistJson        Json
+  journalId            String?
   requestedByErpUserId Int?
-  requestedAt        DateTime    @default(now())
-  approvalRequestId  String?
-  approvedByErpUserId Int?
-  approvedAt         DateTime?
-  decisionNote       String?
-  closedByErpUserId  Int?
-  closedAt           DateTime?
-  reopenReason       String?
-  reopenedByErpUserId Int?
-  reopenedAt         DateTime?
-  updatedAt          DateTime    @updatedAt
+  requestedAt          DateTime    @default(now())
+  approvalRequestId    String?
+  approvedByErpUserId  Int?
+  approvedAt           DateTime?
+  decisionNote         String?
+  closedByErpUserId    Int?
+  closedAt             DateTime?
+  reopenReason         String?
+  reopenedByErpUserId  Int?
+  reopenedAt           DateTime?
+  updatedAt            DateTime    @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2788,13 +2861,13 @@ model PeriodCloseOverride {
 }
 
 model ExchangeRate {
-  id          String   @id @default(cuid())
-  companyId   String
-  currency    String
-  rateDate    DateTime
-  rate        Decimal  @db.Decimal(18, 8)
-  source      String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String
+  currency  String
+  rateDate  DateTime
+  rate      Decimal  @db.Decimal(18, 8)
+  source    String?
+  createdAt DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2820,21 +2893,21 @@ model FxRevaluation {
 }
 
 model Budget {
-  id                 String       @id @default(cuid())
-  companyId          String
-  name               String
-  financialYearId    String?
-  status             BudgetStatus @default(DRAFT)
+  id                   String       @id @default(cuid())
+  companyId            String
+  name                 String
+  financialYearId      String?
+  status               BudgetStatus @default(DRAFT)
   /// Versions of one budget share the family id of the first version (null on the first version itself)
-  familyId           String?
-  version            Int          @default(1)
-  revisedFromId      String?
-  createdByErpUserId Int?
-  approvedAt         DateTime?
-  activatedAt        DateTime?
+  familyId             String?
+  version              Int          @default(1)
+  revisedFromId        String?
+  createdByErpUserId   Int?
+  approvedAt           DateTime?
+  activatedAt          DateTime?
   activatedByErpUserId Int?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lines   BudgetLine[]
@@ -2877,16 +2950,16 @@ model Dimension {
 }
 
 model ControlItem {
-  id        String        @id @default(cuid())
-  companyId String
-  code      String
-  title     String
-  category  String
-  status    ControlStatus @default(OPEN)
-  notes     String?
+  id           String        @id @default(cuid())
+  companyId    String
+  code         String
+  title        String
+  category     String
+  status       ControlStatus @default(OPEN)
+  notes        String?
   lastTestedAt DateTime?
-  updatedAt DateTime      @updatedAt
-  createdAt DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime      @default(now())
 
   company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   tests   ControlTest[]
@@ -2898,25 +2971,25 @@ model ControlItem {
 
 /// A risk scored likelihood × impact (1–5 each), with the controls that address it.
 model RiskItem {
-  id                  String   @id @default(cuid())
-  companyId           String
-  code                String
-  title               String
-  category            String
-  description         String?
-  likelihood          Int
-  impact              Int
+  id                 String    @id @default(cuid())
+  companyId          String
+  code               String
+  title              String
+  category           String
+  description        String?
+  likelihood         Int
+  impact             Int
   /// After controls; null until assessed
-  residualLikelihood  Int?
-  residualImpact      Int?
+  residualLikelihood Int?
+  residualImpact     Int?
   /// OPEN, MITIGATING, ACCEPTED or CLOSED
-  status              String   @default("OPEN")
-  ownerName           String?
-  ownerErpUserId      Int?
-  reviewDate          DateTime?
-  createdByErpUserId  Int?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  status             String    @default("OPEN")
+  ownerName          String?
+  ownerErpUserId     Int?
+  reviewDate         DateTime?
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   controls RiskControlLink[]
@@ -3131,8 +3204,8 @@ model CompanyGroup {
   name           String
   createdAt      DateTime @default(now())
 
-  owner    Company       @relation(fields: [ownerCompanyId], references: [id], onDelete: Cascade)
-  members  GroupMember[]
+  owner        Company       @relation(fields: [ownerCompanyId], references: [id], onDelete: Cascade)
+  members      GroupMember[]
   eliminations Elimination[]
 
   @@index([ownerCompanyId])
@@ -3140,11 +3213,11 @@ model CompanyGroup {
 }
 
 model GroupMember {
-  id                 String  @id @default(cuid())
-  groupId            String
-  companyId          String?
-  name               String
-  ownershipPercent   Decimal @default(100) @db.Decimal(8, 4)
+  id               String  @id @default(cuid())
+  groupId          String
+  companyId        String?
+  name             String
+  ownershipPercent Decimal @default(100) @db.Decimal(8, 4)
 
   group   CompanyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
@@ -3184,13 +3257,13 @@ model EliminationLine {
 }
 
 model ForecastScenario {
-  id            String   @id @default(cuid())
-  companyId     String
-  name          String
-  horizonMonths Int
-  resultJson    Json
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  horizonMonths      Int
+  resultJson         Json
   createdByErpUserId Int?
-  createdAt     DateTime @default(now())
+  createdAt          DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -3199,21 +3272,21 @@ model ForecastScenario {
 }
 
 model AnomalyFlag {
-  id        String   @id @default(cuid())
-  companyId String
-  journalId String?
+  id                 String    @id @default(cuid())
+  companyId          String
+  journalId          String?
   /// AMOUNT_OUTLIER, ROUND_AMOUNT, OUTSIDE_HOURS, DUPLICATE_BILL or DUPLICATE_PAYMENT
-  rule       String  @default("AMOUNT_OUTLIER")
-  entityType String  @default("Journal")
-  entityId   String?
-  score     Decimal  @db.Decimal(18, 4)
-  reason    String
+  rule               String    @default("AMOUNT_OUTLIER")
+  entityType         String    @default("Journal")
+  entityId           String?
+  score              Decimal   @db.Decimal(18, 4)
+  reason             String
   /// OPEN, INVESTIGATING, CONFIRMED or DISMISSED
-  status    String   @default("OPEN")
+  status             String    @default("OPEN")
   resolution         String?
   decidedByErpUserId Int?
   decidedAt          DateTime?
-  createdAt DateTime @default(now())
+  createdAt          DateTime  @default(now())
 
   company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   notes   AnomalyNote[]
@@ -3238,16 +3311,16 @@ model AnomalyNote {
 
 /// Result of a data integrity scan (ledger vs subledgers, numbering gaps, unbalanced journals, negative cash).
 model IntegrityScan {
-  id               String   @id @default(cuid())
-  companyId        String
+  id             String   @id @default(cuid())
+  companyId      String
   /// SCHEDULED or MANUAL
-  trigger          String
-  runByErpUserId   Int?
-  findingCount     Int
+  trigger        String
+  runByErpUserId Int?
+  findingCount   Int
   /// Hash of the findings, so an unchanged result is not notified again
-  fingerprint      String
-  findings         Json
-  createdAt        DateTime @default(now())
+  fingerprint    String
+  findings       Json
+  createdAt      DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -3363,17 +3436,17 @@ model ApiKeyUsage {
 }
 
 model WebhookEndpoint {
-  id                 String    @id @default(cuid())
+  id                 String   @id @default(cuid())
   companyId          String
   url                String
   /// Signs each delivery (HMAC-SHA256); shown once when the endpoint is created
   secret             String
   events             String[]
-  isActive           Boolean   @default(true)
+  isActive           Boolean  @default(true)
   description        String?
   createdByErpUserId Int?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   deliveries WebhookDelivery[]
@@ -3438,15 +3511,15 @@ model SignatureRecord {
 }
 
 model AutomationJob {
-  id          String    @id @default(cuid())
-  companyId   String
-  name        String
-  jobType     String
-  schedule    String
-  enabled     Boolean   @default(true)
-  lastRunAt   DateTime?
-  lastStatus  String?
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(cuid())
+  companyId  String
+  name       String
+  jobType    String
+  schedule   String
+  enabled    Boolean   @default(true)
+  lastRunAt  DateTime?
+  lastStatus String?
+  createdAt  DateTime  @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -3480,46 +3553,46 @@ enum CommercialDocumentStatus {
 
 /// Quotes, orders and delayed items. They do not touch the GL until converted to an invoice, credit note or bill.
 model CommercialDocument {
-  id              String                   @id @default(cuid())
-  companyId       String
-  kind            CommercialDocumentKind
+  id                 String                   @id @default(cuid())
+  companyId          String
+  kind               CommercialDocumentKind
   /// Number series; proposals share the estimate series.
-  series          String
-  number          String
-  status          CommercialDocumentStatus
-  customerId      String?
-  supplierId      String?
-  partyName       String
-  leadName        String?
-  leadEmail       String?
-  contact         String?
-  billTo          String?
-  shipTo          String?
-  shipVia         String?
-  terms           String?
-  docDate         DateTime
-  dueDate         DateTime?
-  expirationDate  DateTime?
-  acceptedBy      String?
-  acceptedDate    DateTime?
-  memo            String?
-  note            String?
-  currency        String
-  exchangeRate    Decimal                  @default(1) @db.Decimal(18, 8)
-  discountPct     Decimal                  @default(0) @db.Decimal(7, 4)
-  net             Decimal                  @db.Decimal(18, 4)
-  tax             Decimal                  @default(0) @db.Decimal(18, 4)
-  total           Decimal                  @db.Decimal(18, 4)
-  deposit         Decimal                  @default(0) @db.Decimal(18, 4)
-  projectId       String?
-  convertedToType String?
-  convertedToId   String?
-  convertedToNumber String?
+  series             String
+  number             String
+  status             CommercialDocumentStatus
+  customerId         String?
+  supplierId         String?
+  partyName          String
+  leadName           String?
+  leadEmail          String?
+  contact            String?
+  billTo             String?
+  shipTo             String?
+  shipVia            String?
+  terms              String?
+  docDate            DateTime
+  dueDate            DateTime?
+  expirationDate     DateTime?
+  acceptedBy         String?
+  acceptedDate       DateTime?
+  memo               String?
+  note               String?
+  currency           String
+  exchangeRate       Decimal                  @default(1) @db.Decimal(18, 8)
+  discountPct        Decimal                  @default(0) @db.Decimal(7, 4)
+  net                Decimal                  @db.Decimal(18, 4)
+  tax                Decimal                  @default(0) @db.Decimal(18, 4)
+  total              Decimal                  @db.Decimal(18, 4)
+  deposit            Decimal                  @default(0) @db.Decimal(18, 4)
+  projectId          String?
+  convertedToType    String?
+  convertedToId      String?
+  convertedToNumber  String?
   /// Screen-only fields (payment options, chosen style, ...).
-  meta            Json?
+  meta               Json?
   createdByErpUserId Int?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   company  Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer Customer?                @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -3565,20 +3638,20 @@ enum ItemReceiptStatus {
 
 /// Goods received before the supplier's bill: inventory is debited against goods received not invoiced.
 model ItemReceipt {
-  id              String            @id @default(cuid())
-  companyId       String
-  number          String
-  supplierId      String
-  purchaseOrderId String?
-  goodsReceiptId  String?           @unique
-  journalId       String?
-  receiptDate     DateTime
-  memo            String?
-  value           Decimal           @db.Decimal(18, 4)
-  status          ItemReceiptStatus @default(RECEIVED)
-  billId          String?
+  id                 String            @id @default(cuid())
+  companyId          String
+  number             String
+  supplierId         String
+  purchaseOrderId    String?
+  goodsReceiptId     String?           @unique
+  journalId          String?
+  receiptDate        DateTime
+  memo               String?
+  value              Decimal           @db.Decimal(18, 4)
+  status             ItemReceiptStatus @default(RECEIVED)
+  billId             String?
   createdByErpUserId Int?
-  createdAt       DateTime          @default(now())
+  createdAt          DateTime          @default(now())
 
   company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplier      Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
@@ -3622,19 +3695,19 @@ enum InventoryAdjustmentStatus {
 }
 
 model InventoryAdjustment {
-  id          String                    @id @default(cuid())
-  companyId   String
-  number      String
-  type        InventoryAdjustmentType
-  status      InventoryAdjustmentStatus
-  adjustmentDate DateTime
-  reason      String
-  accountId   String
-  memo        String?
-  value       Decimal                   @default(0) @db.Decimal(18, 4)
-  journalId   String?
+  id                 String                    @id @default(cuid())
+  companyId          String
+  number             String
+  type               InventoryAdjustmentType
+  status             InventoryAdjustmentStatus
+  adjustmentDate     DateTime
+  reason             String
+  accountId          String
+  memo               String?
+  value              Decimal                   @default(0) @db.Decimal(18, 4)
+  journalId          String?
   createdByErpUserId Int?
-  createdAt   DateTime                  @default(now())
+  createdAt          DateTime                  @default(now())
 
   company Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lines   InventoryAdjustmentLine[]
@@ -3645,15 +3718,15 @@ model InventoryAdjustment {
 }
 
 model InventoryAdjustmentLine {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   adjustmentId String
   lineNumber   Int
   itemId       String
   locationId   String
   /// Signed change: quantity for QUANTITY adjustments, money for VALUE adjustments.
-  change       Decimal @db.Decimal(18, 4)
+  change       Decimal  @db.Decimal(18, 4)
   unitCost     Decimal? @db.Decimal(18, 4)
-  value        Decimal @default(0) @db.Decimal(18, 4)
+  value        Decimal  @default(0) @db.Decimal(18, 4)
 
   adjustment InventoryAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
   item       InventoryItem       @relation(fields: [itemId], references: [id], onDelete: Restrict)
@@ -3672,25 +3745,25 @@ enum ProjectStatus {
 
 /// A project is also a PROJECT dimension (same code), so posted journal lines carry it and profit comes from the GL.
 model Project {
-  id           String        @id
-  companyId    String
-  code         String
-  name         String
-  customerId   String?
-  customerName String?
-  customerAddress String?
-  email        String?
-  startDate    DateTime?
-  endDate      DateTime?
-  status       ProjectStatus @default(NOT_STARTED)
-  notes        String?
-  progress     Int           @default(0)
-  starred      Boolean       @default(false)
-  budget       Decimal?      @db.Decimal(18, 4)
-  customFields Json?
+  id                 String        @id
+  companyId          String
+  code               String
+  name               String
+  customerId         String?
+  customerName       String?
+  customerAddress    String?
+  email              String?
+  startDate          DateTime?
+  endDate            DateTime?
+  status             ProjectStatus @default(NOT_STARTED)
+  notes              String?
+  progress           Int           @default(0)
+  starred            Boolean       @default(false)
+  budget             Decimal?      @db.Decimal(18, 4)
+  customFields       Json?
   createdByErpUserId Int?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer  Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -3721,22 +3794,22 @@ model ProjectLink {
 }
 
 model Task {
-  id          String    @id
-  companyId   String
-  name        String
-  description String?
-  assignee    String?
-  dueDate     DateTime?
-  priority    String?
-  recurring   Boolean   @default(false)
-  frequency   String?
-  links       Json?
-  files       Json?
-  done        Boolean   @default(false)
-  projectId   String?
+  id                 String    @id
+  companyId          String
+  name               String
+  description        String?
+  assignee           String?
+  dueDate            DateTime?
+  priority           String?
+  recurring          Boolean   @default(false)
+  frequency          String?
+  links              Json?
+  files              Json?
+  done               Boolean   @default(false)
+  projectId          String?
   createdByErpUserId Int?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -3746,46 +3819,46 @@ model Task {
 }
 
 model Employee {
-  id               String    @id
-  companyId        String
-  employeeNumber   String
-  firstName        String
-  lastName         String
-  middleName       String?
-  preferredName    String?
-  email            String?
-  phone            String?
-  address          String?
-  city             String?
-  country          String?
-  gender           String?
-  jobTitle         String?
-  department       String?
-  employmentType   String?
-  joiningDate      DateTime?
-  workLocation     String?
-  reportingManager String?
-  employmentStatus String    @default("active")
-  contractStart    DateTime?
-  contractEnd      DateTime?
-  probation        String?
-  workSchedule     String?
+  id                 String    @id
+  companyId          String
+  employeeNumber     String
+  firstName          String
+  lastName           String
+  middleName         String?
+  preferredName      String?
+  email              String?
+  phone              String?
+  address            String?
+  city               String?
+  country            String?
+  gender             String?
+  jobTitle           String?
+  department         String?
+  employmentType     String?
+  joiningDate        DateTime?
+  workLocation       String?
+  reportingManager   String?
+  employmentStatus   String    @default("active")
+  contractStart      DateTime?
+  contractEnd        DateTime?
+  probation          String?
+  workSchedule       String?
   /// Restricted to team:manage.
-  dateOfBirth      DateTime?
-  nationalId       String?
-  payFrequency     String?
-  currency         String?
-  basicSalary      Decimal?  @db.Decimal(18, 4)
-  effectiveFrom    DateTime?
-  paymentMethod    String?
-  bankName         String?
-  accountHolder    String?
-  accountNumber    String?
-  tin              String?
-  rssb             String?
+  dateOfBirth        DateTime?
+  nationalId         String?
+  payFrequency       String?
+  currency           String?
+  basicSalary        Decimal?  @db.Decimal(18, 4)
+  effectiveFrom      DateTime?
+  paymentMethod      String?
+  bankName           String?
+  accountHolder      String?
+  accountNumber      String?
+  tin                String?
+  rssb               String?
   createdByErpUserId Int?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   time    TimeActivity[]
@@ -3796,23 +3869,23 @@ model Employee {
 }
 
 model TimeActivity {
-  id              String   @id @default(cuid())
-  companyId       String
-  employeeId      String?
-  personName      String
-  customerId      String?
-  customerName    String?
-  projectId       String?
-  service         String?
-  activityDate    DateTime
-  durationMinutes Int
-  billable        Boolean  @default(false)
-  hourlyRate      Decimal? @db.Decimal(18, 4)
-  notes           String?
-  batchId         String?
+  id                 String   @id @default(cuid())
+  companyId          String
+  employeeId         String?
+  personName         String
+  customerId         String?
+  customerName       String?
+  projectId          String?
+  service            String?
+  activityDate       DateTime
+  durationMinutes    Int
+  billable           Boolean  @default(false)
+  hourlyRate         Decimal? @db.Decimal(18, 4)
+  notes              String?
+  batchId            String?
   createdByErpUserId Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
@@ -3826,14 +3899,14 @@ model TimeActivity {
 
 /// Screen state with no accounting effect (saved reports, forecasts, planners, preferences).
 model WorkspaceRecord {
-  companyId  String
-  collection String
-  recordId   String
+  companyId      String
+  collection     String
+  recordId       String
   /// 0 = shared with the company; otherwise visible only to that user.
-  ownerErpUserId Int   @default(0)
-  data       Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  ownerErpUserId Int      @default(0)
+  data           Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 

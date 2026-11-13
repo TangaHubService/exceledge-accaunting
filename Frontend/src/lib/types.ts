@@ -117,29 +117,216 @@ export type CustomerType =
   | "EXPORT"
   | "FOREIGN";
 
+export type ArPaymentMethod = "CASH" | "BANK" | "MOBILE_MONEY" | "CARD" | "CHEQUE" | "ONLINE";
+
 export type Customer = {
   id: string;
   code: string;
   name: string;
+  companyName?: string | null;
   customerType: CustomerType;
   tin: string | null;
+  contactPerson?: string | null;
   telephone: string | null;
+  mobile?: string | null;
   email: string | null;
+  website?: string | null;
   physicalAddress: string | null;
+  shippingAddress?: string | null;
+  country?: string | null;
   currency: string;
   paymentTerms: string | null;
+  preferredPaymentMethod?: ArPaymentMethod | null;
   creditLimit: Decimal;
   creditPeriodDays: number;
   status: "ACTIVE" | "INACTIVE";
   creditStatus: "GOOD" | "WATCH" | "ON_HOLD" | "BLOCKED";
   balance: Decimal;
+  openingBalance?: Decimal;
   notes: string | null;
+  createdAt?: string;
+  parentId?: string | null;
+  tags?: string[];
+  taxExempt?: boolean;
+  taxExemptReason?: string | null;
+  /** Only on GET /customers/:id. */
+  parent?: { id: string; name: string; code: string } | null;
+  children?: Array<{ id: string; name: string; code: string; balance: number; status: "ACTIVE" | "INACTIVE" }>;
+  contacts?: Array<{ id: string; name: string; role: string | null; email: string | null; phone: string | null }>;
+  balanceWithSubCustomers?: number;
+};
+
+/** A row of the paged customer centre list; `overdue` comes from the server. */
+export type CustomerListRow = Customer & { overdue: number; subCustomerCount: number; parent?: { id: string; name: string } | null };
+
+export type CustomerListPage = {
+  rows: CustomerListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  counts: { all: number; inactive: number; owing: number; overdue: number; overLimit: number; credit: number };
+  totals: { owed: number };
+  moneyBar: MoneyBarData;
+  tags: Array<{ tag: string; count: number }>;
+};
+
+export type MoneyBarData = {
+  overdue: { amount: number; count: number };
+  notDue: { amount: number; count: number };
+  paid30: { amount: number; count: number };
+  unbilled: { amount: number; count: number };
+};
+
+export type CustomerDuplicate = {
+  id: string;
+  code: string;
+  name: string;
+  tin: string | null;
+  email: string | null;
+  telephone: string | null;
+  mobile: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  matched: Array<"name" | "tin" | "email" | "phone">;
+  blocking: boolean;
+};
+
+export type CustomerSummary = {
+  customerId: string;
+  currency: string;
+  outstanding: number;
+  totalInvoiced: number;
+  invoiceCount: number;
+  debitNotesTotal: number;
+  openingBalance: number;
+  paymentsReceived: number;
+  paymentCount: number;
+  overdue: number;
+  overdueCount: number;
+  oldestOverdueDays: number;
+  openInvoiceCount: number;
+  availableCredit: number;
+  credits: { deposits: number; unappliedPayments: number; unappliedCreditNotes: number };
+  moneyBar: MoneyBarData;
+  creditLimit: number;
+  creditHeadroom: number | null;
+  lastTransaction: { date: string; docType: string; docId: string; docNumber: string | null; amount: number } | null;
+};
+
+export type CustomerTxnType = "INVOICE" | "PAYMENT" | "CREDIT_NOTE" | "DEBIT_NOTE" | "DEPOSIT" | "ESTIMATE" | "SALES_ORDER" | "DELAYED_CHARGE" | "DELAYED_CREDIT" | "REFUND";
+
+/** Types that post to the books; the rest are estimates, orders and delayed charges/credits. */
+export type CustomerPostingType = "INVOICE" | "PAYMENT" | "CREDIT_NOTE" | "DEBIT_NOTE" | "DEPOSIT";
+
+export type CustomerTxnRow = {
+  id: string;
+  type: CustomerTxnType;
+  number: string;
+  date: string;
+  dueDate: string | null;
+  description: string | null;
+  total: number;
+  open: number;
+  status: string;
+  statusTone: "positive" | "negative" | "warning" | "neutral";
+  isOpening?: boolean;
+  posting: boolean;
+  kind?: string;
+  convertedTo?: { type: string; id: string; number: string } | null;
+};
+
+export type CustomerTxnPage = {
+  rows: CustomerTxnRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  totals: { total: number; open: number };
+};
+
+export type CustomerTxnDetail = {
+  type: Exclude<CustomerPostingType, "INVOICE">;
+  id: string;
+  number: string;
+  date: string;
+  dueDate?: string;
+  status: "POSTED" | "REVERSED";
+  customer: { id: string; code: string; name: string };
+  total: number;
+  net?: number;
+  tax?: number;
+  open: number;
+  method?: ArPaymentMethod;
+  reference: string | null;
+  description: string | null;
+  journalId: string | null;
+  applications: Array<{ applicationId?: string; invoiceId: string; invoiceNumber: string; date: string; amount: number }>;
+};
+
+export type InvoiceApplications = {
+  invoiceId: string;
+  status: "POSTED" | "REVERSED";
+  outstanding: number;
+  rows: Array<{
+    kind: "PAYMENT" | "CREDIT_NOTE" | "DEPOSIT" | "CREDIT_ON_ISSUE";
+    id: string;
+    sourceId: string;
+    sourceNumber: string;
+    date: string;
+    amount: number;
+    removable: boolean;
+    reason?: string;
+  }>;
+};
+
+export type CommercialDoc = {
+  id: string;
+  kind: "ESTIMATE" | "PROPOSAL" | "SALES_ORDER" | "DELAYED_CHARGE" | "DELAYED_CREDIT" | "PURCHASE_ORDER";
+  number: string;
+  status: string;
+  partyName: string;
+  docDate: string;
+  dueDate: string | null;
+  expirationDate: string | null;
+  memo: string | null;
+  note: string | null;
+  currency: string;
+  net: Decimal;
+  tax: Decimal;
+  total: Decimal;
+  convertedToType: string | null;
+  convertedToId: string | null;
+  convertedToNumber: string | null;
+  lines: Array<{ id: string; description: string; quantity: Decimal; unitPrice: Decimal; discount: Decimal; net: Decimal; taxCode: string | null; tax: Decimal }>;
+};
+
+export type CustomerNote = { id: string; body: string; erpUserId: number; authorName: string | null; createdAt: string };
+
+export type CustomerActivityItem = {
+  id: string;
+  at: string;
+  kind: "change" | "posting";
+  title: string;
+  detail: string | null;
+  erpUserId: number | null;
+  docType: string | null;
+  docId: string | null;
+  amount: number | null;
+};
+
+export type CustomerImportResult = {
+  dryRun: boolean;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: Array<{ row: number; name: string; ok: boolean; error?: string; code?: string; id?: string }>;
 };
 
 export type CustomerStatement = {
   type: "OUTSTANDING" | "FULL";
   customer: { id: string; code: string; name: string; balance: number };
   rows: Array<{
+    id: string;
     invoiceNumber: string;
     invoiceDate: string;
     dueDate: string;
@@ -1486,4 +1673,12 @@ export type DepPreview = {
   totalAmount: number;
   items: Array<{ assetId: string; number: string; name: string; amount: number; months: number; units: number; netBookValueAfter: number }>;
   skipped: Array<{ assetId: string; number: string; name: string; reason: string }>;
+};
+
+export type CustomerCreditSource = "PAYMENT" | "CREDIT_NOTE" | "DEPOSIT";
+
+export type CustomerCredits = {
+  customer: { id: string; code: string; name: string; currency: string };
+  credits: Array<{ type: CustomerCreditSource; id: string; number: string; date: string; currency: string; available: number; description: string | null }>;
+  invoices: Array<{ id: string; number: string; date: string; dueDate: string; currency: string; open: number; description: string | null; isOpening: boolean }>;
 };

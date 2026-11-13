@@ -40,5 +40,16 @@ export const env = {
   s3Endpoint: process.env.DOCUMENT_S3_ENDPOINT || undefined,
   s3AccessKeyId: process.env.DOCUMENT_S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? "",
   s3SecretAccessKey: process.env.DOCUMENT_S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY ?? "",
+  /** Outgoing email (invoices, statements, reminders). `MAIL_TRANSPORT=json` logs instead of sending (tests, local dev). */
+  mailTransport: (process.env.MAIL_TRANSPORT ?? "smtp").toLowerCase() === "json" ? ("json" as const) : ("smtp" as const),
+  // SMTP_* and EMAIL_* names are both accepted.
+  smtpHost: process.env.SMTP_HOST ?? process.env.EMAIL_HOST ?? "",
+  smtpPort: Number(process.env.SMTP_PORT ?? process.env.EMAIL_PORT ?? 587),
+  /** true for port 465 (implicit TLS); 587 upgrades with STARTTLS. */
+  smtpSecure: (process.env.SMTP_SECURE ?? ((process.env.SMTP_PORT ?? process.env.EMAIL_PORT) === "465" ? "true" : "false")).toLowerCase() === "true",
+  smtpUser: process.env.SMTP_USER ?? process.env.EMAIL_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? process.env.EMAIL_PASSWORD ?? "",
+  /** Sender shown to customers, e.g. "Demo Trading <accounts@demotrading.rw>". */
+  mailFrom: process.env.MAIL_FROM ?? process.env.EMAIL_FROM ?? process.env.SMTP_USER ?? process.env.EMAIL_USER ?? "",
   s3ForcePathStyle: (process.env.DOCUMENT_S3_FORCE_PATH_STYLE ?? "true").toLowerCase() !== "false",
 };

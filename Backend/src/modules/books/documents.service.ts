@@ -12,6 +12,7 @@ export const ATTACHABLE_TYPES = {
   Journal: { view: "journal:view", attach: "journal:create" },
   ApBill: { view: "ap:view", attach: "ap:manage" },
   ArInvoice: { view: "ar:view", attach: "ar:manage" },
+  Customer: { view: "ar:view", attach: "ar:manage" },
   Expense: { view: "expense:view", attach: "expense:manage" },
   FixedAsset: { view: "fa:view", attach: "fa:manage" },
   BankReconciliation: { view: "bank:view", attach: "bank:manage" },
@@ -108,6 +109,11 @@ async function findRecord(companyId: string, entityType: AttachableType, entityI
     case "ArInvoice": {
       const i = await prisma.arInvoice.findFirst({ where, select: { invoiceDate: true } });
       return i && { date: i.invoiceDate, keepReason: null };
+    }
+    case "Customer": {
+      // Contracts and IDs on a customer aren't tied to a period, so they can always be removed.
+      const c = await prisma.customer.findFirst({ where, select: { id: true } });
+      return c && { date: null, keepReason: null };
     }
     case "FixedAsset": {
       const a = await prisma.fixedAsset.findFirst({ where, select: { purchaseDate: true } });

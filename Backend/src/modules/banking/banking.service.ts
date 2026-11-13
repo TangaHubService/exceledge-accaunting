@@ -387,6 +387,7 @@ type MoneyInput = {
   chequeNumber?: string;
   partyType?: string;
   partyName?: string;
+  relatedCustomerId?: string;
   description?: string;
   statementLineId?: string;
   skipFundsCheck?: boolean;
@@ -511,6 +512,13 @@ async function recordMoney(companyId: string, direction: "IN" | "OUT", input: Mo
   }
   await assertReferenceFree(companyId, account.id, { reference: input.reference, chequeNumber: input.chequeNumber });
   const [sequence, prefix] = NUMBERING[kind];
+  let relatedCustomerId: string | undefined;
+  if (input.relatedCustomerId) {
+    if (direction !== "OUT") throw new Error("Only money paid out can be linked to a customer as a refund");
+    const customer = await prisma.customer.findFirst({ where: { id: input.relatedCustomerId, companyId }, select: { id: true } });
+    if (!customer) throw new Error("Customer does not exist");
+    relatedCustomerId = customer.id;
+  }
   const number = await nextNumber(companyId, sequence, prefix);
   const txn = await prisma.bankTransaction.create({
     data: {
@@ -525,6 +533,7 @@ async function recordMoney(companyId: string, direction: "IN" | "OUT", input: Mo
       chequeNumber: input.chequeNumber || undefined,
       partyType: input.partyType,
       partyName: input.partyName,
+      relatedCustomerId,
       description,
       lines: input.lines.map((l) => ({ accountId: l.accountId, amount: roundMoney(l.amount), description: l.description ?? null })),
       statementLineId: input.statementLineId,

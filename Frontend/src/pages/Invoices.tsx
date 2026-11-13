@@ -4,13 +4,15 @@ import { InvoiceForm, ReceiptForm } from "../components/ArForms";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { type Column, DataTable } from "../components/DataTable";
 import { PdfButton } from "../components/Documents";
+import { EmailComposer } from "../components/customers/EmailComposer";
+import { useFeedback } from "../components/feedback";
 import { SummaryRows } from "../components/forms";
 import { Badge, Drawer, DueStatus, EmptyState, Figure, Loadable, PageHeader, Pagination } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, plural, toNumber } from "../lib/format";
 import { Link, setQueryParam, useLocation } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
-import type { ArInvoiceDetail, ArInvoiceList, ArInvoiceRow, Customer } from "../lib/types";
+import type { ArInvoiceDetail, ArInvoiceList, ArInvoiceRow, Customer, InvoiceApplications } from "../lib/types";
 
 type Show = "OPEN" | "OVERDUE" | "PAID" | "ALL";
 const SHOWS: Show[] = ["OPEN", "OVERDUE", "PAID", "ALL"];
@@ -28,7 +30,12 @@ export function Invoices() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [creating, setCreating] = useState(false);
-  const [viewing, setViewing] = useState<string | null>(null);
+  // ?view=<invoiceId> opens that invoice, so other pages (the customer profile) can link straight to it.
+  const [viewing, setViewingState] = useState<string | null>(query.get("view"));
+  const setViewing = (id: string | null) => {
+    setViewingState(id);
+    if (!id && query.get("view")) setQueryParam("view", null);
+  };
   const [receiving, setReceiving] = useState<{ customer: Customer; invoiceNumber: string } | null>(null);
 
   useEffect(() => {
@@ -187,7 +194,7 @@ export function Invoices() {
           }}
         />
       )}
-      {viewing && <InvoiceDrawer id={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <InvoiceDrawer id={viewing} onClose={() => setViewing(null)} onChanged={list.reload} />}
       {receiving && (
         <ReceiptForm
           customer={receiving.customer}
@@ -203,9 +210,83 @@ export function Invoices() {
   );
 }
 
-function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged?: () => void }) {
   const invoice = useResource<ArInvoiceDetail>(`/api/v1/ar/invoices/${id}`);
+  const applications = useResource<InvoiceApplications>(`/api/v1/ar/invoices/${id}/applications`);
   const { currency } = useCompany();
+  const { can, api } = useSession();
+  const { toast, confirm } = useFeedback();
+  const manage = can("ar:manage");
+  const voided = invoice.data?.status === "REVERSED";
+  const canVoid = manage && invoice.data && !voided && applications.data && applications.data.rows.length === 0;
+
+  function changed() {
+    invoice.reload();
+    applications.reload();
+    onChanged?.();
+  }
+
+  async function remove(row: InvoiceApplications["rows"][number]) {
+    const what = row.kind === "PAYMENT" ? "payment" : row.kind === "DEPOSIT" ? "deposit" : "credit note";
+    const ok = await confirm({
+      title: `Remove ${what} ${row.sourceNumber} from this invoice?`,
+      body:
+        row.kind === "DEPOSIT"
+          ? `${currency} ${amount(row.amount, 2)} goes back to the customer's deposits and the invoice opens up again. A reversing journal is posted.`
+          : `${currency} ${amount(row.amount, 2)} stays on the customer's account as credit you can apply elsewhere, and the invoice opens up again. Nothing is posted to the ledger.`,
+      confirmLabel: `Remove ${what}`,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/v1/ar/applications/${row.kind}/${row.id}`, { method: "DELETE" });
+      toast(`${row.sourceNumber} removed from the invoice`);
+      changed();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
+
+  const [feeOpen, setFeeOpen] = useState(false);
+  const [fee, setFee] = useState("");
+  const overdue = Boolean(invoice.data && !voided && invoice.data.outstanding > 0.005 && new Date(invoice.data.dueDate) < new Date(new Date().toDateString()));
+
+  async function chargeFee() {
+    const inv = invoice.data!;
+    const n = Number(fee.replace(/[,\s]/g, ""));
+    if (!(n > 0)) return toast("Enter a fee amount", { error: true });
+    try {
+      const res = await api<{ invoiceNumber: string }>("/api/v1/ar/invoices", {
+        method: "POST",
+        body: JSON.stringify({ customerId: inv.customer.id, invoiceDate: new Date().toISOString().slice(0, 10), net: n, description: `Late fee on ${inv.invoiceNumber}` }),
+      });
+      toast(`Late fee ${res.invoiceNumber} raised`);
+      setFeeOpen(false);
+      setFee("");
+      onChanged?.();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
+
+  const [composing, setComposing] = useState<null | "invoice" | "reminder">(null);
+
+  async function voidIt() {
+    const inv = invoice.data!;
+    const ok = await confirm({
+      title: `Void invoice ${inv.invoiceNumber}?`,
+      body: `The invoice keeps its number but its ${currency} ${amount(inv.gross, 2)} comes off the customer's balance, and a reversing journal is posted. This can't be undone.`,
+      confirmLabel: "Void invoice",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/v1/ar/invoices/${inv.id}/void`, { method: "POST", body: JSON.stringify({}) });
+      toast(`Invoice ${inv.invoiceNumber} voided`);
+      changed();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
   return (
     <Drawer
       title={invoice.data ? `Invoice ${invoice.data.invoiceNumber}` : "Invoice"}
@@ -217,6 +298,16 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
+          {manage && invoice.data && !voided && (
+            <button type="button" className="btn" onClick={() => setComposing("invoice")}>
+              Email
+            </button>
+          )}
+          {canVoid && (
+            <button type="button" className="btn btn-quiet" style={{ color: "var(--negative)" }} onClick={() => void voidIt()}>
+              Void
+            </button>
+          )}
           {invoice.data && <PdfButton path={`/api/v1/ar/invoices/${id}/pdf`} filename={`${invoice.data.invoiceNumber}.pdf`} label="Download PDF" className="btn btn-primary" />}
         </>
       }
@@ -263,6 +354,73 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 ["Balance due", amount(inv.outstanding, 2), true],
               ]}
             />
+            {voided && <p className="notice-inline">This invoice is void. It stays on record with nothing owed.</p>}
+            {overdue && manage && (
+              <div className="inv-overdue">
+                <span className="text-negative strong">Overdue since {date(inv.dueDate)}</span>
+                <span className="grow" />
+                <button type="button" className="btn btn-sm" onClick={() => setComposing("reminder")}>
+                  Send reminder
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setFeeOpen((v) => !v)}>
+                  Charge late fee
+                </button>
+              </div>
+            )}
+            {composing && (
+              <EmailComposer
+                title={composing === "reminder" ? `Payment reminder for ${inv.invoiceNumber}` : `Email invoice ${inv.invoiceNumber}`}
+                defaultTo={inv.customer.email}
+                endpoint={`/api/v1/ar/invoices/${inv.id}/email`}
+                extraBody={{ reminder: composing === "reminder" }}
+                sendLabel={composing === "reminder" ? "Send reminder" : "Send invoice"}
+                onCancel={() => setComposing(null)}
+              />
+            )}
+            {feeOpen && (
+              <div className="inv-fee">
+                <label className="field" style={{ flex: 1 }}>
+                  <span className="field-label">Late fee ({currency})</span>
+                  <input className="input num" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" autoFocus />
+                  <span className="field-hint">Raised as a new invoice dated today, referring to {inv.invoiceNumber}.</span>
+                </label>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => void chargeFee()}>
+                  Raise fee invoice
+                </button>
+              </div>
+            )}
+            <h3 className="cust-subhead">Payments and credits</h3>
+            <Loadable resource={applications}>
+              {(a) =>
+                a.rows.length ? (
+                  <ul className="cust-mini">
+                    {a.rows.map((r) => (
+                      <li key={`${r.kind}-${r.id}`}>
+                        <div className="inv-app">
+                          <span className="cust-mini-main">
+                            <span className="strong">
+                              {r.kind === "PAYMENT" ? "Payment" : r.kind === "DEPOSIT" ? "Deposit" : "Credit note"} {r.sourceNumber}
+                            </span>
+                            <span className="sub">
+                              {date(r.date)}
+                              {r.reason ? ` · ${r.reason}` : ""}
+                            </span>
+                          </span>
+                          <span className="num strong">{amount(r.amount, 2)}</span>
+                          {manage && r.removable && r.kind !== "CREDIT_ON_ISSUE" && (
+                            <button type="button" className="btn btn-sm btn-quiet" onClick={() => void remove(r)}>
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted small">{voided ? "None." : "Nothing applied yet."}</p>
+                )
+              }
+            </Loadable>
             <AttachmentsPanel entityType="ArInvoice" entityId={inv.id} />
           </>
         )}

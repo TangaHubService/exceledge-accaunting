@@ -25,6 +25,7 @@ import { Budgets } from "./pages/Budgets";
 import { CashPosition } from "./pages/CashPosition";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
+import { ImportCustomers } from "./pages/ImportCustomers";
 import { Employees } from "./pages/Employees";
 import { Dimensions } from "./pages/Dimensions";
 import { Lists } from "./pages/Lists";
@@ -164,6 +165,7 @@ const ROUTES: Route[] = [
   { pattern: "/users/roles", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
+  { pattern: "/customers/import", needs: "ar:manage", render: () => <ImportCustomers /> },
   { pattern: "/customers/:id", needs: "ar:view", render: (p) => <CustomerDetail id={p.id} /> },
   { pattern: "/employees", needs: "setup:view", render: () => <Employees /> },
   { pattern: "/time/single", needs: "setup:view", render: () => <SingleTimeActivity /> },

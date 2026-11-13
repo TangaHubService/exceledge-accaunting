@@ -6,7 +6,7 @@ import { Select } from "../../components/Select";
 import { CancelButton, ErrorBanner, HeaderBand, PartySelect, SplitButton, TField, TxnFooter, TxnPage, useValidation } from "../../components/txn/TxnKit";
 import { useCompany } from "../../lib/company";
 import { amount, isoDay, toNumber } from "../../lib/format";
-import { navigate } from "../../lib/router";
+import { navigate, useLocation } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import { customerOptions, emailListValid, indexTxn, monthsAgo, newId, rwf, saveLocal, useCustomers } from "../../lib/txn";
 import type { ArInvoiceList } from "../../lib/types";
@@ -26,13 +26,16 @@ const BALANCE_STATUS = [
 ];
 
 export function StatementForm() {
-  const { download } = useSession();
+  const { download, api } = useSession();
   const { toast } = useFeedback();
   const { currency } = useCompany();
   const { customers, loading } = useCustomers();
   const v = useValidation();
   const end = isoDay();
-  const [form, setForm] = useState({ statementDate: end, type: "BALANCE_FORWARD", status: "OPEN", startDate: monthsAgo(end, 1), endDate: end });
+  // From the customer list's bulk action: /sales/statement/new?customers=id1,id2
+  const { query } = useLocation();
+  const [only] = useState(() => new Set((query.get("customers") ?? "").split(",").filter(Boolean)));
+  const [form, setForm] = useState({ statementDate: end, type: "BALANCE_FORWARD", status: only.size ? "ALL" : "OPEN", startDate: monthsAgo(end, 1), endDate: end });
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -40,13 +43,14 @@ export function StatementForm() {
   const overdue = useResource<ArInvoiceList>(form.status === "OVERDUE" ? "/api/v1/ar/invoices?status=OVERDUE&pageSize=500" : null);
 
   const recipients = useMemo(() => {
+    if (only.size && form.status === "ALL") return customers.filter((c) => only.has(c.id));
     if (form.status === "ALL") return customers;
     if (form.status === "OVERDUE") {
       const ids = new Set((overdue.data?.rows ?? []).map((r) => r.customerId));
       return customers.filter((c) => ids.has(c.id));
     }
     return customers.filter((c) => toNumber(c.balance) > 0);
-  }, [customers, form.status, overdue.data]);
+  }, [customers, form.status, overdue.data, only]);
 
   const selected = recipients.filter((c) => !deselected.has(c.id));
   const total = selected.reduce((s, c) => s + toNumber(c.balance), 0);
@@ -81,16 +85,30 @@ export function StatementForm() {
     try {
       const from = dated ? form.startDate : monthsAgo(form.statementDate, 12);
       const to = dated ? form.endDate : form.statementDate;
-      if (mode !== "save") {
+      let emailed = 0;
+      const failed: string[] = [];
+      if (mode === "send") {
+        // Each customer gets their own email with their statement PDF, sent by the server.
+        for (const c of selected) {
+          try {
+            await api(`/api/v1/ar/customers/${c.id}/statement/email`, { method: "POST", body: JSON.stringify({ to: emailOf(c.id, c.email), from, toDate: to }) });
+            emailed += 1;
+          } catch (e) {
+            failed.push(`${c.name}: ${(e as Error).message}`);
+          }
+        }
+      } else if (mode === "print") {
         for (const c of selected) await download(`/api/v1/ar/customers/${c.id}/statement.pdf?from=${from}&to=${to}`, `Statement-${c.code}-${to}.pdf`);
       }
       const id = newId();
       saveLocal("statement", { id, ...form, recipients: selected.map((c) => ({ id: c.id, name: c.name, email: emailOf(c.id, c.email), balance: toNumber(c.balance) })), total, createdAt: new Date().toISOString() });
       indexTxn({ id, kind: "statement", number: "", date: form.statementDate, party: `${selected.length} customer${selected.length > 1 ? "s" : ""}`, amount: total, memo: STATEMENT_TYPES.find((t) => t.value === form.type)?.label ?? "", status: mode === "send" ? "Sent" : "Saved", posted: false });
       if (mode === "send") {
-        const bcc = selected.map((c) => emailOf(c.id, c.email)).join(",");
-        window.location.href = `mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(`Your statement as of ${form.statementDate}`)}&body=${encodeURIComponent("Please find your account statement attached.")}`;
-        toast(`${selected.length} statement${selected.length > 1 ? "s" : ""} downloaded — attach them in the email that just opened`);
+        if (failed.length) {
+          setError(`${emailed} sent. Not sent: ${failed.join("; ")}`);
+          return;
+        }
+        toast(`${emailed} statement${emailed === 1 ? "" : "s"} emailed`);
       } else toast(mode === "print" ? `${selected.length} statement PDF${selected.length > 1 ? "s" : ""} downloaded` : "Statements saved");
       navigate("/customers");
     } catch (e) {
