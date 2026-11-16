@@ -9,11 +9,11 @@ import {
   ReversePaymentForm,
   SupplierCreditNoteForm,
   SupplierDebitNoteForm,
-  SupplierForm,
   VoidBillForm,
 } from "../components/ApForms";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { type Column, DataTable } from "../components/DataTable";
+import { SupplierFormDrawer } from "../components/suppliers/SupplierFormDrawer";
 import { PdfButton, PeriodStatementView } from "../components/Documents";
 import { Badge, Drawer, DueStatus, EmptyState, Figure, Loadable, Menu, PageHeader, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
@@ -425,7 +425,7 @@ export function SupplierDetail({ id }: { id: string }) {
             {dialog?.kind === "credit" && <SupplierCreditNoteForm supplier={s} onClose={close} onSaved={saved} />}
             {dialog?.kind === "debit" && <SupplierDebitNoteForm supplier={s} onClose={close} onSaved={saved} />}
             {dialog?.kind === "advance" && <AdvanceForm supplier={s} onClose={close} onSaved={saved} />}
-            {dialog?.kind === "edit" && <SupplierForm supplier={s} onClose={close} onSaved={saved} />}
+            {dialog?.kind === "edit" && <SupplierFormDrawer supplier={s} onClose={close} onSaved={saved} />}
             {dialog?.kind === "void" && <VoidBillForm bill={dialog.bill} onClose={close} onSaved={saved} />}
             {dialog?.kind === "files" && (
               <Drawer title={`Bill ${dialog.bill.billNumber}`} subtitle={`${s.name} · ${date(dialog.bill.billDate)} · ${amount(dialog.bill.gross)} ${currency}`} onClose={close}>

@@ -203,29 +203,6 @@ export const customerSchema = yup.object({
   mobile: yup.string().trim().default(""),
 });
 
-export const supplierSchema = yup.object({
-  displayName: yup
-    .string()
-    .trim()
-    .test("name", "Supplier display name is required", function (v) {
-      const { firstName, lastName, companyName } = this.parent as {
-        firstName?: string;
-        lastName?: string;
-        companyName?: string;
-      };
-      const fallback =
-        [firstName, lastName].filter(Boolean).join(" ").trim() || (companyName ?? "").trim();
-      return Boolean((v ?? "").trim() || fallback);
-    }),
-  email: optionalEmail,
-  website: optionalUrl,
-  firstName: yup.string().trim().default(""),
-  lastName: yup.string().trim().default(""),
-  companyName: yup.string().trim().default(""),
-  phone: yup.string().trim().default(""),
-  mobile: yup.string().trim().default(""),
-});
-
 export const employeePersonalSchema = yup.object({
   firstName: yup.string().trim().required("First name is required"),
   lastName: yup.string().trim().required("Last name is required"),

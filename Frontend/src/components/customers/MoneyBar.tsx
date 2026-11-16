@@ -3,6 +3,37 @@ import type { MoneyBarData } from "../../lib/types";
 
 type Segment = "unbilled" | "overdue" | "notDue" | "paid30";
 
+/** Wording for each part of the bar. Receivables wording is the default; payables pass `PAYABLES_LABELS`. */
+export type MoneyBarLabels = {
+  aria: string;
+  firstTitle: string;
+  firstSub: string;
+  firstCell: string;
+  firstUnit: string;
+  documentUnit: string;
+  paidCell: string;
+};
+
+const RECEIVABLES_LABELS: MoneyBarLabels = {
+  aria: "Receivables summary",
+  firstTitle: "Unbilled",
+  firstSub: "Delayed charges",
+  firstCell: "Not invoiced yet",
+  firstUnit: "charge",
+  documentUnit: "invoice",
+  paidCell: "Received",
+};
+
+export const PAYABLES_LABELS: MoneyBarLabels = {
+  aria: "Payables summary",
+  firstTitle: "Ordered",
+  firstSub: "Open purchase orders",
+  firstCell: "Not billed yet",
+  firstUnit: "order",
+  documentUnit: "bill",
+  paidCell: "Paid",
+};
+
 /**
  * Receivables at a glance, in the QuickBooks money-bar layout: an Unpaid group (overdue, not due yet)
  * and a Paid group (last 30 days). Figures come from the server; segments can act as filters.
@@ -13,7 +44,9 @@ export function MoneyBar({
   active,
   onSelect,
   loading,
+  labels = RECEIVABLES_LABELS,
 }: {
+  labels?: MoneyBarLabels;
   data?: MoneyBarData;
   currency: string;
   active?: Segment | null;
@@ -46,13 +79,13 @@ export function MoneyBar({
   };
 
   return (
-    <section className="money-bar" aria-label="Receivables summary">
+    <section className="money-bar" aria-label={labels.aria}>
       <div className="mb-group unbilled">
         <div className="mb-head">
-          <span className="mb-title">Unbilled</span>
-          <span className="mb-sub">Delayed charges</span>
+          <span className="mb-title">{labels.firstTitle}</span>
+          <span className="mb-sub">{labels.firstSub}</span>
         </div>
-        <div className="mb-cells">{cell("unbilled", "Not invoiced yet", data?.unbilled?.amount, data?.unbilled?.count, "charge")}</div>
+        <div className="mb-cells">{cell("unbilled", labels.firstCell, data?.unbilled?.amount, data?.unbilled?.count, labels.firstUnit)}</div>
         <div className="mb-track" aria-hidden="true">
           <span className="mb-fill unbilled" style={{ width: (data?.unbilled?.amount ?? 0) > 0 ? "100%" : "0%" }} />
         </div>
@@ -65,8 +98,8 @@ export function MoneyBar({
           </span>
         </div>
         <div className="mb-cells">
-          {cell("overdue", "Overdue", data?.overdue.amount, data?.overdue.count, "invoice")}
-          {cell("notDue", "Not due yet", data?.notDue.amount, data?.notDue.count, "invoice")}
+          {cell("overdue", "Overdue", data?.overdue.amount, data?.overdue.count, labels.documentUnit)}
+          {cell("notDue", "Not due yet", data?.notDue.amount, data?.notDue.count, labels.documentUnit)}
         </div>
         <div className="mb-track" aria-hidden="true">
           <span className="mb-fill overdue" style={{ width: `${overduePct}%` }} />
@@ -78,7 +111,7 @@ export function MoneyBar({
           <span className="mb-title">Paid</span>
           <span className="mb-sub">Last 30 days</span>
         </div>
-        <div className="mb-cells">{cell("paid30", "Received", data?.paid30.amount, data?.paid30.count, "payment")}</div>
+        <div className="mb-cells">{cell("paid30", labels.paidCell, data?.paid30.amount, data?.paid30.count, "payment")}</div>
         <div className="mb-track" aria-hidden="true">
           <span className="mb-fill paid30" style={{ width: (data?.paid30.amount ?? 0) > 0 ? "100%" : "0%" }} />
         </div>

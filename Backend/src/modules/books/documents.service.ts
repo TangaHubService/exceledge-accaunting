@@ -13,6 +13,7 @@ export const ATTACHABLE_TYPES = {
   ApBill: { view: "ap:view", attach: "ap:manage" },
   ArInvoice: { view: "ar:view", attach: "ar:manage" },
   Customer: { view: "ar:view", attach: "ar:manage" },
+  Supplier: { view: "ap:view", attach: "ap:manage" },
   Expense: { view: "expense:view", attach: "expense:manage" },
   FixedAsset: { view: "fa:view", attach: "fa:manage" },
   BankReconciliation: { view: "bank:view", attach: "bank:manage" },
@@ -114,6 +115,11 @@ async function findRecord(companyId: string, entityType: AttachableType, entityI
       // Contracts and IDs on a customer aren't tied to a period, so they can always be removed.
       const c = await prisma.customer.findFirst({ where, select: { id: true } });
       return c && { date: null, keepReason: null };
+    }
+    case "Supplier": {
+      // Contracts, bank letters and tax certificates on a supplier aren't tied to a period.
+      const row = await prisma.supplier.findFirst({ where, select: { id: true } });
+      return row && { date: null, keepReason: null };
     }
     case "FixedAsset": {
       const a = await prisma.fixedAsset.findFirst({ where, select: { purchaseDate: true } });

@@ -2,7 +2,7 @@ import { Calendar, Filter, Printer, Sparkles, SlidersHorizontal, Smartphone, Upl
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { useFeedback } from "../../components/feedback";
 import { Select } from "../../components/Select";
-import { AddSupplierDrawer } from "../../components/suppliers/AddSupplierDrawer";
+import { SupplierFormDrawer } from "../../components/suppliers/SupplierFormDrawer";
 import {
   type CategoryLine,
   categoryColumns,
@@ -734,7 +734,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
       </p>
 
       {adding ? (
-        <AddSupplierDrawer
+        <SupplierFormDrawer
           onClose={() => setAdding(false)}
           onSaved={(s) => {
             setAdding(false);
@@ -936,7 +936,7 @@ export function ItemReceiptForm() {
       </div>
       <p className="muted">Item receipts are kept here and don't move stock in the books until the matching bill is posted.</p>
       {adding ? (
-        <AddSupplierDrawer
+        <SupplierFormDrawer
           onClose={() => setAdding(false)}
           onSaved={(s) => {
             setAdding(false);
@@ -966,12 +966,14 @@ export function PayBillsForm() {
   const banks = useFinancialAccounts();
   const bills = useResource<ApBill[]>("/api/v1/ap/bills?status=OPEN");
   const v = useValidation();
+  const { query } = useLocation();
   const [account, setAccount] = useState("");
   const [paymentDate, setPaymentDate] = useState(isoDay());
   const [range, setRange] = useState("12M");
   const [rangeChip, setRangeChip] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [payeeFilter, setPayeeFilter] = useState("");
+  // Opened from a supplier (?supplier=id): show only that supplier's bills.
+  const [payeeFilter, setPayeeFilter] = useState(query.get("supplier") ?? "");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [customise, setCustomise] = useState(false);
   const [cols, setCols] = useState({ ref: true, status: true, approval: true, credit: true });

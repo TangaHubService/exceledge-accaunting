@@ -1,5 +1,10 @@
 /* Suppliers hub + import wizard */
 
+/* Supplier list: the TIN and last-transaction columns need a wide screen; the TIN also shows under the name. */
+@media (max-width: 1440px) {
+  .sup-hide-lg { display: none; }
+}
+
 .ee-sup-head-actions {
   display: flex;
   gap: 8px;

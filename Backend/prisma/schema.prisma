@@ -130,6 +130,7 @@ model Company {
   sourceDocumentLinks   SourceDocumentLink[]
   customers             Customer[]
   customerNotes         CustomerNote[]
+  supplierNotes         SupplierNote[]
   customerContacts      CustomerContact[]
   arInvoices            ArInvoice[]
   arReceipts            ArReceipt[]
@@ -1360,6 +1361,13 @@ enum SupplierStatus {
   INACTIVE
 }
 
+enum SupplierType {
+  BUSINESS
+  INDIVIDUAL
+  GOVERNMENT
+  NON_PROFIT
+}
+
 enum ApDocumentStatus {
   POSTED
   REVERSED
@@ -1383,12 +1391,17 @@ enum ApPaymentMethod {
 }
 
 model Supplier {
-  id                        String         @id @default(cuid())
+  id                        String           @id @default(cuid())
   companyId                 String
   code                      String
   name                      String
+  companyName               String?
+  firstName                 String?
+  lastName                  String?
+  supplierType              SupplierType     @default(BUSINESS)
   category                  String?
   tin                       String?
+  vatRegistered             Boolean          @default(false)
   vatNumber                 String?
   registrationNumber        String?
   contactPerson             String?
@@ -1396,33 +1409,42 @@ model Supplier {
   mobile                    String?
   email                     String?
   website                   String?
+  /// Second contact: another person, phone or email to reach the supplier.
+  alternateContact          String?
+  /// Street address; the location fields below hold the rest.
   physicalAddress           String?
+  postalCode                String?
   country                   String?
   province                  String?
   district                  String?
   sector                    String?
   cell                      String?
   village                   String?
-  currency                  String         @default("RWF")
+  currency                  String           @default("RWF")
   paymentTerms              String?
-  creditPeriodDays          Int            @default(30)
+  creditPeriodDays          Int              @default(30)
   apAccountId               String?
   defaultExpenseAccountId   String?
   defaultInventoryAccountId String?
   taxCategory               String?
   whtCategory               String?
-  whtRate                   Decimal        @default(0) @db.Decimal(7, 4)
+  whtRate                   Decimal          @default(0) @db.Decimal(7, 4)
+  preferredPaymentMethod    ApPaymentMethod?
   bankName                  String?
+  bankAccountHolder         String?
   bankAccountNumber         String?
+  creditLimit               Decimal          @default(0) @db.Decimal(18, 4)
   branchId                  String?
   costCentre                String?
-  status                    SupplierStatus @default(ACTIVE)
-  openingBalance            Decimal        @default(0) @db.Decimal(18, 4)
-  balance                   Decimal        @default(0) @db.Decimal(18, 4)
+  status                    SupplierStatus   @default(ACTIVE)
+  openingBalance            Decimal          @default(0) @db.Decimal(18, 4)
+  balance                   Decimal          @default(0) @db.Decimal(18, 4)
   notes                     String?
+  /// Kept inside the company; never printed on documents sent to the supplier.
+  internalRemarks           String?
   externalErpSupplierId     String?
-  createdAt                 DateTime       @default(now())
-  updatedAt                 DateTime       @updatedAt
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
 
   company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   bills               ApBill[]
@@ -1434,12 +1456,30 @@ model Supplier {
   goodsReceipts       GoodsReceipt[]
   commercialDocuments CommercialDocument[]
   itemReceipts        ItemReceipt[]
+  supplierNotes       SupplierNote[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpSupplierId])
   @@index([companyId, status])
   @@index([companyId, name])
   @@map("suppliers")
+}
+
+/// Dated internal notes on a supplier's profile.
+model SupplierNote {
+  id         String   @id @default(cuid())
+  companyId  String
+  supplierId String
+  body       String
+  erpUserId  Int
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, supplierId, createdAt])
+  @@map("supplier_notes")
 }
 
 model ApBill {

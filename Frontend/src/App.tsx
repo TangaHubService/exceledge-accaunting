@@ -332,7 +332,6 @@ function RoutedShell() {
   if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
   if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
-  if (path.startsWith("/suppliers/import")) return page;
   if (path.startsWith("/time/")) return page;
   return <Shell>{page}</Shell>;
 }

@@ -442,17 +442,33 @@ export type ArDeposit = {
 
 export type ApPaymentMethod = "CASH" | "BANK" | "MOBILE_MONEY" | "CHEQUE" | "EFT";
 
+export type SupplierType = "BUSINESS" | "INDIVIDUAL" | "GOVERNMENT" | "NON_PROFIT";
+
 export type Supplier = {
   id: string;
   code: string;
   name: string;
+  companyName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  supplierType: SupplierType;
   category: string | null;
   tin: string | null;
+  vatRegistered: boolean;
   vatNumber: string | null;
+  registrationNumber: string | null;
   contactPerson: string | null;
   telephone: string | null;
+  mobile: string | null;
   email: string | null;
+  website: string | null;
+  alternateContact: string | null;
   physicalAddress: string | null;
+  postalCode: string | null;
+  country: string | null;
+  province: string | null;
+  district: string | null;
+  sector: string | null;
   currency: string;
   paymentTerms: string | null;
   creditPeriodDays: number;
@@ -460,13 +476,46 @@ export type Supplier = {
   defaultExpenseAccountId: string | null;
   whtCategory: string | null;
   whtRate: Decimal;
+  preferredPaymentMethod: ApPaymentMethod | null;
   bankName: string | null;
+  bankAccountHolder: string | null;
   bankAccountNumber: string | null;
+  creditLimit: Decimal;
   status: "ACTIVE" | "INACTIVE";
   balance: Decimal;
+  openingBalance: Decimal;
   notes: string | null;
+  internalRemarks: string | null;
   externalErpSupplierId: string | null;
+  createdAt?: string;
 };
+
+/** A row of the supplier centre list: the supplier plus figures read from the books. */
+export type SupplierListRow = Supplier & { overdue: number; purchases: number; lastActivity: string | null };
+
+export type SupplierMoneyBar = {
+  purchaseOrders: { amount: number; count: number };
+  overdue: { amount: number; count: number };
+  notDue: { amount: number; count: number };
+  paid30: { amount: number; count: number };
+};
+
+export type SupplierListPage = {
+  rows: SupplierListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  counts: { all: number; inactive: number; owing: number; overdue: number; credit: number };
+  totals: { owed: number };
+  moneyBar: SupplierMoneyBar;
+  categories: Array<{ category: string; count: number }>;
+};
+
+export type SupplierDuplicate = CustomerDuplicate;
+
+export type SupplierNote = { id: string; body: string; erpUserId: number; authorName: string | null; createdAt: string };
+
 
 export type ApBill = {
   id: string;

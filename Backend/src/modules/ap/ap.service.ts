@@ -22,7 +22,7 @@ import {
   type ApPaymentMethod,
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
-import type { Prisma } from "@prisma/client";
+import { Prisma, type SupplierType } from "@prisma/client";
 import { defaultsFor, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
@@ -140,39 +140,83 @@ export function billOutstanding(bill: {
 export type SupplierInput = {
   code?: string;
   name: string;
-  category?: string;
-  tin?: string;
-  vatNumber?: string;
-  registrationNumber?: string;
-  contactPerson?: string;
-  telephone?: string;
-  mobile?: string;
-  email?: string;
-  website?: string;
-  physicalAddress?: string;
-  country?: string;
-  province?: string;
-  district?: string;
-  sector?: string;
-  cell?: string;
-  village?: string;
+  companyName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  supplierType?: SupplierType;
+  category?: string | null;
+  tin?: string | null;
+  vatRegistered?: boolean;
+  vatNumber?: string | null;
+  registrationNumber?: string | null;
+  contactPerson?: string | null;
+  telephone?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  website?: string | null;
+  alternateContact?: string | null;
+  physicalAddress?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  cell?: string | null;
+  village?: string | null;
   currency?: string;
-  paymentTerms?: string;
+  paymentTerms?: string | null;
   creditPeriodDays?: number;
-  apAccountId?: string;
-  defaultExpenseAccountId?: string;
-  defaultInventoryAccountId?: string;
-  taxCategory?: string;
-  whtCategory?: string;
+  apAccountId?: string | null;
+  defaultExpenseAccountId?: string | null;
+  defaultInventoryAccountId?: string | null;
+  taxCategory?: string | null;
+  whtCategory?: string | null;
   whtRate?: number;
-  bankName?: string;
-  bankAccountNumber?: string;
-  branchId?: string;
-  costCentre?: string;
+  preferredPaymentMethod?: ApPaymentMethod | null;
+  bankName?: string | null;
+  bankAccountHolder?: string | null;
+  bankAccountNumber?: string | null;
+  creditLimit?: number;
+  branchId?: string | null;
+  costCentre?: string | null;
   openingBalance?: number;
-  notes?: string;
+  /** yyyy-mm-dd the opening balance is owed from; defaults to today. */
+  openingBalanceDate?: string;
+  notes?: string | null;
+  internalRemarks?: string | null;
   externalErpSupplierId?: string;
 };
+
+export type SupplierUpdate = Partial<Omit<SupplierInput, "code" | "openingBalance" | "openingBalanceDate" | "externalErpSupplierId">> & {
+  status?: "ACTIVE" | "INACTIVE";
+};
+
+/** Drops undefined keys and turns empty strings into "not given" so Prisma leaves those columns alone on create. */
+function cleanSupplierData<T extends Record<string, unknown>>(input: T) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined) continue;
+    out[k] = typeof v === "string" ? v.trim() || null : v;
+  }
+  return out as T;
+}
+
+/**
+ * Refuses a second supplier with the same display name or TIN in one company.
+ * Email and phone matches are only warnings (see `findSupplierDuplicates`).
+ */
+export async function assertNoDuplicateSupplier(companyId: string, input: { name?: string; tin?: string | null }, exceptId?: string) {
+  const name = input.name?.trim();
+  const tin = input.tin?.trim();
+  const or: Prisma.SupplierWhereInput[] = [];
+  if (name) or.push({ name: { equals: name, mode: "insensitive" } });
+  if (tin) or.push({ tin });
+  if (!or.length) return;
+  const clash = await prisma.supplier.findFirst({ where: { companyId, OR: or, ...(exceptId ? { NOT: { id: exceptId } } : {}) } });
+  if (!clash) return;
+  if (tin && clash.tin === tin) throw new Error(`TIN ${tin} already belongs to ${clash.name} (${clash.code})`);
+  throw new Error(`A supplier named "${clash.name}" already exists (${clash.code})`);
+}
 
 async function assertAccountsUsable(companyId: string, ids: Array<string | undefined | null>) {
   const wanted = ids.filter((id): id is string => Boolean(id));
@@ -182,22 +226,29 @@ async function assertAccountsUsable(companyId: string, ids: Array<string | undef
 }
 
 export async function createSupplier(companyId: string, input: SupplierInput, actor: Actor = {}) {
-  const { code: requestedCode, openingBalance, ...rest } = input;
+  const { code: requestedCode, openingBalance, openingBalanceDate, ...rest } = input;
   const code = requestedCode?.trim() || (await nextNumber(companyId, "SUPPLIER", "SUP"));
   if (await prisma.supplier.findFirst({ where: { companyId, code } })) throw new Error("Supplier code already exists");
+  await assertNoDuplicateSupplier(companyId, { name: input.name, tin: input.tin });
   await assertAccountsUsable(companyId, [input.apAccountId, input.defaultExpenseAccountId, input.defaultInventoryAccountId]);
   const opening = roundMoney(openingBalance ?? 0);
-  if (opening < 0) throw new Error("Opening balance can't be negative");
+  if (opening < 0) throw new Error("Opening balance can't be negative; record a supplier credit for money the supplier owes you");
+  const openingDate = openingBalanceDate ? new Date(`${openingBalanceDate}T00:00:00.000Z`) : new Date();
+  if (Number.isNaN(openingDate.getTime())) throw new Error("Opening balance date must be yyyy-mm-dd");
+  if (openingDate > new Date()) throw new Error("Opening balance date can't be in the future");
+  if (input.creditLimit !== undefined && input.creditLimit < 0) throw new Error("Credit limit can't be negative");
 
   const supplier = await prisma.supplier.create({
     data: {
-      ...rest,
+      ...(cleanSupplierData(rest) as Omit<Prisma.SupplierUncheckedCreateInput, "companyId" | "code" | "name">),
       companyId,
       code,
       name: input.name.trim(),
+      email: input.email?.trim().toLowerCase() || undefined,
       currency: input.currency ?? "RWF",
       creditPeriodDays: input.creditPeriodDays ?? 30,
       whtRate: input.whtRate ?? 0,
+      creditLimit: input.creditLimit ?? 0,
       openingBalance: opening,
     },
   });
@@ -211,7 +262,7 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
     const posted = await postBalanced(
       companyId,
       {
-        journalDate: new Date(),
+        journalDate: openingDate,
         description: `Opening balance ${supplier.code}`,
         referenceNumber: supplier.code,
         sourceDocumentType: "SupplierOpening",
@@ -231,8 +282,8 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
           companyId,
           supplierId: supplier.id,
           billNumber,
-          billDate: new Date(),
-          dueDate: new Date(),
+          billDate: openingDate,
+          dueDate: openingDate,
           currency: supplier.currency,
           net: opening,
           gross: opening,
@@ -246,7 +297,7 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
       await appendLedger(tx, {
         companyId,
         supplierId: supplier.id,
-        entryDate: new Date(),
+        entryDate: openingDate,
         docType: "OPENING",
         docId: bill.id,
         docNumber: billNumber,
@@ -261,37 +312,57 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
   return prisma.supplier.findUniqueOrThrow({ where: { id: supplier.id } });
 }
 
-export async function updateSupplier(
-  companyId: string,
-  supplierId: string,
-  input: Partial<Omit<SupplierInput, "code" | "openingBalance" | "externalErpSupplierId">> & { status?: "ACTIVE" | "INACTIVE" },
-  actor: Actor = {},
-) {
+export async function updateSupplier(companyId: string, supplierId: string, input: SupplierUpdate, actor: Actor = {}) {
   const before = await prisma.supplier.findFirst({ where: { id: supplierId, companyId } });
   if (!before) throw new Error("Supplier does not exist");
-  await assertAccountsUsable(companyId, [input.apAccountId, input.defaultExpenseAccountId, input.defaultInventoryAccountId]);
-  const updated = await prisma.supplier.update({ where: { id: before.id }, data: input });
-  const pick = (s: typeof before) => ({ name: s.name, status: s.status, creditPeriodDays: s.creditPeriodDays, whtRate: money(s.whtRate), apAccountId: s.apAccountId });
-  await audit(companyId, actor, "UPDATE", "Supplier", updated.id, pick(updated), pick(before));
+  const data = { ...input } as SupplierUpdate;
+  if (data.name !== undefined) data.name = data.name.trim();
+  if (data.email) data.email = data.email.trim().toLowerCase();
+  if (data.creditLimit !== undefined && data.creditLimit < 0) throw new Error("Credit limit can't be negative");
+  if (data.tin !== undefined && (data.tin ?? "") !== (before.tin ?? "")) {
+    // Posted bills carry the supplier TIN on the purchase records filed with the tax authority.
+    const billed = await prisma.apBill.count({ where: { companyId, supplierId, status: "POSTED", OR: [{ sourceDocumentType: null }, { sourceDocumentType: { not: "SupplierOpening" } }] } });
+    if (billed) throw new Error("TIN can't be changed once the supplier has posted bills");
+  }
+  if (data.status === "INACTIVE" && before.status !== "INACTIVE" && Math.abs(money(before.balance)) > 0.005) {
+    throw new Error(`${before.name} still has a balance of ${money(before.balance)}; pay or credit it before making the supplier inactive`);
+  }
+  await assertNoDuplicateSupplier(
+    companyId,
+    { name: data.name !== undefined && data.name !== before.name ? data.name : undefined, tin: data.tin !== undefined && data.tin !== before.tin ? data.tin : undefined },
+    before.id,
+  );
+  await assertAccountsUsable(companyId, [data.apAccountId, data.defaultExpenseAccountId, data.defaultInventoryAccountId]);
+  const updated = await prisma.supplier.update({ where: { id: before.id }, data: data as Prisma.SupplierUncheckedUpdateInput });
+  // Record only what changed, so the activity tab can say "Changed email, phone".
+  const changedBefore: Record<string, unknown> = {};
+  const changedAfter: Record<string, unknown> = {};
+  for (const key of Object.keys(data) as Array<keyof typeof before>) {
+    const a = before[key];
+    const b = updated[key];
+    if (String(a ?? "") !== String(b ?? "")) {
+      changedBefore[key] = a instanceof Prisma.Decimal ? money(a) : a;
+      changedAfter[key] = b instanceof Prisma.Decimal ? money(b) : b;
+    }
+  }
+  const action = data.status && data.status !== before.status ? (data.status === "INACTIVE" ? "DEACTIVATE" : "ACTIVATE") : "UPDATE";
+  if (Object.keys(changedAfter).length) await audit(companyId, actor, action, "Supplier", updated.id, changedAfter, changedBefore);
   return updated;
 }
 
+/** The plain supplier array that transaction pickers use. The supplier centre uses `listSuppliersPage`. */
 export async function listSuppliers(companyId: string, q?: string) {
+  const term = q?.trim();
+  const like = { contains: term, mode: "insensitive" as const };
   return prisma.supplier.findMany({
     where: {
       companyId,
-      ...(q
-        ? {
-            OR: [
-              { code: { contains: q, mode: "insensitive" } },
-              { name: { contains: q, mode: "insensitive" } },
-              { tin: { contains: q, mode: "insensitive" } },
-            ],
-          }
+      ...(term
+        ? { OR: [{ code: like }, { name: like }, { companyName: like }, { tin: like }, { email: like }, { telephone: like }, { mobile: like }] }
         : {}),
     },
     orderBy: { name: "asc" },
-    take: 200,
+    take: 1000,
   });
 }
 

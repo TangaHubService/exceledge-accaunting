@@ -8,6 +8,8 @@ import { exportFormat, sendReport } from "../../lib/report-export";
 import * as print from "../print/print.service";
 import { ageingDocument, withholdingDocument } from "../books/report-documents";
 import * as ap from "./ap.service";
+import * as suppliers from "./suppliers.service";
+import { parsePage, wantsPage } from "../../lib/pagination";
 
 export const apRouter = Router();
 
@@ -31,39 +33,72 @@ const payMethod = z.enum(AP_PAYMENT_METHODS);
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Use a yyyy-mm-dd date");
 const optionalText = z.string().trim().max(500).optional();
 
+const nullableText = z.string().trim().max(500).optional().nullable();
+const blankToNull = <T extends z.ZodTypeAny>(schema: T) => schema.optional().nullable().or(z.literal("").transform(() => null));
+
 const supplierFields = {
-  name: z.string().trim().min(1).max(200),
-  category: optionalText,
-  tin: z.string().regex(/^\d{9}$/, "TIN must be 9 digits").optional(),
-  vatNumber: optionalText,
-  registrationNumber: optionalText,
-  contactPerson: optionalText,
-  telephone: optionalText,
-  mobile: optionalText,
-  email: z.string().email().optional(),
-  website: optionalText,
-  physicalAddress: optionalText,
-  country: optionalText,
-  province: optionalText,
-  district: optionalText,
-  sector: optionalText,
-  cell: optionalText,
-  village: optionalText,
+  name: z.string().trim().min(1, "Display name is required").max(200),
+  companyName: nullableText,
+  firstName: z.string().trim().max(100).optional().nullable(),
+  lastName: z.string().trim().max(100).optional().nullable(),
+  supplierType: z.enum(["BUSINESS", "INDIVIDUAL", "GOVERNMENT", "NON_PROFIT"]).optional(),
+  category: nullableText,
+  tin: blankToNull(z.string().trim().regex(/^\d{9}$/, "TIN must be 9 digits")),
+  vatRegistered: z.boolean().optional(),
+  vatNumber: nullableText,
+  registrationNumber: nullableText,
+  contactPerson: nullableText,
+  telephone: nullableText,
+  mobile: nullableText,
+  email: blankToNull(z.string().trim().email("Email is not valid")),
+  website: nullableText,
+  alternateContact: nullableText,
+  physicalAddress: nullableText,
+  postalCode: z.string().trim().max(20).optional().nullable(),
+  country: nullableText,
+  province: nullableText,
+  district: nullableText,
+  sector: nullableText,
+  cell: nullableText,
+  village: nullableText,
   currency: z.string().length(3).optional(),
-  paymentTerms: optionalText,
+  paymentTerms: nullableText,
   creditPeriodDays: z.number().int().min(0).max(3650).optional(),
-  apAccountId: z.string().optional(),
-  defaultExpenseAccountId: z.string().optional(),
-  defaultInventoryAccountId: z.string().optional(),
-  taxCategory: optionalText,
-  whtCategory: optionalText,
+  apAccountId: z.string().optional().nullable(),
+  defaultExpenseAccountId: z.string().optional().nullable(),
+  defaultInventoryAccountId: z.string().optional().nullable(),
+  taxCategory: nullableText,
+  whtCategory: nullableText,
   whtRate: z.number().min(0).lt(100).optional(),
-  bankName: optionalText,
-  bankAccountNumber: optionalText,
-  branchId: z.string().optional(),
-  costCentre: optionalText,
-  notes: z.string().max(4000).optional(),
+  preferredPaymentMethod: payMethod.optional().nullable(),
+  bankName: nullableText,
+  bankAccountHolder: nullableText,
+  bankAccountNumber: z.string().trim().max(60).optional().nullable(),
+  creditLimit: z.number().min(0, "Credit limit can't be negative").optional(),
+  branchId: z.string().optional().nullable(),
+  costCentre: nullableText,
+  notes: z.string().max(4000).optional().nullable(),
+  internalRemarks: z.string().max(4000).optional().nullable(),
 };
+
+const supplierListFilter = z.object({
+  q: z.string().max(100).optional(),
+  status: z.enum(["active", "inactive", "all"]).optional(),
+  balance: z.enum(["owing", "overdue", "credit"]).optional(),
+  category: z.string().max(100).optional(),
+  type: z.enum(["BUSINESS", "INDIVIDUAL", "GOVERNMENT", "NON_PROFIT"]).optional(),
+  sort: z.enum(["name", "code", "balance", "purchases", "lastActivity", "created"]).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+});
+
+/** "Mobile money" → "MOBILE_MONEY", for enum cells typed by hand in a spreadsheet. */
+const enumCell = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().toUpperCase().replace(/[\s-]+/g, "_") : undefined);
+
+/** Turns nulls from the create form into "not given". */
+function dropNulls<T extends Record<string, unknown>>(o: T) {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined)) as { [K in keyof T]: Exclude<T[K], null> };
+}
+
 
 apRouter.get("/dashboard", async (req: AuthedRequest, res) => {
   res.json({ success: true, data: await ap.apDashboard(req.companyId!) });
@@ -99,16 +134,92 @@ apRouter.get("/reports/purchases-by-supplier", async (req: AuthedRequest, res) =
   }
 });
 
+/** Without `page`: the full array transaction pickers use. With `page`: the paged supplier centre list with counts. */
 apRouter.get("/suppliers", async (req: AuthedRequest, res) => {
-  res.json({ success: true, data: await ap.listSuppliers(req.companyId!, str(req.query.q)) });
+  if (!wantsPage(req.query)) return res.json({ success: true, data: await ap.listSuppliers(req.companyId!, str(req.query.q)) });
+  try {
+    const filter = supplierListFilter.parse(req.query);
+    res.json({ success: true, data: await suppliers.listSuppliersPage(req.companyId!, filter, parsePage(req.query, { defaultSize: 25, maxSize: 200 })) });
+  } catch (e) {
+    fail(res, e);
+  }
 });
 
 apRouter.post("/suppliers", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
   try {
     const body = z
-      .object({ ...supplierFields, code: z.string().trim().max(40).optional(), openingBalance: z.number().min(0).optional() })
+      .object({
+        ...supplierFields,
+        code: z.string().trim().max(40).optional(),
+        openingBalance: z.number().min(0, "Opening balance can't be negative").optional(),
+        openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Opening balance date must be yyyy-mm-dd").optional(),
+      })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await inTransaction(() => ap.createSupplier(req.companyId!, body, actor(req))) });
+    res.status(201).json({ success: true, data: await inTransaction(() => ap.createSupplier(req.companyId!, dropNulls(body), actor(req))) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+apRouter.get("/suppliers/money-bar", async (req: AuthedRequest, res) => {
+  res.json({ success: true, data: await suppliers.apMoneyBar(req.companyId!, str(req.query.supplierId)) });
+});
+
+apRouter.get("/suppliers/duplicates", async (req: AuthedRequest, res) => {
+  res.json({
+    success: true,
+    data: await suppliers.findSupplierDuplicates(req.companyId!, {
+      name: str(req.query.name),
+      tin: str(req.query.tin),
+      email: str(req.query.email),
+      phone: str(req.query.phone),
+      exceptId: str(req.query.exceptId),
+    }),
+  });
+});
+
+apRouter.get("/suppliers/export.csv", async (req: AuthedRequest, res) => {
+  try {
+    const filter = supplierListFilter.parse(req.query);
+    const csv = await suppliers.exportSuppliersCsv(req.companyId!, filter);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="suppliers-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+apRouter.post("/suppliers/import", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const { name: _name, ...optional } = supplierFields;
+    const row = z.object({
+      ...Object.fromEntries(
+        (["companyName", "supplierType", "category", "contactPerson", "email", "telephone", "mobile", "website", "tin", "vatRegistered", "physicalAddress", "district", "province", "country", "creditPeriodDays", "preferredPaymentMethod", "bankName", "bankAccountHolder", "bankAccountNumber", "notes"] as const).map((k) => [k, optional[k]]),
+      ),
+      name: z.string().trim().max(200),
+      // Checked row by row in the service, so one bad cell is reported on its row instead of failing the file.
+      tin: z.string().trim().max(20).optional().nullable(),
+      email: z.string().trim().max(200).optional().nullable(),
+      // Spreadsheets say "Business" or "mobile money"; an unknown value falls back to the default instead of failing the file.
+      supplierType: z.preprocess(enumCell, z.enum(["BUSINESS", "INDIVIDUAL", "GOVERNMENT", "NON_PROFIT"]).optional()).catch(undefined),
+      preferredPaymentMethod: z.preprocess(enumCell, payMethod.optional()).catch(undefined),
+      category: z.preprocess(enumCell, z.string().max(100).optional()),
+      openingBalance: z.number().optional(),
+      openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Opening balance date must be yyyy-mm-dd").optional(),
+    });
+    const body = z.object({ dryRun: z.boolean().optional(), rows: z.array(row).min(1, "The file has no rows").max(2000, "Import at most 2,000 suppliers at a time") }).parse(req.body);
+    const rows = body.rows.map((r) => dropNulls(r) as unknown as suppliers.SupplierImportRow);
+    res.json({ success: true, data: await suppliers.importSuppliers(req.companyId!, rows, { dryRun: body.dryRun }, actor(req), inTransaction) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+apRouter.post("/suppliers/bulk-status", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ ids: z.array(z.string().min(1)).min(1).max(500), status: z.enum(["ACTIVE", "INACTIVE"]) }).parse(req.body);
+    res.json({ success: true, data: await suppliers.bulkSetStatus(req.companyId!, body.ids, body.status, actor(req)) });
   } catch (e) {
     fail(res, e);
   }
@@ -127,9 +238,26 @@ apRouter.patch("/suppliers/:id", requireCapability("ap:manage"), async (req: Aut
     const body = z
       .object({ ...supplierFields, status: z.enum(["ACTIVE", "INACTIVE"]) })
       .partial()
-      .omit({ tin: true })
       .parse(req.body);
     res.json({ success: true, data: await inTransaction(() => ap.updateSupplier(req.companyId!, req.params.id, body, actor(req))) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+apRouter.get("/suppliers/:id/notes", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await suppliers.listSupplierNotes(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.post("/suppliers/:id/notes", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ body: z.string().max(4000) }).parse(req.body);
+    const data = await suppliers.addSupplierNote(req.companyId!, req.params.id, body.body, { erpUserId: req.erpUser!.userId, name: req.erpUser!.email });
+    res.status(201).json({ success: true, data });
   } catch (e) {
     fail(res, e);
   }
