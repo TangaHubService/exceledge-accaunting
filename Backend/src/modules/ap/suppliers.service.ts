@@ -86,7 +86,7 @@ export type SupplierStats = { purchases: number; lastActivity: Date | null };
 
 /**
  * Purchases and last activity per supplier.
- * Purchases = posted bills (not opening balances) + posted expenses for the supplier − posted supplier credits.
+ * Purchases = posted bills and debit notes (not opening balances) + posted expenses for the supplier − posted supplier credits.
  * Expenses on account never create a bill, so nothing is counted twice. Voided bills and reversed expenses drop out.
  */
 export async function supplierStats(companyId: string, supplierIds?: string[]) {

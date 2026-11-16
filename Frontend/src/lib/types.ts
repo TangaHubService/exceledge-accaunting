@@ -297,7 +297,20 @@ export type CommercialDoc = {
   convertedToType: string | null;
   convertedToId: string | null;
   convertedToNumber: string | null;
-  lines: Array<{ id: string; description: string; quantity: Decimal; unitPrice: Decimal; discount: Decimal; net: Decimal; taxCode: string | null; tax: Decimal }>;
+  lines: Array<{
+    id: string;
+    description: string;
+    quantity: Decimal;
+    unitPrice: Decimal;
+    discount: Decimal;
+    net: Decimal;
+    taxCode: string | null;
+    tax: Decimal;
+    itemId?: string | null;
+    receivedQuantity?: Decimal;
+    billedQuantity?: Decimal;
+  }>;
+  supplierId?: string | null;
 };
 
 export type CustomerNote = { id: string; body: string; erpUserId: number; authorName: string | null; createdAt: string };
@@ -513,6 +526,118 @@ export type SupplierListPage = {
 };
 
 export type SupplierDuplicate = CustomerDuplicate;
+
+export type SupplierSummary = {
+  supplierId: string;
+  currency: string;
+  outstanding: number;
+  totalPurchases: number;
+  totalBilled: number;
+  billCount: number;
+  debitNotesTotal: number;
+  openingBalance: number;
+  paymentsMade: number;
+  paymentCount: number;
+  overdue: number;
+  overdueCount: number;
+  oldestOverdueDays: number;
+  openBillCount: number;
+  partlyPaidBillCount: number;
+  availableCredit: number;
+  credits: { creditNotes: number; unappliedPayments: number; advances: number };
+  openPurchaseOrders: { amount: number; count: number };
+  moneyBar: SupplierMoneyBar;
+  creditLimit: number;
+  creditHeadroom: number | null;
+  lastTransaction: { date: string; docType: string; docId: string; docNumber: string | null; amount: number } | null;
+};
+
+export type SupplierTxnType = "BILL" | "PAYMENT" | "CREDIT_NOTE" | "DEBIT_NOTE" | "ADVANCE" | "EXPENSE" | "PURCHASE_ORDER" | "ITEM_RECEIPT";
+
+export type SupplierTxnRow = {
+  id: string;
+  type: SupplierTxnType;
+  number: string;
+  date: string;
+  dueDate: string | null;
+  description: string | null;
+  total: number;
+  open: number;
+  status: string;
+  statusTone: "positive" | "negative" | "warning" | "neutral";
+  posting: boolean;
+  isOpening?: boolean;
+  reference?: string | null;
+};
+
+export type SupplierTxnPage = { rows: SupplierTxnRow[]; total: number; page: number; pageSize: number; pageCount: number; totals: { total: number; open: number } };
+
+export type SupplierTxnDetail = {
+  type: Exclude<SupplierTxnType, "BILL" | "PURCHASE_ORDER">;
+  id: string;
+  number: string;
+  date: string;
+  dueDate?: string;
+  status: string;
+  supplier: { id: string; code: string; name: string };
+  total: number;
+  net?: number;
+  tax?: number;
+  paid?: number;
+  withholdingTax?: number;
+  refunded?: number;
+  open: number;
+  method?: string | null;
+  account?: string | null;
+  category?: string;
+  paymentMode?: string;
+  reference: string | null;
+  description: string | null;
+  journalId: string | null;
+  sourceModule?: string | null;
+  billId?: string | null;
+  purchaseOrder?: { id: string; number: string } | null;
+  bill?: { id: string; billNumber: string } | null;
+  lines?: Array<{ description: string; sku: string | null; quantity: number; unitCost: number; value: number }>;
+  payments?: Array<{ paymentId: string; paymentNumber: string; date: string; amount: number }>;
+  applications: Array<{ billId: string; billNumber: string; reference: string | null; date: string; amount: number }>;
+};
+
+export type SupplierCredit = { type: "CREDIT_NOTE" | "PAYMENT" | "ADVANCE"; id: string; number: string; date: string; description: string | null; total: number; available: number };
+
+/** GET /ap/bills/:id */
+export type ApBillDetail = {
+  id: string;
+  billNumber: string;
+  supplierInvoiceNumber: string | null;
+  supplierId: string;
+  supplier: Supplier;
+  billDate: string;
+  dueDate: string;
+  poReference: string | null;
+  grnReference: string | null;
+  status: string;
+  currency: string;
+  net: Decimal;
+  tax: Decimal;
+  discount: Decimal;
+  gross: Decimal;
+  amountPaid: Decimal;
+  amountCredited: Decimal;
+  outstanding: number;
+  description: string | null;
+  sourceModule: string | null;
+  sourceDocumentType: string | null;
+  sourceDocumentId: string | null;
+  voidReason: string | null;
+  lines: Array<{ id: string; lineNumber: number; description: string; quantity: Decimal; unitPrice: Decimal; discount: Decimal; net: Decimal; taxCode: string | null; tax: Decimal }>;
+  allocations: Array<{ id: string; amount: Decimal; payment: { paymentNumber: string; paymentDate: string; status: string } }>;
+};
+
+export type SupplierActivityItem = CustomerActivityItem;
+
+/** GET /ap/suppliers/:id/period-statement */
+export type SupplierPeriodStatement = PeriodStatement & { totalBilled: number; totalPaid: number };
 
 export type SupplierNote = { id: string; body: string; erpUserId: number; authorName: string | null; createdAt: string };
 

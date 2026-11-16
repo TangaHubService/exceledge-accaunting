@@ -1,4 +1,4 @@
-import { AP_PAYMENT_METHODS } from "@exceledge/accounting-domain";
+import { AP_PAYMENT_METHODS, hasCapability } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
 import { AuthedRequest, authenticate, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
@@ -9,6 +9,7 @@ import * as print from "../print/print.service";
 import { ageingDocument, withholdingDocument } from "../books/report-documents";
 import * as ap from "./ap.service";
 import * as suppliers from "./suppliers.service";
+import * as profile from "./supplier-profile.service";
 import { parsePage, wantsPage } from "../../lib/pagination";
 
 export const apRouter = Router();
@@ -260,6 +261,62 @@ apRouter.post("/suppliers/:id/notes", requireCapability("ap:manage"), async (req
     res.status(201).json({ success: true, data });
   } catch (e) {
     fail(res, e);
+  }
+});
+
+apRouter.get("/suppliers/:id/summary", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await profile.supplierSummary(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.get("/suppliers/:id/transactions", async (req: AuthedRequest, res) => {
+  try {
+    const filter = z
+      .object({
+        type: z.enum(profile.SUPPLIER_TXN_TYPES).optional(),
+        status: z.enum(["open", "overdue", "closed"]).optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .parse(req.query);
+    const can = (c: "expense:view" | "inventory:view") => (req.apiKey ? req.apiKey.scopes.includes(c) : hasCapability(req.organizationRole ?? req.erpUser?.role, c));
+    const hidden: profile.SupplierTxnType[] = [...(can("expense:view") ? [] : (["EXPENSE"] as const)), ...(can("inventory:view") ? [] : (["ITEM_RECEIPT"] as const))];
+    res.json({ success: true, data: await profile.supplierTransactions(req.companyId!, req.params.id, filter, parsePage(req.query, { defaultSize: 25, maxSize: 200 }), hidden) });
+  } catch (e) {
+    fail(res, e, e instanceof z.ZodError ? 400 : 404);
+  }
+});
+
+apRouter.get("/suppliers/:id/credits", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await profile.supplierCredits(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.get("/suppliers/:id/activity", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await profile.supplierActivity(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.get("/transactions/:type/:id", async (req: AuthedRequest, res) => {
+  try {
+    const type = z.enum(["PAYMENT", "CREDIT_NOTE", "DEBIT_NOTE", "ADVANCE", "EXPENSE", "ITEM_RECEIPT"]).parse(req.params.type);
+    // Expenses and goods receipts belong to other modules; seeing them needs that module's permission too.
+    const needs = type === "EXPENSE" ? "expense:view" : type === "ITEM_RECEIPT" ? "inventory:view" : null;
+    if (needs && !(req.apiKey ? req.apiKey.scopes.includes(needs) : hasCapability(req.organizationRole ?? req.erpUser?.role, needs))) {
+      return res.status(403).json({ success: false, error: `Missing capability: ${needs}` });
+    }
+    res.json({ success: true, data: await profile.supplierTransactionDetail(req.companyId!, type, req.params.id) });
+  } catch (e) {
+    fail(res, e, e instanceof z.ZodError ? 400 : 404);
   }
 });
 
