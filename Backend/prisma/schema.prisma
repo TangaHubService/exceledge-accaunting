@@ -1524,6 +1524,7 @@ model ApBill {
   advanceAllocations ApAdvanceAllocation[]
   creditNotes        ApCreditNote[]
   lines              ApBillLine[]
+  creditApplications ApCreditApplication[]
 
   @@unique([companyId, billNumber])
   @@unique([companyId, supplierId, supplierInvoiceNumber])
@@ -1636,15 +1637,18 @@ model ApCreditNote {
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
   status             ApDocumentStatus @default(POSTED)
+  /// Part of the credit not yet set against a bill. A credit raised on a bill is applied to it at once.
+  unapplied          Decimal          @default(0) @db.Decimal(18, 4)
   journalId          String?
   description        String?
   createdByErpUserId Int?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  supplier Supplier @relation(fields: [supplierId], references: [id])
-  bill     ApBill?  @relation(fields: [billId], references: [id])
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier     Supplier              @relation(fields: [supplierId], references: [id])
+  bill         ApBill?               @relation(fields: [billId], references: [id])
+  applications ApCreditApplication[]
 
   @@unique([companyId, creditNoteNumber])
   @@index([companyId, supplierId])
@@ -1679,6 +1683,23 @@ model ApDebitNote {
   @@unique([companyId, debitNoteNumber])
   @@index([companyId, supplierId])
   @@map("ap_debit_notes")
+}
+
+/// A supplier credit set against a bill after it was issued. Only the subledger moves: AP was debited when the credit was posted.
+model ApCreditApplication {
+  id           String   @id @default(cuid())
+  creditNoteId String
+  billId       String
+  amount       Decimal  @db.Decimal(18, 4)
+  erpUserId    Int?
+  createdAt    DateTime @default(now())
+
+  creditNote ApCreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  bill       ApBill       @relation(fields: [billId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([billId])
+  @@map("ap_credit_applications")
 }
 
 model ApAdvance {

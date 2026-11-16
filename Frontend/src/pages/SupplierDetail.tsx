@@ -19,6 +19,7 @@ import { PdfButton } from "../components/Documents";
 import { useFeedback } from "../components/feedback";
 import { SummaryRows } from "../components/forms";
 import { Select } from "../components/Select";
+import { ApplySupplierCreditsDrawer } from "../components/suppliers/ApplySupplierCreditsDrawer";
 import { SupplierFormDrawer } from "../components/suppliers/SupplierFormDrawer";
 import { BillDrawer, poStatus, PurchaseOrderDrawer, SUPPLIER_TXN_LABEL, SupplierTxnDrawer } from "../components/suppliers/SupplierTxnDrawers";
 import { Badge, EmptyState, ErrorState, Loadable, Menu, PageHeader, Pagination, SkeletonRows } from "../components/ui";
@@ -63,7 +64,8 @@ type Dialog =
   | { kind: "pay"; billId?: string }
   | { kind: "void"; bill: ApBill }
   | { kind: "reverse"; payment: ApPayment }
-  | { kind: "allocate" | "refund"; advanceId: string };
+  | { kind: "allocate" | "refund"; advanceId: string }
+  | { kind: "apply"; source?: string };
 
 type Viewing = { type: SupplierTxnType; id: string } | null;
 
@@ -249,6 +251,7 @@ export function SupplierDetail({ id }: { id: string }) {
                           { label: "Supplier credit", onSelect: () => setDialog({ kind: "credit" }) },
                           { label: "Debit note", onSelect: () => setDialog({ kind: "debit" }) },
                           { label: "Pay in advance", onSelect: () => setDialog({ kind: "advance" }) },
+                          (sum?.availableCredit ?? 0) > 0.005 && (sum?.openBillCount ?? 0) > 0 && { label: "Apply credits", onSelect: () => setDialog({ kind: "apply" }) },
                         ]}
                       />
                     )}
@@ -281,13 +284,13 @@ export function SupplierDetail({ id }: { id: string }) {
 
             {!active && <p className="notice-inline">This supplier is inactive. Make them active to record new bills, orders or payments.</p>}
 
-            {sum && sum.credits.advances > 0.005 && sum.openBillCount > 0 && manage && (
+            {sum && sum.availableCredit > 0.005 && sum.openBillCount > 0 && manage && (
               <div className="cust-credit-banner no-print" role="status">
                 <span>
-                  You have <strong>{s.currency} {amount(sum.credits.advances, 2)}</strong> paid in advance to {s.name} and {plural(sum.openBillCount, "open bill")}.
+                  {s.name} has <strong>{s.currency} {amount(sum.availableCredit, 2)}</strong> in credits and {plural(sum.openBillCount, "open bill")}.
                 </span>
-                <button type="button" className="btn btn-sm btn-primary" onClick={() => setQueryParam("tab", "credits")}>
-                  Review credits
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => setDialog({ kind: "apply" })}>
+                  Apply credits
                 </button>
               </div>
             )}
@@ -379,7 +382,9 @@ export function SupplierDetail({ id }: { id: string }) {
                 </>
               )}
 
-              {tab === "credits" && <Credits key={`cr-${version}`} supplier={s} manage={manage} onOpen={open} onApplyAdvance={(advanceId) => setDialog({ kind: "allocate", advanceId })} />}
+              {tab === "credits" && (
+                <Credits key={`cr-${version}`} supplier={s} manage={manage && (sum?.openBillCount ?? 0) > 0} onOpen={open} onApply={(source) => setDialog({ kind: "apply", source })} />
+              )}
 
               {tab === "statements" && <Statement supplier={s} />}
 
@@ -394,6 +399,7 @@ export function SupplierDetail({ id }: { id: string }) {
                 onPay={(billId) => setDialog({ kind: "pay", billId })}
                 onVoid={(bill) => setDialog({ kind: "void", bill })}
                 onOpenPurchaseOrder={(poId) => setViewing({ type: "PURCHASE_ORDER", id: poId })}
+                onChanged={refresh}
               />
             )}
             {viewing?.type === "PURCHASE_ORDER" && (
@@ -418,6 +424,10 @@ export function SupplierDetail({ id }: { id: string }) {
                 onReverse={(payment) => setDialog({ kind: "reverse", payment })}
                 onApplyAdvance={(advanceId) => setDialog({ kind: "allocate", advanceId })}
                 onRefundAdvance={(advanceId) => setDialog({ kind: "refund", advanceId })}
+                onApplyCredit={(source) => {
+                  setViewing(null);
+                  setDialog({ kind: "apply", source });
+                }}
               />
             )}
 
@@ -431,6 +441,7 @@ export function SupplierDetail({ id }: { id: string }) {
             {dialog?.kind === "reverse" && <ReversePaymentForm payment={dialog.payment} onClose={close} onSaved={saved} />}
             {dialog?.kind === "allocate" && advance(dialog.advanceId) && <AllocateAdvanceForm advance={advance(dialog.advanceId)!} onClose={close} onSaved={saved} />}
             {dialog?.kind === "refund" && advance(dialog.advanceId) && <RefundAdvanceForm advance={advance(dialog.advanceId)!} onClose={close} onSaved={saved} />}
+            {dialog?.kind === "apply" && <ApplySupplierCreditsDrawer supplierId={s.id} initialSource={dialog.source} onClose={close} onSaved={saved} />}
           </div>
         );
       }}
@@ -935,12 +946,13 @@ function Credits({
   supplier: s,
   manage,
   onOpen,
-  onApplyAdvance,
+  onApply,
 }: {
   supplier: Supplier;
+  /** Can apply: manages payables and the supplier has open bills. */
   manage: boolean;
   onOpen: (r: { type: SupplierTxnType; id: string }) => void;
-  onApplyAdvance: (advanceId: string) => void;
+  onApply: (source: string) => void;
 }) {
   const credits = useResource<{ rows: SupplierCredit[]; total: number }>(`/api/v1/ap/suppliers/${s.id}/credits`);
   const columns: Column<SupplierCredit>[] = [
@@ -964,13 +976,13 @@ function Credits({
       header: <span className="sr-only">Actions</span>,
       width: 110,
       render: (c) =>
-        manage && c.type === "ADVANCE" ? (
+        manage ? (
           <button
             type="button"
             className="btn btn-sm row-actions"
             onClick={(e) => {
               e.stopPropagation();
-              onApplyAdvance(c.id);
+              onApply(`${c.type}:${c.id}`);
             }}
           >
             Apply
@@ -981,7 +993,7 @@ function Credits({
   return (
     <>
       <p className="muted small">
-        Credits from {s.name} that haven't been set against a bill yet. Supplier credits and unapplied payments already reduce the open balance; advances reduce it when they're applied to a bill.
+        Credits from {s.name} that haven't been set against a bill yet. Supplier credits and unapplied payments already reduce the open balance; advances reduce it when they're applied. Apply them here, or tick "Use credits" when you pay bills.
       </p>
       <Loadable resource={credits} skeleton={<SkeletonRows rows={2} />}>
         {(c) => (

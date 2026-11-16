@@ -27,11 +27,13 @@ async function loadSupplier(companyId: string, supplierId: string) {
 const OPEN_PO = ["OPEN", "PARTIALLY_RECEIVED", "RECEIVED"] as const;
 
 /**
- * A debit note is carried by a payable bill (sourceDocumentType "ApDebitNote") so it can be paid like one.
- * Lists show that bill as the debit note, and bill totals leave it and opening balances out.
+ * Debit notes and expenses on account are carried by a payable bill (sourceDocumentType "ApDebitNote" / "Expense") so
+ * they can be paid like one. Lists show that bill as the debit note or expense, and bill totals leave them and opening
+ * balances out.
  */
-const ORDINARY_BILL = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { notIn: ["SupplierOpening", "ApDebitNote"] } }] };
-const NOT_DEBIT_NOTE_BILL = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { not: "ApDebitNote" } }] };
+const ORDINARY_BILL = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { notIn: ["SupplierOpening", "ApDebitNote", "Expense"] } }] };
+/** Debit notes and on-account expenses are listed as themselves, with the open amount of the bill that carries them. */
+const LISTED_AS_BILL = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { notIn: ["ApDebitNote", "Expense"] } }] };
 
 type BillRow = { gross: unknown; amountPaid: unknown; amountCredited: unknown; status: string; dueDate: Date };
 
@@ -58,12 +60,9 @@ function billState(b: BillRow, today: Date) {
   return { gross, open, status, tone };
 }
 
-/**
- * A supplier credit note is available to apply when it was not issued against a bill.
- * Credit notes raised on a bill reduce that bill at once (see createCreditNote).
- */
-function creditNoteUnapplied(n: { billId: string | null; gross: unknown; status: string }) {
-  return n.status === "POSTED" && !n.billId ? money(n.gross as never) : 0;
+/** The part of a supplier credit not yet set against a bill. */
+function creditNoteUnapplied(n: { unapplied: unknown; status: string }) {
+  return n.status === "POSTED" ? money(n.unapplied as never) : 0;
 }
 
 /** The figures on the supplier profile header and overview. */
@@ -78,7 +77,7 @@ export async function supplierSummary(companyId: string, supplierId: string) {
     }),
     prisma.apBill.findMany({ where: { companyId, supplierId, status: "POSTED" }, select: { gross: true, amountPaid: true, amountCredited: true, dueDate: true } }),
     prisma.apPayment.aggregate({ where: { companyId, supplierId, status: "POSTED" }, _sum: { amount: true, withholdingTax: true, unallocated: true }, _count: true }),
-    prisma.apCreditNote.findMany({ where: { companyId, supplierId, status: "POSTED" }, select: { billId: true, gross: true, status: true } }),
+    prisma.apCreditNote.findMany({ where: { companyId, supplierId, status: "POSTED" }, select: { unapplied: true, status: true } }),
     prisma.apAdvance.aggregate({ where: { companyId, supplierId, status: "POSTED" }, _sum: { remaining: true, amount: true, refunded: true }, _count: true }),
     prisma.apDebitNote.aggregate({ where: { companyId, supplierId, status: "POSTED" }, _sum: { gross: true } }),
     prisma.commercialDocument.aggregate({ where: { companyId, supplierId, kind: "PURCHASE_ORDER", status: { in: [...OPEN_PO] } }, _sum: { total: true }, _count: true }),
@@ -204,7 +203,7 @@ export async function supplierTransactions(
   const want = (t: SupplierTxnType) => !hidden.includes(t) && (!filter.type || filter.type === t);
   const base = { companyId, supplierId };
   const [bills, payments, credits, debits, advances, expenses, orders, receipts] = await Promise.all([
-    want("BILL") ? prisma.apBill.findMany({ where: { ...base, ...NOT_DEBIT_NOTE_BILL, ...range("billDate") } }) : [],
+    want("BILL") ? prisma.apBill.findMany({ where: { ...base, ...LISTED_AS_BILL, ...range("billDate") } }) : [],
     want("PAYMENT") ? prisma.apPayment.findMany({ where: { ...base, ...range("paymentDate") }, include: { allocations: { include: { bill: { select: { billNumber: true } } } } } }) : [],
     want("CREDIT_NOTE") ? prisma.apCreditNote.findMany({ where: { ...base, ...range("noteDate") }, include: { bill: { select: { billNumber: true } } } }) : [],
     want("DEBIT_NOTE") ? prisma.apDebitNote.findMany({ where: { ...base, ...range("noteDate") } }) : [],
@@ -306,7 +305,30 @@ export async function supplierTransactions(
       statusTone: a.status !== "POSTED" ? "neutral" : remaining <= 0.005 ? "positive" : "warning",
     });
   }
+  const expenseBills = expenses.length
+    ? await prisma.apBill.findMany({ where: { companyId, sourceDocumentType: "Expense", sourceDocumentId: { in: expenses.map((e) => e.id) } } })
+    : [];
   for (const e of expenses) {
+    // On account: payable through its bill, so it carries that bill's open amount and status.
+    const bill = expenseBills.find((b) => b.sourceDocumentId === e.id);
+    if (bill && e.status === "POSTED") {
+      const st = billState(bill, today);
+      rows.push({
+        id: e.id,
+        type: "EXPENSE",
+        posting: true,
+        number: e.number,
+        date: e.expenseDate,
+        dueDate: bill.dueDate,
+        description: [e.description, `on account · ${bill.billNumber}`].filter(Boolean).join(" · "),
+        reference: e.reference,
+        total: money(e.grossAmount),
+        open: st.open,
+        status: st.status,
+        statusTone: st.tone,
+      });
+      continue;
+    }
     rows.push({
       id: e.id,
       type: "EXPENSE",
@@ -402,8 +424,13 @@ export async function supplierTransactionDetail(companyId: string, type: Exclude
     };
   }
   if (type === "CREDIT_NOTE") {
-    const n = await prisma.apCreditNote.findFirst({ where: { id, companyId }, include: { supplier: supplierSelect, bill: { select: { id: true, billNumber: true, billDate: true, supplierInvoiceNumber: true } } } });
+    const billSelect = { select: { id: true, billNumber: true, billDate: true, supplierInvoiceNumber: true } } as const;
+    const n = await prisma.apCreditNote.findFirst({
+      where: { id, companyId },
+      include: { supplier: supplierSelect, bill: billSelect, applications: { include: { bill: billSelect }, orderBy: { createdAt: "asc" } } },
+    });
     if (!n) throw new Error("Credit note does not exist");
+    const onIssue = n.bill ? roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((sum, a) => sum + money(a.amount), 0)) : 0;
     return {
       type,
       id: n.id,
@@ -418,7 +445,10 @@ export async function supplierTransactionDetail(companyId: string, type: Exclude
       reference: n.supplierReference,
       description: [n.reason, n.description].filter(Boolean).join(" · "),
       journalId: n.journalId,
-      applications: n.bill && n.status === "POSTED" ? [{ billId: n.bill.id, billNumber: n.bill.billNumber, reference: n.bill.supplierInvoiceNumber, date: n.bill.billDate, amount: money(n.gross) }] : [],
+      applications: [
+        ...(n.bill && onIssue > 0.005 ? [{ billId: n.bill.id, billNumber: n.bill.billNumber, reference: n.bill.supplierInvoiceNumber, date: n.bill.billDate, amount: onIssue }] : []),
+        ...n.applications.map((a) => ({ billId: a.bill.id, billNumber: a.bill.billNumber, reference: a.bill.supplierInvoiceNumber, date: a.createdAt, amount: money(a.amount) })),
+      ],
     };
   }
   if (type === "DEBIT_NOTE") {
@@ -524,12 +554,12 @@ export async function supplierTransactionDetail(companyId: string, type: Exclude
 export async function supplierCredits(companyId: string, supplierId: string) {
   await loadSupplier(companyId, supplierId);
   const [notes, payments, advances] = await Promise.all([
-    prisma.apCreditNote.findMany({ where: { companyId, supplierId, status: "POSTED", billId: null }, orderBy: { noteDate: "asc" } }),
+    prisma.apCreditNote.findMany({ where: { companyId, supplierId, status: "POSTED", unapplied: { gt: 0.005 } }, orderBy: { noteDate: "asc" } }),
     prisma.apPayment.findMany({ where: { companyId, supplierId, status: "POSTED", unallocated: { gt: 0.005 } }, orderBy: { paymentDate: "asc" } }),
     prisma.apAdvance.findMany({ where: { companyId, supplierId, status: "POSTED", remaining: { gt: 0.005 } }, orderBy: { advanceDate: "asc" } }),
   ]);
   const rows = [
-    ...notes.map((n) => ({ type: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, description: n.reason, total: money(n.gross), available: money(n.gross) })),
+    ...notes.map((n) => ({ type: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, description: n.reason, total: money(n.gross), available: money(n.unapplied) })),
     ...payments.map((p) => ({ type: "PAYMENT" as const, id: p.id, number: p.paymentNumber, date: p.paymentDate, description: p.description ?? p.reference, total: money(p.amount), available: money(p.unallocated) })),
     ...advances.map((a) => ({ type: "ADVANCE" as const, id: a.id, number: a.advanceNumber, date: a.advanceDate, description: a.description ?? a.reference, total: money(a.amount), available: money(a.remaining) })),
   ];
@@ -545,6 +575,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
   CREDIT_NOTE: "Supplier credit recorded",
   DEBIT_NOTE: "Debit note recorded",
   ADVANCE_APPLICATION: "Advance applied",
+  ADVANCE_UNAPPLY: "Advance taken off a bill",
   OPENING: "Opening balance",
 };
 
@@ -559,13 +590,30 @@ export async function supplierActivity(companyId: string, supplierId: string) {
     ...audits.map((a) => {
       const after = (a.afterJson ?? {}) as Record<string, unknown>;
       const fields = Object.keys(after).filter((k) => k !== "code");
-      const title = a.action === "CREATE" ? "Supplier created" : a.action === "DEACTIVATE" ? "Made inactive" : a.action === "ACTIVATE" ? "Made active" : "Profile updated";
+      const title =
+        a.action === "CREATE"
+          ? "Supplier created"
+          : a.action === "DEACTIVATE"
+            ? "Made inactive"
+            : a.action === "ACTIVATE"
+              ? "Made active"
+              : a.action === "APPLY_CREDIT"
+                ? "Credits applied to bills"
+                : a.action === "UNAPPLY_CREDIT"
+                  ? "Credit taken off a bill"
+                  : "Profile updated";
+      const moved = (after.applied ?? after.removed ?? []) as Array<{ number: string; billNumber: string; amount: number }>;
       return {
         id: `audit-${a.id}`,
         at: a.createdAt,
         kind: "change" as const,
         title,
-        detail: a.action === "UPDATE" && fields.length ? `Changed ${fields.map((f) => f.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ")}` : null,
+        detail:
+          a.action === "APPLY_CREDIT" || a.action === "UNAPPLY_CREDIT"
+            ? moved.map((x) => `${x.number} → ${x.billNumber} (${x.amount})`).join(", ")
+            : a.action === "UPDATE" && fields.length
+              ? `Changed ${fields.map((f) => f.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ")}`
+              : null,
         erpUserId: a.erpUserId,
         docType: null as string | null,
         docId: null as string | null,

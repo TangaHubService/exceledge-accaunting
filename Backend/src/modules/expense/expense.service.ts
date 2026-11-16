@@ -16,6 +16,7 @@ import {
 import { defaultsFor, money, nextNumber } from "../../lib/documents";
 import type { Prisma } from "@prisma/client";
 import { inTransaction, prisma } from "../../lib/prisma";
+import { assertExpenseBillReversible, recordExpenseOnAccount, voidExpenseBill } from "../ap/ap.service";
 import { decideApproval, planFor, requestApproval, resubmitApproval } from "../approvals/approval.service";
 import { writeAudit } from "../audit/audit.service";
 import { assertDimensions, createAndPostJournal } from "../journals/journal.service";
@@ -237,7 +238,10 @@ async function resolveCreditAccount(
     if (input.supplierId) {
       const supplier = await prisma.supplier.findFirst({ where: { id: input.supplierId, companyId } });
       if (!supplier) throw new Error("Supplier does not exist");
-      return { creditAccountId: supplier.apAccountId, financialAccountId: null };
+      // Suppliers without their own payables account use the company's.
+      const ap = supplier.apAccountId ?? defaults.accountsPayableId;
+      if (!ap) throw new Error("Map an accounts payable account for expenses on account");
+      return { creditAccountId: ap, financialAccountId: null };
     }
     const accrued = defaults.accruedExpensesId ?? defaults.accountsPayableId;
     if (!accrued) throw new Error("Map an accrued expenses or accounts payable account for expenses on account");
@@ -246,6 +250,13 @@ async function resolveCreditAccount(
   const bank = defaults.defaultBankAccountId ?? defaults.defaultCashAccountId;
   if (!bank) throw new Error("Choose the bank or cash account this expense was paid from");
   return { creditAccountId: bank, financialAccountId: null };
+}
+
+/** True when an expense credits Accounts Payable (the supplier's or the company's), so the supplier subledger must follow. */
+async function creditsPayables(companyId: string, creditAccountId: string | null, supplierId: string) {
+  if (!creditAccountId) return false;
+  const [supplier, defaults] = await Promise.all([prisma.supplier.findFirst({ where: { id: supplierId, companyId }, select: { apAccountId: true } }), defaultsFor(companyId)]);
+  return creditAccountId === supplier?.apAccountId || creditAccountId === defaults.accountsPayableId;
 }
 
 async function serializeExpense(companyId: string, id: string) {
@@ -538,7 +549,12 @@ export async function rejectExpense(companyId: string, id: string, input: { reas
   return serializeExpense(companyId, id);
 }
 
+/** Posts the journal and, for an expense on account to a supplier, its payable bill, together. */
 export async function postExpense(companyId: string, id: string, actor: Actor = {}) {
+  return inTransaction(() => postExpenseOnce(companyId, id, actor));
+}
+
+async function postExpenseOnce(companyId: string, id: string, actor: Actor) {
   const expense = await prisma.expense.findFirst({ where: { id, companyId }, include: { category: true } });
   if (!expense) throw new Error("Expense does not exist");
   if (expense.status === "POSTED") return serializeExpense(companyId, id);
@@ -586,11 +602,19 @@ export async function postExpense(companyId: string, id: string, actor: Actor = 
     where: { id },
     data: { status: "POSTED", postedAt: new Date(), postedByErpUserId: actor.erpUserId, journalId: journal.id },
   });
+  if (expense.paymentMode === "ON_ACCOUNT" && expense.supplierId && (await creditsPayables(companyId, expense.creditAccountId, expense.supplierId))) {
+    await recordExpenseOnAccount(companyId, { ...expense, supplierId: expense.supplierId }, journal.id, actor);
+  }
   await audit(companyId, actor, "POST", "Expense", id, updated, expense);
   return serializeExpense(companyId, id);
 }
 
+/** Reverses the journal and voids an on-account expense's payable bill, together. */
 export async function reverseExpense(companyId: string, id: string, input: { reason: string; reversalDate?: string }, actor: Actor = {}) {
+  return inTransaction(() => reverseExpenseOnce(companyId, id, input, actor));
+}
+
+async function reverseExpenseOnce(companyId: string, id: string, input: { reason: string; reversalDate?: string }, actor: Actor) {
   const expense = await prisma.expense.findFirst({ where: { id, companyId } });
   if (!expense) throw new Error("Expense does not exist");
   assertExpenseTransition(expense.status as ExpenseStatus, "REVERSED");
@@ -610,6 +634,8 @@ export async function reverseExpense(companyId: string, id: string, input: { rea
   );
   const reversalDate = input.reversalDate ? startOfDay(input.reversalDate) : startOfDay(new Date());
   if (reversalDate < expense.expenseDate) throw new Error("A reversal can't be dated before the expense");
+  // An on-account expense that has been paid can't simply disappear from the supplier's account.
+  await assertExpenseBillReversible(companyId, expense.id);
   const journal = await postExpenseJournal(
     companyId,
     {
@@ -633,6 +659,7 @@ export async function reverseExpense(companyId: string, id: string, input: { rea
       reversalJournalId: journal.id,
     },
   });
+  await voidExpenseBill(companyId, expense.id, input.reason.trim(), reversalDate);
   await audit(companyId, actor, "REVERSE", "Expense", id, updated, expense);
   return serializeExpense(companyId, id);
 }

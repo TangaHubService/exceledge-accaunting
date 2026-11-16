@@ -4,7 +4,7 @@ import { accountOptions } from "../pages/Accounts";
 import { useCompany } from "../lib/company";
 import { amount, date, humanize, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
-import type { AccountType, ApAdvance, ApBill, ApPayment, ApPaymentMethod, Supplier } from "../lib/types";
+import type { AccountType, ApAdvance, ApBill, ApPayment, ApPaymentMethod, Supplier, SupplierOpenItems } from "../lib/types";
 import { SettlementAccountField } from "./BankingForms";
 import { emptyLine, EntryModeSwitch, LineItemsEditor, type LineDraft, linesPayload, priceLines, useLineTaxCodes } from "./Documents";
 import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
@@ -238,7 +238,11 @@ export function PaymentForm({
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const { busy, error, setError, run } = useSubmit(onSaved);
   const bills = useOpenBills(supplierId || null);
-  const open = bills.data;
+  const items = useResource<SupplierOpenItems>(supplierId ? `/api/v1/ap/suppliers/${supplierId}/open-items` : null);
+  const [useCredits, setUseCredits] = useState(true);
+  const raw = bills.data;
+  // The chosen bill first, then oldest due first: the order credits and cash are applied in.
+  const ordered = useMemo(() => (raw && billId ? [...raw.filter((b) => b.id === billId), ...raw.filter((b) => b.id !== billId)] : raw), [raw, billId]);
 
   const supplier = preset ?? picked;
   const rate = toNumber(supplier?.whtRate);
@@ -246,27 +250,53 @@ export function PaymentForm({
   const withheld = parseAmount(wht) || 0;
   const settled = (Number.isFinite(cash) ? cash : 0) + withheld;
 
+  // Credits the supplier already has (credits, unapplied payments, advances), oldest to the bills in order, same currency.
+  const creditPlan = useMemo(() => {
+    const plan: Array<{ source: SupplierOpenItems["credits"][number]["source"]; sourceId: string; number: string; billId: string; billNumber: string; amount: number }> = [];
+    if (!useCredits || !ordered || !items.data) return plan;
+    const left = new Map(ordered.map((b) => [b.id, b.outstanding]));
+    for (const c of items.data.credits) {
+      let avail = c.available;
+      for (const b of ordered) {
+        if (avail <= 0.005) break;
+        const bill = items.data.bills.find((x) => x.id === b.id);
+        if (!bill || bill.currency !== c.currency) continue;
+        const open = left.get(b.id) ?? 0;
+        if (open <= 0.005) continue;
+        const take = Math.round(Math.min(avail, open) * 100) / 100;
+        plan.push({ source: c.source, sourceId: c.id, number: c.number, billId: b.id, billNumber: b.billNumber, amount: take });
+        left.set(b.id, open - take);
+        avail -= take;
+      }
+    }
+    return plan;
+  }, [useCredits, ordered, items.data]);
+  const creditOn = (id: string) => creditPlan.filter((c) => c.billId === id).reduce((sum, c) => sum + c.amount, 0);
+  const creditTotal = creditPlan.reduce((sum, c) => sum + c.amount, 0);
+  const creditAvailable = (items.data?.credits ?? []).reduce((sum, c) => sum + c.available, 0);
+  // What each bill still needs in cash once the credits are on it.
+  const open = useMemo(() => ordered?.map((b) => ({ ...b, outstanding: Math.max(0, Math.round((b.outstanding - creditOn(b.id)) * 100) / 100) })), [ordered, creditPlan]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Settle the chosen bill, then oldest first, whenever the amounts or bills change.
   useEffect(() => {
     if (!open) return;
     let remaining = settled;
-    const ordered = billId ? [...open.filter((b) => b.id === billId), ...open.filter((b) => b.id !== billId)] : open;
     const next: Record<string, string> = {};
-    for (const bill of ordered) {
+    for (const bill of open) {
       const apply = Math.min(remaining, bill.outstanding);
       if (apply > 0) next[bill.id] = amount(apply, apply % 1 ? 2 : 0);
       remaining -= apply;
     }
     setAllocations(next);
-  }, [open, settled, billId]);
+  }, [open, settled]);
 
   const prefilled = useRef(false);
   useEffect(() => {
-    if (prefilled.current || !billId || !open) return;
+    if (prefilled.current || !billId || !open || (supplierId && !items.data && !items.error)) return;
     prefilled.current = true;
     const bill = open.find((b) => b.id === billId);
     if (bill) setPaid(amount(bill.outstanding, bill.outstanding % 1 ? 2 : 0));
-  }, [billId, open]);
+  }, [billId, open, items.data, items.error, supplierId]);
 
   const applied = Object.values(allocations).reduce((s, v) => s + (parseAmount(v) || 0), 0);
   const unapplied = settled - applied;
@@ -283,28 +313,33 @@ export function PaymentForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!Number.isFinite(cash) || cash <= 0 || !supplier) return;
+    if (!supplier) return;
+    const cashAmount = Number.isFinite(cash) ? cash : 0;
+    if (cashAmount <= 0 && !creditPlan.length) return setError("Enter the amount paid.");
     if (whtTooHigh) return setError("Withholding tax must be less than the amount settled.");
     if (unapplied < -0.001) return setError("You've applied more to bills than the amount settled.");
     if (overApplied) return setError("A bill can't be settled for more than its outstanding balance.");
     const rows = Object.entries(allocations)
       .map(([id, v]) => ({ billId: id, amount: parseAmount(v) || 0 }))
       .filter((r) => r.amount > 0);
+    const credits = creditPlan.map(({ source, sourceId, billId: id, amount: a }) => ({ source, sourceId, billId: id, amount: a }));
     void run(async () => {
-      const p = await api<{ paymentNumber: string }>("/api/v1/ap/payments", {
+      const p = await api<{ paymentNumber?: string; payment?: null }>("/api/v1/ap/payments", {
         method: "POST",
         body: JSON.stringify({
           supplierId: supplier.id,
           paymentDate,
           method,
-          amount: cash,
-          withholdingTax: withheld || undefined,
+          amount: cashAmount,
+          withholdingTax: cashAmount > 0 ? withheld || undefined : undefined,
           reference: reference.trim() || undefined,
           financialAccountId: financialAccountId || undefined,
-          allocations: rows.length ? rows : undefined,
+          allocations: cashAmount > 0 && rows.length ? rows : undefined,
+          credits: credits.length ? credits : undefined,
         }),
       });
-      return `Payment ${p.paymentNumber} recorded`;
+      if (!p.paymentNumber) return `${amount(creditTotal, 2)} of credits applied`;
+      return `Payment ${p.paymentNumber} recorded${credits.length ? ` with ${amount(creditTotal, 2)} of credits` : ""}`;
     });
   }
 
@@ -328,8 +363,8 @@ export function PaymentForm({
               setWht("");
             }}
           />
-          <Field label={`Amount paid (${currency})`} required hint="Cash leaving the bank or till">
-            <MoneyInput value={paid} onChange={setPaid} required />
+          <Field label={`Amount paid (${currency})`} required={!creditPlan.length} hint={creditPlan.length ? "Cash leaving the bank or till, after the credits below. Leave 0 if the credits cover it." : "Cash leaving the bank or till"}>
+            <MoneyInput value={paid} onChange={setPaid} required={!creditPlan.length} />
           </Field>
           <Field
             label="Withholding tax"
@@ -357,6 +392,35 @@ export function PaymentForm({
           <SettlementAccountField label="Paid from" value={financialAccountId} onChange={setFinancialAccountId} />
         </div>
 
+        {supplierId && creditAvailable > 0.005 && (open?.length ?? 0) > 0 && (
+          <>
+            <div className="form-section-title" style={{ marginTop: 24 }}>Credits</div>
+            <label className="check">
+              <input type="checkbox" checked={useCredits} onChange={(e) => setUseCredits(e.target.checked)} />
+              <span>
+                Use the {amount(creditAvailable, 2)} {supplier?.name ? `${supplier.name} has` : "available"} in credits, unapplied payments and advances
+              </span>
+            </label>
+            {creditPlan.length > 0 && (
+              <ul className="cust-mini" style={{ marginTop: 8 }}>
+                {creditPlan.map((c, i) => (
+                  <li key={`${c.sourceId}-${c.billId}-${i}`}>
+                    <div className="cust-mini-row">
+                      <span className="cust-mini-main">
+                        <span className="strong">
+                          {c.source === "CREDIT_NOTE" ? "Supplier credit" : c.source === "PAYMENT" ? "Unapplied payment" : "Advance"} {c.number}
+                        </span>
+                        <span className="sub">to {c.billNumber}</span>
+                      </span>
+                      <span className="num strong">{amount(c.amount, 2)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
         {supplierId && (
           <>
             <div className="form-section-title" style={{ marginTop: 24 }}>Settle bills</div>
@@ -370,7 +434,7 @@ export function PaymentForm({
                     <tr>
                       <th>Bill</th>
                       <th className="hide-sm">Due</th>
-                      <th className="num">Outstanding</th>
+                      <th className="num">{creditPlan.length ? "Left after credits" : "Outstanding"}</th>
                       <th className="num" style={{ width: 150 }}>
                         Settle
                       </th>
@@ -403,9 +467,10 @@ export function PaymentForm({
                 </table>
               </div>
             )}
-            {settled > 0 && (
+            {(settled > 0 || creditTotal > 0) && (
               <SummaryRows
                 rows={[
+                  ...(creditTotal ? ([["Credits applied", amount(creditTotal)]] as Array<[ReactNode, ReactNode]>) : []),
                   ["Amount paid", amount(Number.isFinite(cash) ? cash : 0)],
                   ...(withheld ? ([["Withholding tax", amount(withheld)]] as Array<[ReactNode, ReactNode]>) : []),
                   ["Settled against bills", amount(applied)],

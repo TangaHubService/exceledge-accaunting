@@ -636,6 +636,23 @@ export type ApBillDetail = {
 
 export type SupplierActivityItem = CustomerActivityItem;
 
+export type SupplierCreditSource = "CREDIT_NOTE" | "PAYMENT" | "ADVANCE";
+
+/** GET /ap/suppliers/:id/open-items */
+export type SupplierOpenItems = {
+  supplier: { id: string; code: string; name: string; currency: string };
+  credits: Array<{ source: SupplierCreditSource; id: string; number: string; date: string; currency: string; available: number; description: string | null }>;
+  bills: Array<{ id: string; number: string; supplierInvoiceNumber: string | null; date: string; dueDate: string; currency: string; open: number; description: string | null; isOpening: boolean }>;
+};
+
+/** GET /ap/bills/:id/applications */
+export type BillApplications = {
+  billId: string;
+  status: string;
+  outstanding: number;
+  rows: Array<{ kind: "PAYMENT" | "CREDIT_NOTE" | "CREDIT_ON_ISSUE" | "ADVANCE"; id: string; sourceId: string; sourceNumber: string; date: string; amount: number; removable: boolean; reason?: string }>;
+};
+
 /** GET /ap/suppliers/:id/period-statement */
 export type SupplierPeriodStatement = PeriodStatement & { totalBilled: number; totalPaid: number };
 

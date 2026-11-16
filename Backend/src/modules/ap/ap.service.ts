@@ -15,6 +15,7 @@ import {
   buildSupplierReturnLines,
   periodStatement,
   realizedFxSettlement,
+  reverseJournalLines,
   type DocumentLineInput,
   readPaymentSplits,
   roundMoney,
@@ -23,12 +24,12 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import { Prisma, type SupplierType } from "@prisma/client";
-import { defaultsFor, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { documentApprovalPlan, requestApproval } from "../approvals/approval.service";
 import { inventoryConfig, recordSupplierReturn } from "../inventory/inventory.service";
-import { createAndPostJournal, reversalCurrency } from "../journals/journal.service";
+import { createAndPostJournal, linesInJournalCurrency, reversalCurrency } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -609,10 +610,19 @@ export async function createPayment(
     allocations?: Array<{ billId: string; amount: number }>;
     allowUnallocated?: boolean;
     financialAccountId?: string;
+    /** Credits the supplier already has, set against bills in the same transaction before the cash is allocated. */
+    credits?: CreditApplicationInput[];
   },
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
+  const credits = (input.credits ?? []).filter((c) => roundMoney(c.amount) > 0);
+  if (credits.length) await applySupplierCredits(companyId, supplier.id, { applications: credits, date: String(input.paymentDate).slice(0, 10) }, actor);
+  const reference = input.reference?.trim();
+  if (reference) {
+    const same = await prisma.apPayment.findFirst({ where: { companyId, supplierId: supplier.id, status: "POSTED", reference } });
+    if (same) throw new Error(`A payment with reference ${reference} is already recorded for this supplier as ${same.paymentNumber}`);
+  }
   const paid = roundMoney(input.amount);
   const wht = roundMoney(input.withholdingTax ?? 0);
   const settled = roundMoney(paid + wht);
@@ -794,6 +804,16 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
       credit: roundMoney(paid + wht),
     });
   });
+  // Realized FX booked when this payment's unapplied amount was set against a bill later goes with it.
+  const fxApplications = await prisma.journal.findMany({ where: { companyId, sourceDocumentType: "ApCreditApplication", sourceDocumentId: payment.id, status: "POSTED" } });
+  for (const j of fxApplications) {
+    await postJournalReversal(
+      companyId,
+      j.id,
+      { date: reversalDate, description: `Reverse FX on ${payment.paymentNumber}`, sourceDocumentType: "ApCreditApplicationReversal", sourceDocumentId: payment.id, sourceDocumentNumber: payment.paymentNumber, supplierRef: payment.supplierId },
+      actor,
+    );
+  }
   if (bankLinked.count) {
     await prisma.bankTransaction.updateMany({
       where: { companyId, apPaymentId: paymentId },
@@ -881,6 +901,8 @@ async function createCreditNoteInTransaction(
       net,
       tax,
       gross,
+      // A credit raised on a bill is applied to it at once; otherwise it waits on account.
+      unapplied: bill ? 0 : gross,
       description: input.description,
       createdByErpUserId: actor.erpUserId,
     },
@@ -1298,6 +1320,7 @@ async function voidBillOnce(companyId: string, billId: string, input: { reason: 
   const bill = await prisma.apBill.findFirst({ where: { id: billId, companyId } });
   if (!bill) throw new Error("Bill does not exist");
   if (bill.status !== "POSTED") throw new Error(`Only a posted bill can be voided; this one is ${bill.status.toLowerCase().replace("_", " ")}`);
+  if (bill.sourceDocumentType === "Expense") throw new Error(`This bill was created by expense ${bill.sourceDocumentNumber ?? ""}; reverse the expense instead`.replace("  ", " "));
   if (bill.sourceModule !== "AP") throw new Error("Bills from Excel Edge must be cancelled in Excel Edge");
   if (bill.sourceDocumentType === "ApDebitNote") throw new Error("This bill carries a debit note; settle it with a credit note instead of voiding it");
   if (!bill.journalId) throw new Error("The bill has no journal to reverse");
@@ -1748,4 +1771,405 @@ export async function syncSupplierPaymentToSubledger(eventId: string) {
     });
     return payment;
   });
+}
+
+/* ── Supplier credits: apply and remove ────────────────────────────── */
+
+export type CreditSource = "CREDIT_NOTE" | "PAYMENT" | "ADVANCE";
+export type CreditApplicationInput = { source: CreditSource; sourceId: string; billId: string; amount: number };
+
+/** Posts the mirror image of a posted journal, in its original currency. */
+async function postJournalReversal(
+  companyId: string,
+  journalId: string,
+  info: { date: Date; description: string; sourceDocumentType: string; sourceDocumentId: string; sourceDocumentNumber: string; supplierRef: string },
+  actor: Actor,
+) {
+  const original = await prisma.journal.findFirst({ where: { id: journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
+  if (!original) throw new Error("The original journal could not be found");
+  return postBalanced(
+    companyId,
+    {
+      journalDate: info.date,
+      description: info.description,
+      referenceNumber: info.sourceDocumentNumber,
+      ...(await reversalCurrency(companyId, journalId)),
+      sourceDocumentType: info.sourceDocumentType,
+      sourceDocumentId: info.sourceDocumentId,
+      sourceDocumentNumber: info.sourceDocumentNumber,
+      supplierRef: info.supplierRef,
+      lines: reverseJournalLines(linesInJournalCurrency(original.lines)),
+    },
+    actor,
+  );
+}
+
+/** Open bills and the credits that can go against them, for the apply-credits screen. */
+export async function supplierOpenItems(companyId: string, supplierId: string) {
+  const supplier = await getSupplier(companyId, supplierId);
+  const [payments, notes, advances, bills] = await Promise.all([
+    prisma.apPayment.findMany({ where: { companyId, supplierId, status: "POSTED", unallocated: { gt: 0.005 } }, orderBy: { paymentDate: "asc" } }),
+    prisma.apCreditNote.findMany({ where: { companyId, supplierId, status: "POSTED", unapplied: { gt: 0.005 } }, orderBy: { noteDate: "asc" } }),
+    prisma.apAdvance.findMany({ where: { companyId, supplierId, status: "POSTED", remaining: { gt: 0.005 } }, orderBy: { advanceDate: "asc" } }),
+    prisma.apBill.findMany({ where: { companyId, supplierId, status: "POSTED" }, orderBy: [{ dueDate: "asc" }, { billNumber: "asc" }] }),
+  ]);
+  const functional = await functionalCurrencyOf(companyId);
+  return {
+    supplier: { id: supplier.id, code: supplier.code, name: supplier.name, currency: supplier.currency },
+    credits: [
+      ...payments.map((p) => ({ source: "PAYMENT" as const, id: p.id, number: p.paymentNumber, date: p.paymentDate, currency: p.currency, available: money(p.unallocated), description: p.reference ?? p.description })),
+      ...notes.map((n) => ({ source: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, currency: functional, available: money(n.unapplied), description: n.reason })),
+      ...advances.map((a) => ({ source: "ADVANCE" as const, id: a.id, number: a.advanceNumber, date: a.advanceDate, currency: a.currency, available: money(a.remaining), description: a.reference ?? a.description })),
+    ].sort((a, b) => a.date.getTime() - b.date.getTime()),
+    bills: bills
+      .map((b) => ({
+        id: b.id,
+        number: b.billNumber,
+        supplierInvoiceNumber: b.supplierInvoiceNumber,
+        date: b.billDate,
+        dueDate: b.dueDate,
+        currency: b.currency,
+        open: billOutstanding(b),
+        description: b.description,
+        isOpening: b.sourceDocumentType === "SupplierOpening",
+      }))
+      .filter((b) => b.open > 0.005),
+  };
+}
+
+/**
+ * Sets credits the supplier already has against open bills (QuickBooks "apply credits").
+ *
+ * - Supplier credit: AP was debited when it was posted; the bill's credited amount goes up.
+ * - Unapplied payment: AP was debited when the money went out; the payment is allocated to the bill,
+ *   plus a realized FX line when a foreign payment meets a bill booked at another rate.
+ * - Advance: held in prepayments until now, so it posts Dr AP / Cr prepayments through `allocateAdvance`.
+ *
+ * Runs inside the caller's transaction; any failing row rolls the whole set back.
+ */
+export async function applySupplierCredits(
+  companyId: string,
+  supplierId: string,
+  input: { applications: CreditApplicationInput[]; date?: string },
+  actor: Actor = {},
+) {
+  const supplier = await getSupplier(companyId, supplierId);
+  const rows = input.applications.map((a) => ({ ...a, amount: roundMoney(a.amount) })).filter((a) => a.amount > 0);
+  if (!rows.length) throw new Error("Enter an amount to apply");
+  const applyDate = input.date ? new Date(`${input.date.slice(0, 10)}T00:00:00.000Z`) : new Date();
+  if (Number.isNaN(applyDate.getTime())) throw new Error("Date must be yyyy-mm-dd");
+
+  const billIds = [...new Set(rows.map((r) => r.billId))];
+  const bills = await prisma.apBill.findMany({ where: { companyId, supplierId, id: { in: billIds }, status: "POSTED" } });
+  if (bills.length !== billIds.length) throw new Error("One or more bills are not open for this supplier");
+  const byBill = new Map(bills.map((b) => [b.id, b]));
+
+  // Refuse over-application up front with a clear message; the row-level guards below still catch races.
+  const perBill = new Map<string, number>();
+  for (const r of rows) perBill.set(r.billId, roundMoney((perBill.get(r.billId) ?? 0) + r.amount));
+  for (const [id, total] of perBill) {
+    const b = byBill.get(id)!;
+    if (total - billOutstanding(b) > 0.0001) throw new Error(`Bill ${b.billNumber} only has ${billOutstanding(b)} left to pay`);
+  }
+  const functional = await functionalCurrencyOf(companyId);
+
+  const applied: Array<{ source: CreditSource; number: string; billNumber: string; amount: number }> = [];
+  for (const r of rows) {
+    const bill = byBill.get(r.billId)!;
+    if (r.source === "ADVANCE") {
+      const adv = await prisma.apAdvance.findFirst({ where: { id: r.sourceId, companyId, supplierId, status: "POSTED" } });
+      if (!adv) throw new Error("Advance is not available");
+      await allocateAdvance(companyId, adv.id, { billId: bill.id, amount: r.amount, allocationDate: applyDate }, actor);
+      applied.push({ source: r.source, number: adv.advanceNumber, billNumber: bill.billNumber, amount: r.amount });
+      continue;
+    }
+
+    if (r.source === "PAYMENT") {
+      const payment = await prisma.apPayment.findFirst({ where: { id: r.sourceId, companyId, supplierId, status: "POSTED" } });
+      if (!payment) throw new Error("Payment is not available");
+      if (payment.currency !== bill.currency) throw new Error(`Payment ${payment.paymentNumber} is in ${payment.currency}; bill ${bill.billNumber} is in ${bill.currency}`);
+      const paymentRate = Number(payment.exchangeRate);
+      const billRate = Number(bill.exchangeRate);
+      if (Math.abs(paymentRate - billRate) > 1e-10) {
+        // The payment cleared AP at its own rate and the bill was booked at another: book the difference.
+        const diff = roundMoney(r.amount * (paymentRate - billRate));
+        if (Math.abs(diff) >= 0.01) {
+          const ap = supplier.apAccountId || (await defaultsFor(companyId)).accountsPayableId;
+          if (!ap) throw new Error("Payables account is not configured");
+          const { gainId, lossId } = await fxAccounts(companyId);
+          const note = `FX on ${payment.paymentNumber} applied to ${bill.billNumber}`;
+          const lines: JournalLineDraft[] =
+            diff > 0
+              ? [
+                  { accountId: lossId, description: "Realized FX loss", debit: diff, credit: 0 },
+                  { accountId: ap, description: note, debit: 0, credit: diff },
+                ]
+              : [
+                  { accountId: ap, description: note, debit: -diff, credit: 0 },
+                  { accountId: gainId, description: "Realized FX gain", debit: 0, credit: -diff },
+                ];
+          await postBalanced(
+            companyId,
+            {
+              journalDate: applyDate,
+              description: `Apply ${payment.paymentNumber} to ${bill.billNumber} (realized FX)`,
+              referenceNumber: payment.paymentNumber,
+              currencyCode: functional,
+              exchangeRate: 1,
+              sourceDocumentType: "ApCreditApplication",
+              sourceDocumentId: payment.id,
+              sourceDocumentNumber: payment.paymentNumber,
+              supplierRef: supplier.id,
+              lines,
+            },
+            actor,
+          );
+        }
+      }
+      await prisma.$transaction(async (tx) => {
+        const taken = await tx.apPayment.updateMany({ where: { id: payment.id, status: "POSTED", unallocated: { gte: r.amount } }, data: { unallocated: { decrement: r.amount } } });
+        if (!taken.count) throw new Error(`Payment ${payment.paymentNumber} doesn't have ${r.amount} left to apply`);
+        await tx.apAllocation.create({ data: { paymentId: payment.id, billId: bill.id, amount: r.amount } });
+        const updated = await bumpPostedBill(tx, bill.id, { amountPaid: { increment: r.amount } });
+        if (billOutstanding(updated) < -0.0001) throw new Error(`Bill ${bill.billNumber} would be overpaid`);
+      });
+      applied.push({ source: r.source, number: payment.paymentNumber, billNumber: bill.billNumber, amount: r.amount });
+      continue;
+    }
+
+    const note = await prisma.apCreditNote.findFirst({ where: { id: r.sourceId, companyId, supplierId, status: "POSTED" } });
+    if (!note) throw new Error("Supplier credit is not available");
+    // Supplier credits are posted in the functional currency.
+    if (bill.currency !== functional) throw new Error(`Supplier credit ${note.creditNoteNumber} is in ${functional}; bill ${bill.billNumber} is in ${bill.currency}`);
+    await prisma.$transaction(async (tx) => {
+      const taken = await tx.apCreditNote.updateMany({ where: { id: note.id, status: "POSTED", unapplied: { gte: r.amount } }, data: { unapplied: { decrement: r.amount } } });
+      if (!taken.count) throw new Error(`Supplier credit ${note.creditNoteNumber} doesn't have ${r.amount} left to apply`);
+      await tx.apCreditApplication.create({ data: { creditNoteId: note.id, billId: bill.id, amount: r.amount, erpUserId: actor.erpUserId } });
+      const updated = await bumpPostedBill(tx, bill.id, { amountCredited: { increment: r.amount } });
+      if (billOutstanding(updated) < -0.0001) throw new Error(`Bill ${bill.billNumber} would be overpaid`);
+    });
+    applied.push({ source: r.source, number: note.creditNoteNumber, billNumber: bill.billNumber, amount: r.amount });
+  }
+
+  await audit(companyId, actor, "APPLY_CREDIT", "Supplier", supplier.id, { applied });
+  return { applied, total: roundMoney(applied.reduce((s, a) => s + a.amount, 0)) };
+}
+
+export type BillApplicationKind = "PAYMENT" | "CREDIT_NOTE" | "CREDIT_ON_ISSUE" | "ADVANCE";
+
+/** Everything paid or credited on one bill, each with whether it can be taken off here. */
+export async function billApplications(companyId: string, billId: string) {
+  const bill = await prisma.apBill.findFirst({ where: { id: billId, companyId } });
+  if (!bill) throw new Error("Bill does not exist");
+  const functional = await functionalCurrencyOf(companyId);
+  const [allocations, creditApps, notesOnIssue, advanceAllocs] = await Promise.all([
+    prisma.apAllocation.findMany({ where: { billId, payment: { companyId } }, include: { payment: true }, orderBy: { createdAt: "asc" } }),
+    prisma.apCreditApplication.findMany({ where: { billId, creditNote: { companyId } }, include: { creditNote: true }, orderBy: { createdAt: "asc" } }),
+    prisma.apCreditNote.findMany({ where: { companyId, billId, status: "POSTED" }, include: { applications: true } }),
+    prisma.apAdvanceAllocation.findMany({ where: { billId, advance: { companyId } }, include: { advance: true }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const rows: Array<{ kind: BillApplicationKind; id: string; sourceId: string; sourceNumber: string; date: Date; amount: number; removable: boolean; reason?: string }> = [];
+  for (const a of allocations) {
+    const fxLocked = a.payment.currency !== functional && Math.abs(Number(a.payment.exchangeRate) - Number(bill.exchangeRate)) > 1e-10;
+    rows.push({
+      kind: "PAYMENT",
+      id: a.id,
+      sourceId: a.paymentId,
+      sourceNumber: a.payment.paymentNumber,
+      date: a.payment.paymentDate,
+      amount: money(a.amount),
+      removable: a.payment.status === "POSTED" && !fxLocked && bill.status === "POSTED",
+      reason: a.payment.status !== "POSTED" ? "Payment is reversed" : fxLocked ? "Booked a realized FX difference; reverse the payment instead" : undefined,
+    });
+  }
+  for (const c of creditApps) {
+    rows.push({ kind: "CREDIT_NOTE", id: c.id, sourceId: c.creditNoteId, sourceNumber: c.creditNote.creditNoteNumber, date: c.createdAt, amount: money(c.amount), removable: c.creditNote.status === "POSTED" && bill.status === "POSTED" });
+  }
+  for (const n of notesOnIssue) {
+    // What the credit put on this bill when it was recorded against it: its total less anything moved elsewhere.
+    const onIssue = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((sum, a) => sum + money(a.amount), 0));
+    if (onIssue <= 0.005) continue;
+    rows.push({ kind: "CREDIT_ON_ISSUE", id: n.id, sourceId: n.id, sourceNumber: n.creditNoteNumber, date: n.noteDate, amount: onIssue, removable: bill.status === "POSTED", reason: "Recorded against this bill" });
+  }
+  for (const d of advanceAllocs) {
+    rows.push({
+      kind: "ADVANCE",
+      id: d.id,
+      sourceId: d.advanceId,
+      sourceNumber: d.advance.advanceNumber,
+      date: d.createdAt,
+      amount: money(d.amount),
+      removable: d.advance.status === "POSTED" && Boolean(d.journalId) && bill.status === "POSTED",
+    });
+  }
+  return { billId, status: bill.status, outstanding: billOutstanding(bill), rows };
+}
+
+/**
+ * Takes a payment, supplier credit or advance back off a bill (QuickBooks "unapply"). Payments and credits only move
+ * in the subledger and go back on account; an advance's application journal is reversed and it returns to prepayments.
+ */
+export async function unapplyFromBill(companyId: string, kind: BillApplicationKind, applicationId: string, actor: Actor = {}) {
+  let detail: { supplierId: string; sourceNumber: string; billNumber: string; amount: number };
+  if (kind === "CREDIT_ON_ISSUE") {
+    const n = await prisma.apCreditNote.findFirst({ where: { id: applicationId, companyId, status: "POSTED" }, include: { applications: true, bill: true } });
+    if (!n || !n.bill) throw new Error("This supplier credit is no longer applied to the bill");
+    if (n.bill.status !== "POSTED") throw new Error(`Bill ${n.bill.billNumber} is void`);
+    const amount = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0));
+    if (amount <= 0.005) throw new Error("This supplier credit is no longer applied to the bill");
+    const bill = n.bill;
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.apCreditNote.updateMany({ where: { id: n.id, billId: bill.id }, data: { billId: null, unapplied: { increment: amount } } });
+      if (!claimed.count) throw new Error("This supplier credit is no longer applied to the bill");
+      await tx.apBill.update({ where: { id: bill.id }, data: { amountCredited: { decrement: amount } } });
+    });
+    detail = { supplierId: n.supplierId, sourceNumber: n.creditNoteNumber, billNumber: bill.billNumber, amount };
+  } else if (kind === "PAYMENT") {
+    const a = await prisma.apAllocation.findFirst({ where: { id: applicationId, payment: { companyId } }, include: { payment: true, bill: true } });
+    if (!a) throw new Error("This payment is no longer applied to the bill");
+    if (a.payment.status !== "POSTED") throw new Error(`Payment ${a.payment.paymentNumber} is reversed`);
+    if (a.bill.status !== "POSTED") throw new Error(`Bill ${a.bill.billNumber} is void`);
+    const functional = await functionalCurrencyOf(companyId);
+    if (a.payment.currency !== functional && Math.abs(Number(a.payment.exchangeRate) - Number(a.bill.exchangeRate)) > 1e-10) {
+      throw new Error(`Payment ${a.payment.paymentNumber} booked a realized FX difference on this bill; reverse the payment instead`);
+    }
+    const amount = money(a.amount);
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.apAllocation.deleteMany({ where: { id: a.id } });
+      if (!gone.count) throw new Error("This payment is no longer applied to the bill");
+      await tx.apPayment.update({ where: { id: a.paymentId }, data: { unallocated: { increment: amount } } });
+      await tx.apBill.update({ where: { id: a.billId }, data: { amountPaid: { decrement: amount } } });
+    });
+    detail = { supplierId: a.payment.supplierId, sourceNumber: a.payment.paymentNumber, billNumber: a.bill.billNumber, amount };
+  } else if (kind === "CREDIT_NOTE") {
+    const c = await prisma.apCreditApplication.findFirst({ where: { id: applicationId, creditNote: { companyId } }, include: { creditNote: true, bill: true } });
+    if (!c) throw new Error("This supplier credit is no longer applied to the bill");
+    if (c.bill.status !== "POSTED") throw new Error(`Bill ${c.bill.billNumber} is void`);
+    const amount = money(c.amount);
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.apCreditApplication.deleteMany({ where: { id: c.id } });
+      if (!gone.count) throw new Error("This supplier credit is no longer applied to the bill");
+      await tx.apCreditNote.update({ where: { id: c.creditNoteId }, data: { unapplied: { increment: amount } } });
+      await tx.apBill.update({ where: { id: c.billId }, data: { amountCredited: { decrement: amount } } });
+    });
+    detail = { supplierId: c.creditNote.supplierId, sourceNumber: c.creditNote.creditNoteNumber, billNumber: c.bill.billNumber, amount };
+  } else {
+    const d = await prisma.apAdvanceAllocation.findFirst({ where: { id: applicationId, advance: { companyId } }, include: { advance: true, bill: true } });
+    if (!d) throw new Error("This advance is no longer applied to the bill");
+    if (d.advance.status !== "POSTED") throw new Error(`Advance ${d.advance.advanceNumber} is no longer posted`);
+    if (d.bill.status !== "POSTED") throw new Error(`Bill ${d.bill.billNumber} is void`);
+    if (!d.journalId) throw new Error("This advance application has no journal to reverse");
+    const amount = money(d.amount);
+    const when = new Date();
+    await postJournalReversal(
+      companyId,
+      d.journalId,
+      { date: when, description: `Unapply advance ${d.advance.advanceNumber} from ${d.bill.billNumber}`, sourceDocumentType: "ApAdvanceUnapply", sourceDocumentId: d.id, sourceDocumentNumber: d.advance.advanceNumber, supplierRef: d.advance.supplierId },
+      actor,
+    );
+    await prisma.$transaction(async (tx) => {
+      const gone = await tx.apAdvanceAllocation.deleteMany({ where: { id: d.id } });
+      if (!gone.count) throw new Error("This advance is no longer applied to the bill");
+      await tx.apAdvance.update({ where: { id: d.advanceId }, data: { remaining: { increment: amount } } });
+      await tx.apBill.update({ where: { id: d.billId }, data: { amountPaid: { decrement: amount } } });
+      await appendLedger(tx, {
+        companyId,
+        supplierId: d.advance.supplierId,
+        entryDate: when,
+        docType: "ADVANCE_UNAPPLY",
+        docId: d.id,
+        docNumber: d.advance.advanceNumber,
+        description: `Advance taken back off ${d.bill.billNumber}`,
+        debit: 0,
+        credit: amount,
+      });
+    });
+    detail = { supplierId: d.advance.supplierId, sourceNumber: d.advance.advanceNumber, billNumber: d.bill.billNumber, amount };
+  }
+  await audit(companyId, actor, "UNAPPLY_CREDIT", "Supplier", detail.supplierId, { removed: [{ kind, number: detail.sourceNumber, billNumber: detail.billNumber, amount: detail.amount }] });
+  return detail;
+}
+
+/* ── Expenses recorded on account ──────────────────────────────────── */
+
+/**
+ * An expense posted on account to a supplier is something you owe them: it gets a payable bill and a subledger entry,
+ * so the supplier balance agrees with Accounts Payable in the ledger. The expense's own journal already credited AP.
+ */
+export async function recordExpenseOnAccount(
+  companyId: string,
+  expense: { id: string; number: string; supplierId: string; expenseDate: Date; netAmount: unknown; taxAmount: unknown; grossAmount: unknown; currencyCode: string; description: string | null; reference: string | null; expenseAccountId: string },
+  journalId: string,
+  actor: Actor = {},
+) {
+  const supplier = await getSupplier(companyId, expense.supplierId);
+  const gross = money(expense.grossAmount as never);
+  const billNumber = await nextNumber(companyId, "AP_BILL", "BILL");
+  const dueDate = new Date(expense.expenseDate.getTime() + supplier.creditPeriodDays * DAY);
+  return prisma.$transaction(async (tx) => {
+    const bill = await tx.apBill.create({
+      data: {
+        companyId,
+        supplierId: supplier.id,
+        billNumber,
+        billDate: expense.expenseDate,
+        dueDate,
+        currency: expense.currencyCode,
+        net: money(expense.netAmount as never),
+        tax: money(expense.taxAmount as never),
+        gross,
+        expenseAccountId: expense.expenseAccountId,
+        description: [`Expense ${expense.number}`, expense.description].filter(Boolean).join(": "),
+        journalId,
+        sourceModule: "EXPENSE",
+        sourceDocumentType: "Expense",
+        sourceDocumentId: expense.id,
+        sourceDocumentNumber: expense.number,
+        createdByErpUserId: actor.erpUserId,
+      },
+    });
+    await appendLedger(tx, {
+      companyId,
+      supplierId: supplier.id,
+      entryDate: expense.expenseDate,
+      docType: "BILL",
+      docId: bill.id,
+      docNumber: billNumber,
+      description: `Expense ${expense.number} on account`,
+      debit: 0,
+      credit: gross,
+    });
+    return bill;
+  });
+}
+
+/** Refuses to reverse an on-account expense that has been paid or credited; the payments must come off first. */
+export async function assertExpenseBillReversible(companyId: string, expenseId: string) {
+  const bill = await prisma.apBill.findFirst({ where: { companyId, sourceDocumentType: "Expense", sourceDocumentId: expenseId, status: "POSTED" } });
+  if (bill && (money(bill.amountPaid) > 0.005 || money(bill.amountCredited) > 0.005)) {
+    throw new Error(`Bill ${bill.billNumber} for this expense has payments or credits; take them off the bill before reversing the expense`);
+  }
+  return bill;
+}
+
+/** Voids the payable bill of an on-account expense being reversed. The expense reversal journal reverses the GL. */
+export async function voidExpenseBill(companyId: string, expenseId: string, reason: string, when: Date) {
+  const bill = await assertExpenseBillReversible(companyId, expenseId);
+  if (!bill) return null;
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.apBill.updateMany({ where: { id: bill.id, status: "POSTED", amountPaid: 0, amountCredited: 0 }, data: { status: "REVERSED", voidedAt: new Date(), voidReason: reason } });
+    if (!claimed.count) throw new Error(`Bill ${bill.billNumber} changed while the expense was being reversed; refresh and try again`);
+    await appendLedger(tx, {
+      companyId,
+      supplierId: bill.supplierId,
+      entryDate: when,
+      docType: "BILL_VOID",
+      docId: bill.id,
+      docNumber: bill.billNumber,
+      description: `Expense ${bill.sourceDocumentNumber ?? ""} reversed: ${reason}`,
+      debit: money(bill.gross),
+      credit: 0,
+    });
+  });
+  return bill;
 }

@@ -3,7 +3,7 @@ import { useCompany } from "../../lib/company";
 import { amount, date, humanize, isoDay, toNumber } from "../../lib/format";
 import { navigate } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
-import type { ApBill, ApBillDetail, ApPayment, CommercialDoc, InventoryLocation, SupplierTxnDetail, SupplierTxnType } from "../../lib/types";
+import type { ApBill, ApBillDetail, ApPayment, BillApplications, CommercialDoc, InventoryLocation, SupplierTxnDetail, SupplierTxnType } from "../../lib/types";
 import { methodLabel } from "../ApForms";
 import { AttachmentsPanel } from "../AttachmentsPanel";
 import { PdfButton } from "../Documents";
@@ -35,6 +35,7 @@ export function BillDrawer({
   onPay,
   onVoid,
   onOpenPurchaseOrder,
+  onChanged,
 }: {
   id: string;
   manage: boolean;
@@ -42,9 +43,36 @@ export function BillDrawer({
   onPay: (billId: string) => void;
   onVoid: (bill: ApBill) => void;
   onOpenPurchaseOrder?: (id: string) => void;
+  /** Called after a payment or credit is taken off the bill, so the profile can refresh. */
+  onChanged?: () => void;
 }) {
+  const { api } = useSession();
+  const { toast, confirm } = useFeedback();
   const bill = useResource<ApBillDetail>(`/api/v1/ap/bills/${id}`);
+  const applications = useResource<BillApplications>(`/api/v1/ap/bills/${id}/applications`);
   const b = bill.data;
+
+  async function unapply(row: BillApplications["rows"][number]) {
+    const what = row.kind === "PAYMENT" ? `payment ${row.sourceNumber}` : row.kind === "ADVANCE" ? `advance ${row.sourceNumber}` : `supplier credit ${row.sourceNumber}`;
+    const ok = await confirm({
+      title: `Take ${what} off this bill?`,
+      body:
+        row.kind === "ADVANCE"
+          ? `${amount(row.amount, 2)} goes back to prepayments and the bill is open for that amount again. The application journal is reversed.`
+          : `${amount(row.amount, 2)} goes back on the supplier's account as credit, ready to apply elsewhere, and the bill is open for that amount again.`,
+      confirmLabel: "Take it off",
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/v1/ap/bills/${id}/unapply`, { method: "POST", body: JSON.stringify({ kind: row.kind, applicationId: row.id }) });
+      toast(`${what.charAt(0).toUpperCase()}${what.slice(1)} taken off the bill`);
+      bill.reload();
+      applications.reload();
+      onChanged?.();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
   // Bills from a purchase order carry its number; find the order to link back to it.
   const po = useResource<CommercialDoc[]>(
     b?.poReference && onOpenPurchaseOrder ? `/api/v1/commercial/purchase-order?supplierId=${b.supplierId}&q=${encodeURIComponent(b.poReference)}` : null,
@@ -169,21 +197,27 @@ export function BillDrawer({
               ]}
             />
             {x.description && <p className="small">{x.description}</p>}
-            {x.allocations.length > 0 && (
+            {(applications.data?.rows.length ?? 0) > 0 && (
               <>
-                <h3 className="cust-subhead">Payments</h3>
+                <h3 className="cust-subhead">Paid and credited by</h3>
                 <ul className="cust-mini">
-                  {x.allocations.map((a) => (
-                    <li key={a.id}>
+                  {applications.data!.rows.map((r) => (
+                    <li key={`${r.kind}-${r.id}`}>
                       <div className="cust-mini-row">
                         <span className="cust-mini-main">
-                          <span className="strong">Payment {a.payment.paymentNumber}</span>
-                          <span className="sub">
-                            {date(a.payment.paymentDate)}
-                            {a.payment.status === "REVERSED" ? " · reversed" : ""}
+                          <span className="strong">
+                            {r.kind === "PAYMENT" ? "Payment" : r.kind === "ADVANCE" ? "Advance" : "Supplier credit"} {r.sourceNumber}
                           </span>
+                          <span className="sub">{[date(r.date), r.reason].filter(Boolean).join(" · ")}</span>
                         </span>
-                        <span className={`num strong ${a.payment.status === "REVERSED" ? "strike muted" : ""}`}>{amount(a.amount, 2)}</span>
+                        <span className="cust-mini-amt">
+                          <span className="num strong">{amount(r.amount, 2)}</span>
+                          {manage && r.removable && (
+                            <button type="button" className="link-button small" onClick={() => void unapply(r)}>
+                              Remove
+                            </button>
+                          )}
+                        </span>
                       </div>
                     </li>
                   ))}
@@ -212,6 +246,7 @@ export function SupplierTxnDrawer({
   onReverse,
   onApplyAdvance,
   onRefundAdvance,
+  onApplyCredit,
 }: {
   type: Exclude<SupplierTxnType, "BILL" | "PURCHASE_ORDER">;
   id: string;
@@ -222,6 +257,8 @@ export function SupplierTxnDrawer({
   onReverse: (p: ApPayment) => void;
   onApplyAdvance: (advanceId: string) => void;
   onRefundAdvance: (advanceId: string) => void;
+  /** Opens Apply credits with this supplier credit or unapplied payment selected ("CREDIT_NOTE:id"). */
+  onApplyCredit?: (source: string) => void;
 }) {
   const { currency } = useCompany();
   const detail = useResource<SupplierTxnDetail>(`/api/v1/ap/transactions/${type}/${id}`);
@@ -263,6 +300,11 @@ export function SupplierTxnDrawer({
           {reversible && (
             <button type="button" className="btn btn-danger" onClick={() => onReverse(asListPayment(d!))}>
               Reverse payment
+            </button>
+          )}
+          {manage && onApplyCredit && d && (type === "CREDIT_NOTE" || type === "PAYMENT") && d.status === "POSTED" && d.open > 0.005 && (
+            <button type="button" className="btn btn-primary" onClick={() => onApplyCredit(`${type}:${d.id}`)}>
+              Apply to bills
             </button>
           )}
           {manage && d && type === "ADVANCE" && d.status === "POSTED" && d.open > 0.005 && (

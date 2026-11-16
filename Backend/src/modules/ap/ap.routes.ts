@@ -82,6 +82,13 @@ const supplierFields = {
   internalRemarks: z.string().max(4000).optional().nullable(),
 };
 
+const creditApplication = z.object({
+  source: z.enum(["CREDIT_NOTE", "PAYMENT", "ADVANCE"]),
+  sourceId: z.string().min(1),
+  billId: z.string().min(1),
+  amount: z.number().positive(),
+});
+
 const supplierListFilter = z.object({
   q: z.string().max(100).optional(),
   status: z.enum(["active", "inactive", "all"]).optional(),
@@ -320,6 +327,46 @@ apRouter.get("/transactions/:type/:id", async (req: AuthedRequest, res) => {
   }
 });
 
+apRouter.get("/suppliers/:id/open-items", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ap.supplierOpenItems(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.post("/suppliers/:id/apply-credits", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ applications: z.array(creditApplication).min(1).max(200), date: day.optional() }).parse(req.body);
+    res.json({ success: true, data: await inTransaction(() => ap.applySupplierCredits(req.companyId!, req.params.id, body, actor(req))) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+apRouter.get("/bills/:id/applications", async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await ap.billApplications(req.companyId!, req.params.id) });
+  } catch (e) {
+    fail(res, e, 404);
+  }
+});
+
+apRouter.post("/bills/:id/unapply", requireCapability("ap:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ kind: z.enum(["PAYMENT", "CREDIT_NOTE", "CREDIT_ON_ISSUE", "ADVANCE"]), applicationId: z.string().min(1) }).parse(req.body);
+    const data = await inTransaction(async () => {
+      // The application must belong to this bill, so a stale screen can't take a credit off another one.
+      const listed = await ap.billApplications(req.companyId!, req.params.id);
+      if (!listed.rows.some((r) => r.kind === body.kind && r.id === body.applicationId)) throw new Error("That is no longer applied to this bill");
+      return ap.unapplyFromBill(req.companyId!, body.kind, body.applicationId, actor(req));
+    });
+    res.json({ success: true, data });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 apRouter.get("/suppliers/:id/ledger", async (req: AuthedRequest, res) => {
   try {
     res.json({ success: true, data: await ap.supplierLedger(req.companyId!, req.params.id) });
@@ -420,16 +467,26 @@ apRouter.post("/payments", requireCapability("ap:manage"), async (req: AuthedReq
         supplierId: z.string().min(1),
         paymentDate: day,
         method: payMethod.optional(),
-        amount: z.number().positive(),
+        amount: z.number().min(0),
         withholdingTax: z.number().min(0).optional(),
         reference: z.string().trim().max(120).optional(),
         description: optionalText,
         allowUnallocated: z.boolean().optional(),
         financialAccountId: z.string().optional(),
         allocations: z.array(z.object({ billId: z.string().min(1), amount: z.number().positive() })).optional(),
+        credits: z.array(creditApplication).max(200).optional(),
       })
+      .refine((b) => b.amount > 0 || (b.credits?.length ?? 0) > 0, { message: "Payment amount must be positive", path: ["amount"] })
       .parse(req.body);
-    res.status(201).json({ success: true, data: await inTransaction(() => ap.createPayment(req.companyId!, body, actor(req))) });
+    const data = await inTransaction(async () => {
+      // Credits alone can settle the bills; then there is no cash payment to record.
+      if (body.amount === 0) {
+        if (body.allocations?.length) throw new Error("Enter the amount paid for the bills you selected");
+        return { payment: null, credited: await ap.applySupplierCredits(req.companyId!, body.supplierId, { applications: body.credits!, date: body.paymentDate }, actor(req)) };
+      }
+      return ap.createPayment(req.companyId!, body, actor(req));
+    });
+    res.status(201).json({ success: true, data });
   } catch (e) {
     fail(res, e);
   }

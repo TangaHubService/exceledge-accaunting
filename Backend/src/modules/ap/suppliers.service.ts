@@ -27,8 +27,11 @@ export type SupplierListFilter = {
 /** Open purchase orders: not yet fully billed, so still a commitment to pay. */
 const OPEN_PO_STATUSES = ["OPEN", "PARTIALLY_RECEIVED", "RECEIVED"] as const;
 
-/** Bills created from a supplier's opening balance are not purchases made in these books. */
-const NOT_OPENING: Prisma.ApBillWhereInput = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { not: "SupplierOpening" } }] };
+/**
+ * Bills created from a supplier's opening balance are not purchases made in these books, and bills that carry an
+ * on-account expense are counted once, as the expense.
+ */
+const NOT_OPENING: Prisma.ApBillWhereInput = { OR: [{ sourceDocumentType: null }, { sourceDocumentType: { notIn: ["SupplierOpening", "Expense"] } }] };
 
 function startOfTodayUtc() {
   const now = new Date();
