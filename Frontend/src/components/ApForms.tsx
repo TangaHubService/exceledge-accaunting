@@ -255,9 +255,11 @@ export function PaymentForm({
     const plan: Array<{ source: SupplierOpenItems["credits"][number]["source"]; sourceId: string; number: string; billId: string; billNumber: string; amount: number }> = [];
     if (!useCredits || !ordered || !items.data) return plan;
     const left = new Map(ordered.map((b) => [b.id, b.outstanding]));
+    // Paying one bill: credits go on that bill only, as in QuickBooks.
+    const targets = billId ? ordered.filter((b) => b.id === billId) : ordered;
     for (const c of items.data.credits) {
       let avail = c.available;
-      for (const b of ordered) {
+      for (const b of targets) {
         if (avail <= 0.005) break;
         const bill = items.data.bills.find((x) => x.id === b.id);
         if (!bill || bill.currency !== c.currency) continue;
@@ -270,7 +272,7 @@ export function PaymentForm({
       }
     }
     return plan;
-  }, [useCredits, ordered, items.data]);
+  }, [useCredits, ordered, items.data, billId]);
   const creditOn = (id: string) => creditPlan.filter((c) => c.billId === id).reduce((sum, c) => sum + c.amount, 0);
   const creditTotal = creditPlan.reduce((sum, c) => sum + c.amount, 0);
   const creditAvailable = (items.data?.credits ?? []).reduce((sum, c) => sum + c.available, 0);

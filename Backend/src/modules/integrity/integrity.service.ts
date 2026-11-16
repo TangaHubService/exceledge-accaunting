@@ -44,7 +44,7 @@ async function partyLedgers(companyId: string): Promise<IntegrityFinding[]> {
   const controls = await controlAccounts(companyId);
   const of = (kind: string) => [...controls].filter(([, k]) => k === kind).map(([id]) => id);
   const payablesIds = of("payables");
-  const [arGl, apGl, ar, ap, payableOutsideBills] = await Promise.all([
+  const [arGl, apGl, ar, ap, payableOutsideBills, expenseBills] = await Promise.all([
     glNet(companyId, of("receivables")),
     glNet(companyId, payablesIds),
     prisma.arLedgerEntry.aggregate({ where: { companyId }, _sum: { debit: true, credit: true } }),
@@ -60,6 +60,9 @@ async function partyLedgers(companyId: string): Promise<IntegrityFinding[]> {
           _sum: { debit: true, credit: true },
         })
       : Promise.resolve({ _sum: { debit: null, credit: null } }),
+    // Expenses on account to a supplier now carry a payable bill, so they are in the subledger too and explain nothing.
+    // (A reversed one nets to zero on both sides.)
+    prisma.apBill.aggregate({ where: { companyId, sourceDocumentType: "Expense", status: "POSTED" }, _sum: { gross: true } }),
   ]);
   const findings: IntegrityFinding[] = [];
   const compare = (check: IntegrityCheck, label: string, gl: number, ledger: number, explained?: { amount: number; note: string }) => {
@@ -85,7 +88,7 @@ async function partyLedgers(companyId: string): Promise<IntegrityFinding[]> {
   };
   compare("AR_SUBLEDGER", "Receivables", arGl, money(ar._sum.debit) - money(ar._sum.credit));
   // Payables are credit-positive on both sides. Credits from expenses/FA without a bill explain part of a GL surplus.
-  const nonBillPayables = round(money(payableOutsideBills._sum.credit) - money(payableOutsideBills._sum.debit));
+  const nonBillPayables = round(money(payableOutsideBills._sum.credit) - money(payableOutsideBills._sum.debit) - money(expenseBills._sum.gross));
   compare(
     "AP_SUBLEDGER",
     "Payables",

@@ -328,6 +328,16 @@ export async function updateSupplier(companyId: string, supplierId: string, inpu
   if (data.status === "INACTIVE" && before.status !== "INACTIVE" && Math.abs(money(before.balance)) > 0.005) {
     throw new Error(`${before.name} still has a balance of ${money(before.balance)}; pay or credit it before making the supplier inactive`);
   }
+  if (data.currency !== undefined && data.currency !== before.currency) {
+    // The subledger keeps each supplier in one currency; changing it later would mix amounts.
+    const used = await prisma.apLedgerEntry.count({ where: { companyId, supplierId } });
+    const ordered = await prisma.commercialDocument.count({ where: { companyId, supplierId } });
+    if (used || ordered) throw new Error("Currency can't be changed once the supplier has transactions");
+  }
+  if (data.apAccountId !== undefined && (data.apAccountId ?? null) !== (before.apAccountId ?? null) && Math.abs(money(before.balance)) > 0.005) {
+    // The open balance sits in the current payables account; payments must clear it from the same account.
+    throw new Error(`${before.name} has an open balance in the current payables account; settle it before changing the account`);
+  }
   await assertNoDuplicateSupplier(
     companyId,
     { name: data.name !== undefined && data.name !== before.name ? data.name : undefined, tin: data.tin !== undefined && data.tin !== before.tin ? data.tin : undefined },

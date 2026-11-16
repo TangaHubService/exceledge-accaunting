@@ -69,9 +69,12 @@ async function postExpenseJournal(
     sourceDocumentId: string;
     sourceDocumentNumber?: string;
     lines: JournalLineDraft[];
+    /** Tags every line with the supplier, so the ledger can be read per supplier like AP postings. */
+    supplierRef?: string | null;
   },
   actor: Actor,
 ) {
+  const supplierRef = input.supplierRef ?? undefined;
   return createAndPostJournal(
     companyId,
     {
@@ -84,7 +87,7 @@ async function postExpenseJournal(
       sourceDocumentId: input.sourceDocumentId,
       sourceDocumentNumber: input.sourceDocumentNumber,
       status: "APPROVED",
-      lines: input.lines,
+      lines: supplierRef ? input.lines.map((l) => ({ ...l, supplierRef })) : input.lines,
     },
     actor,
   );
@@ -595,6 +598,7 @@ async function postExpenseOnce(companyId: string, id: string, actor: Actor) {
       sourceDocumentId: expense.id,
       sourceDocumentNumber: expense.number,
       lines,
+      supplierRef: expense.supplierId,
     },
     actor,
   );
@@ -646,6 +650,7 @@ async function reverseExpenseOnce(companyId: string, id: string, input: { reason
       sourceDocumentId: expense.id,
       sourceDocumentNumber: expense.number,
       lines,
+      supplierRef: expense.supplierId,
     },
     actor,
   );

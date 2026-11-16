@@ -209,3 +209,28 @@ describe("Supplier centre: directory, form fields, duplicates, bulk and CSV", ()
     expect([401, 403]).toContain(res.status);
   });
 });
+
+describe("Supplier settings that would split the books", () => {
+  const org = 94097;
+  let h: Record<string, string>;
+  beforeAll(async () => {
+    await resetCompany(org);
+    h = await activateCompany(app, org, { name: "Guard Co", tin: "555666783" });
+  });
+  afterAll(async () => {
+    await resetCompany(org);
+  });
+
+  it("locks the currency after the first transaction and the payables account while there is a balance", async () => {
+    const s = (await request(app).post("/api/v1/ap/suppliers").set(h).send({ name: "Guarded Vendor" })).body.data;
+    expect((await request(app).patch(`/api/v1/ap/suppliers/${s.id}`).set(h).send({ currency: "USD" })).status).toBe(200);
+    await request(app).patch(`/api/v1/ap/suppliers/${s.id}`).set(h).send({ currency: "RWF" });
+    await request(app).post("/api/v1/ap/bills").set(h).send({ supplierId: s.id, billDate: "2026-05-01", net: 1000 });
+    const ccy = await request(app).patch(`/api/v1/ap/suppliers/${s.id}`).set(h).send({ currency: "USD" });
+    expect(ccy.body.error).toMatch(/Currency can't be changed/);
+    const company = await prisma.company.findUniqueOrThrow({ where: { externalErpOrganizationId: String(org) } });
+    const other = await prisma.account.findFirstOrThrow({ where: { companyId: company.id, type: "LIABILITY", isActive: true } });
+    const acct = await request(app).patch(`/api/v1/ap/suppliers/${s.id}`).set(h).send({ apAccountId: other.id });
+    expect(acct.body.error).toMatch(/open balance in the current payables account/);
+  });
+});

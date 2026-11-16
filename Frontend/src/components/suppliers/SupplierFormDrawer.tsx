@@ -556,9 +556,14 @@ export function SupplierFormDrawer({
                 <Select value={d.currency} onChange={(v) => set("currency", v)} searchable={false} options={[...new Set([companyCurrency, ...CURRENCIES])].map((c) => ({ value: c, label: c }))} />
               )}
             </Field>
-            <Field label="Payables account" hint="Leave on the default unless this supplier is tracked separately">
-              <Select value={d.apAccountId} onChange={(v) => set("apAccountId", v)} options={apOptions} />
-            </Field>
+            {(() => {
+              const locked = editing && Math.abs(toNumber(supplier!.balance)) > 0.005;
+              return (
+                <Field label="Payables account" hint={locked ? "Locked while the supplier has an open balance" : "Leave on the default unless this supplier is tracked separately"}>
+                  <Select value={d.apAccountId} onChange={(v) => set("apAccountId", v)} options={apOptions} disabled={locked} />
+                </Field>
+              );
+            })()}
             <Field label="Default expense account" hint="Pre-filled on new bills">
               <Select value={d.defaultExpenseAccountId} onChange={(v) => set("defaultExpenseAccountId", v)} options={expenseOptions} />
             </Field>
