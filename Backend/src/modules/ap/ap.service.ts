@@ -869,9 +869,12 @@ export async function createCreditNote(
     supplierReference?: string;
     noteDate: Date | string;
     reason: string;
-    net: number;
+    /** Required without lines; with lines the totals come from the lines and their tax codes. */
+    net?: number;
     tax?: number;
     description?: string;
+    /** Category and item lines, priced like a bill's; each credits its own expense account. */
+    lines?: DocumentLineInput[];
     /** Stock sent back to the supplier; it leaves inventory at valuation cost. */
     returnedItems?: Array<{ itemId: string; locationId: string; quantity: number }>;
   },
@@ -886,9 +889,16 @@ async function createCreditNoteInTransaction(
   actor: Actor,
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
-  const net = roundMoney(input.net);
-  const tax = roundMoney(input.tax ?? 0);
+  const noteDate = new Date(input.noteDate);
+  const returned = (input.returnedItems ?? []).filter((item) => item && item.itemId);
+  const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, noteDate, "purchase") : null;
+  if (priced && returned.length) throw new Error("Returned stock goes on its own credit note, without category or item lines");
+  if (priced && (input.net != null || input.tax != null)) throw new Error("A credit note with lines takes its net and tax from the lines");
+  if (!priced && !(Number(input.net) > 0)) throw new Error("Credit note amount must be positive");
+  const net = priced ? priced.net : roundMoney(input.net!);
+  const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
+  if (!(gross > 0)) throw new Error("Credit note amount must be positive");
   let bill: Awaited<ReturnType<typeof prisma.apBill.findFirst>> = null;
   if (input.billId) {
     bill = await prisma.apBill.findFirst({ where: { id: input.billId, companyId, supplierId: supplier.id, status: "POSTED" } });
@@ -896,9 +906,7 @@ async function createCreditNoteInTransaction(
     if (gross - billOutstanding(bill) > 0.0001) throw new Error("Credit note exceeds the bill's outstanding balance");
   }
   const defaults = await defaultsFor(companyId);
-  const noteDate = new Date(input.noteDate);
   const creditNoteNumber = await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN");
-  const returned = (input.returnedItems ?? []).filter((item) => item && item.itemId);
   const note = await prisma.apCreditNote.create({
     data: {
       companyId,
@@ -922,7 +930,9 @@ async function createCreditNoteInTransaction(
     : null;
   const lines = stock
     ? buildSupplierReturnLines((await inventoryConfig(companyId)).accounts, { net, tax, cost: stock.cost, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId })
-    : buildApCreditNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId });
+    : priced
+      ? await linedCreditNoteJournal(companyId, defaults, priced.lines, supplier, bill?.expenseAccountId)
+      : buildApCreditNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId });
   const posted = await postBalanced(
     companyId,
     {
@@ -960,6 +970,29 @@ async function createCreditNoteInTransaction(
   });
   await audit(companyId, actor, "POST", "ApCreditNote", note.id, { creditNoteNumber, gross, billId: bill?.id });
   return prisma.apCreditNote.findUniqueOrThrow({ where: { id: note.id } });
+}
+
+/**
+ * A lined supplier credit is a bill in reverse: each line's expense account and the input tax are credited, and the
+ * supplier's payable is debited. Lines without an account fall back to the bill's, then the supplier's default.
+ */
+async function linedCreditNoteJournal(
+  companyId: string,
+  defaults: Awaited<ReturnType<typeof defaultsFor>>,
+  lines: Awaited<ReturnType<typeof priceDocumentLines>>["lines"],
+  supplier: { apAccountId: string | null; defaultExpenseAccountId: string | null },
+  billExpenseAccountId?: string | null,
+): Promise<JournalLineDraft[]> {
+  const codes = [...new Set(lines.map((l) => l.taxCode).filter(Boolean) as string[])];
+  const taxCodes = codes.length ? await prisma.taxCode.findMany({ where: { companyId, code: { in: codes } } }) : [];
+  const expenseAccountId = billExpenseAccountId || supplier.defaultExpenseAccountId || undefined;
+  await assertAccountsUsable(companyId, [expenseAccountId]);
+  const asBill = buildLinedBillJournal(defaults, {
+    lines: lines.map((l) => ({ ...l, taxAccountId: taxCodes.find((c) => c.code === l.taxCode)?.glAccountId ?? null })),
+    apAccountId: supplier.apAccountId,
+    expenseAccountId,
+  });
+  return asBill.map((l) => ({ ...l, debit: Number(l.credit) || 0, credit: Number(l.debit) || 0 }));
 }
 
 export async function createDebitNote(

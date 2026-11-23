@@ -6,6 +6,7 @@ import "./styles-customers.css";
 import "./styles-settings.css";
 import "./styles-manage.css";
 import "./styles-suppliers.css";
+import "./styles-items.css";
 import "./styles-team.css";
 import "./styles-coa.css";
 import "./styles-lists.css";

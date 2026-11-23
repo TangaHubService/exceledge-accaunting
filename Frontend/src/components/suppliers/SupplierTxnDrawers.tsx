@@ -461,6 +461,9 @@ const PO_STATUS: Record<string, { label: string; tone: "positive" | "negative" |
   VOID: { label: "Cancelled", tone: "neutral" },
 };
 
+/** Stock lines wait for a goods receipt; categories, services and non-stock items are billed straight from the order. */
+export const isStockLine = (l: CommercialDoc["lines"][number]) => Boolean(l.itemId) && (l.item?.type ?? "INVENTORY") === "INVENTORY";
+
 export function poStatus(status: string) {
   return PO_STATUS[status] ?? { label: humanize(status), tone: "neutral" as const };
 }
@@ -492,10 +495,10 @@ export function PurchaseOrderDrawer({
   const lines = d?.lines ?? [];
   const received = lines.reduce((s, l) => s + toNumber(l.receivedQuantity ?? 0), 0);
   const billed = lines.reduce((s, l) => s + toNumber(l.billedQuantity ?? 0), 0);
-  const receivable = lines.some((l) => l.itemId && toNumber(l.quantity) - toNumber(l.receivedQuantity ?? 0) > 0.0001);
+  const receivable = lines.some((l) => isStockLine(l) && toNumber(l.quantity) - toNumber(l.receivedQuantity ?? 0) > 0.0001);
   const live = d && ["OPEN", "PARTIALLY_RECEIVED", "RECEIVED"].includes(d.status);
   // Something to bill: received stock not billed yet, or service lines not billed yet.
-  const billable = lines.some((l) => (l.itemId ? toNumber(l.receivedQuantity ?? 0) : toNumber(l.quantity)) - toNumber(l.billedQuantity ?? 0) > 0.0001);
+  const billable = lines.some((l) => (isStockLine(l) ? toNumber(l.receivedQuantity ?? 0) : toNumber(l.quantity)) - toNumber(l.billedQuantity ?? 0) > 0.0001);
 
   async function setStatus(status: "CLOSED" | "VOID") {
     if (!d) return;
@@ -594,10 +597,10 @@ export function PurchaseOrderDrawer({
                         <tr key={l.id}>
                           <td>
                             {l.description}
-                            {!l.itemId && <span className="sub">Service: billed without receiving</span>}
+                            {!isStockLine(l) && <span className="sub">Billed without receiving</span>}
                           </td>
                           <td className="num">{q}</td>
-                          <td className={`num ${l.itemId && r > 0 && r < q ? "text-warning" : ""}`}>{l.itemId ? r : <span className="subtle">—</span>}</td>
+                          <td className={`num ${isStockLine(l) && r > 0 && r < q ? "text-warning" : ""}`}>{isStockLine(l) ? r : <span className="subtle">—</span>}</td>
                           <td className="num">{toNumber(l.billedQuantity ?? 0)}</td>
                           <td className="num hide-sm">{amount(l.unitPrice, 2)}</td>
                           <td className="num">{amount(l.net, 2)}</td>
@@ -651,7 +654,7 @@ function ReceiveGoodsDrawer({ order, onClose, onSaved }: { order: CommercialDoc;
   const { api } = useSession();
   const locations = useResource<InventoryLocation[]>("/api/v1/inventory/locations");
   const open = useMemo(
-    () => order.lines.filter((l) => l.itemId && toNumber(l.quantity) - toNumber(l.receivedQuantity ?? 0) > 0.0001),
+    () => order.lines.filter((l) => isStockLine(l) && toNumber(l.quantity) - toNumber(l.receivedQuantity ?? 0) > 0.0001),
     [order.lines],
   );
   const [qty, setQty] = useState<Record<string, string>>(() => Object.fromEntries(open.map((l) => [l.id, String(toNumber(l.quantity) - toNumber(l.receivedQuantity ?? 0))])));

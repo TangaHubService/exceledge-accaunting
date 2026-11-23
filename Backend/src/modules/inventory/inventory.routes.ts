@@ -5,6 +5,9 @@ import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, r
 import { actorOf, handle } from "../../lib/http";
 import * as inventory from "./inventory.service";
 import * as stock from "./stock-documents.service";
+import * as items from "./items.service";
+import { parsePage, wantsPage } from "../../lib/pagination";
+import { inTransaction } from "../../lib/prisma";
 
 export const inventoryRouter = Router();
 
@@ -105,7 +108,103 @@ inventoryRouter.post("/opening-snapshot", requireCapability("inventory:manage"),
   }
 });
 
-inventoryRouter.get("/items", handle((req) => stock.listItems(req.companyId!)));
+/* ── Products and services ─────────────────────────────────────────── */
+
+const blankToNull = <T extends z.ZodTypeAny>(schema: T) => schema.optional().nullable().or(z.literal("").transform(() => null));
+const text = (max: number) => blankToNull(z.string().trim().max(max));
+const amount = blankToNull(z.number().min(0, "Amounts can't be negative").max(1e12));
+const itemType = z.enum(["SERVICE", "NON_INVENTORY", "INVENTORY"]);
+const itemFields = {
+  name: z.string().trim().min(1, "Name is required").max(200),
+  type: itemType.optional(),
+  sku: text(80),
+  category: text(100),
+  unit: text(30),
+  isActive: z.boolean().optional(),
+  salesDescription: text(1000),
+  salesPrice: amount,
+  incomeAccountId: text(40),
+  salesTaxCode: text(40),
+  purchaseDescription: text(1000),
+  purchaseCost: amount,
+  expenseAccountId: text(40),
+  purchaseTaxCode: text(40),
+  preferredSupplierId: text(40),
+  reorderPoint: amount,
+};
+const itemBody = z.object(itemFields);
+const itemPatch = z.object(itemFields).partial();
+const itemListFilter = z.object({
+  q: z.string().trim().max(200).optional(),
+  type: itemType.optional(),
+  category: z.string().trim().max(100).optional(),
+  status: z.enum(["active", "inactive", "all"]).optional(),
+  stock: z.enum(["low", "out"]).optional(),
+  source: z.enum(["erp", "app"]).optional(),
+  sort: z.enum(["name", "sku", "type", "salesPrice", "purchaseCost", "quantity", "updated"]).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+});
+const manage = requireCapability("inventory:manage");
+
+/** Plain array of stock items for receipts and adjustments; pass `page` for the Products and services list. */
+inventoryRouter.get(
+  "/items",
+  handle(async (req) => (wantsPage(req.query) ? items.listItemsPage(req.companyId!, itemListFilter.parse(req.query), parsePage(req.query)) : stock.listItems(req.companyId!))),
+);
+inventoryRouter.get("/items/options", handle((req) => items.itemPickerOptions(req.companyId!)));
+inventoryRouter.get("/items/categories",handle((req) => items.itemCategories(req.companyId!)));
+inventoryRouter.get(
+  "/items/duplicates",
+  handle((req) => items.findItemDuplicates(req.companyId!, { name: str(req.query.name), sku: str(req.query.sku) }, str(req.query.excludeId))),
+);
+inventoryRouter.get("/items/export.csv", async (req: AuthedRequest, res) => {
+  try {
+    const csv = await items.exportItemsCsv(req.companyId!, itemListFilter.parse(req.query));
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="products-and-services-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+inventoryRouter.post(
+  "/items/import",
+  manage,
+  handle(async (req) => {
+    const cell = (max: number) => z.string().trim().max(max).optional().nullable().transform((v) => v || undefined);
+    const money = z.number().optional().nullable().transform((v) => (v == null ? undefined : v));
+    const row = z.object({
+      name: z.string().trim().max(200),
+      type: cell(40),
+      sku: cell(80),
+      category: cell(100),
+      unit: cell(30),
+      salesDescription: cell(1000),
+      salesPrice: money,
+      incomeAccount: cell(200),
+      salesTaxCode: cell(40),
+      purchaseDescription: cell(1000),
+      purchaseCost: money,
+      expenseAccount: cell(200),
+      purchaseTaxCode: cell(40),
+      preferredSupplier: cell(200),
+    });
+    const body = z.object({ dryRun: z.boolean().optional(), rows: z.array(row).min(1, "The file has no rows").max(2000, "Import at most 2,000 items at a time") }).parse(req.body);
+    return items.importItems(req.companyId!, body.rows, { dryRun: body.dryRun }, actorOf(req), inTransaction);
+  }),
+);
+inventoryRouter.post(
+  "/items/bulk-status",
+  manage,
+  handle((req) => {
+    const body = z.object({ ids: z.array(z.string().min(1)).min(1).max(500), isActive: z.boolean() }).parse(req.body);
+    return inTransaction(() => items.bulkSetItemStatus(req.companyId!, body.ids, body.isActive, actorOf(req)));
+  }),
+);
+inventoryRouter.post("/items", manage, handle((req) => inTransaction(() => items.createItem(req.companyId!, itemBody.parse(req.body), actorOf(req))), 201));
+inventoryRouter.get("/items/:id", handle((req) => items.getItem(req.companyId!, req.params.id)));
+inventoryRouter.patch("/items/:id", manage, handle((req) => inTransaction(() => items.updateItem(req.companyId!, req.params.id, itemPatch.parse(req.body), actorOf(req)))));
+
 inventoryRouter.get("/item-receipts", handle((req) => stock.listItemReceipts(req.companyId!, { status: str(req.query.status), supplierId: str(req.query.supplierId) })));
 inventoryRouter.post(
   "/item-receipts",

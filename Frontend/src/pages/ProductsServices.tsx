@@ -1,392 +1,407 @@
-import { Check, ChevronDown, ChevronUp, Image as ImageIcon, X } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, Download, PackageX, Plus, Search, Upload } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { type Column, DataTable } from "../components/DataTable";
 import { useFeedback } from "../components/feedback";
-import { Link } from "../lib/router";
+import { ITEM_TYPE_LABEL, ItemFormDrawer } from "../components/items/ItemFormDrawer";
+import { Select } from "../components/Select";
+import { Badge, EmptyState, ErrorState, Menu, PageHeader, Pagination } from "../components/ui";
+import { useCompany } from "../lib/company";
+import { amount, plural } from "../lib/format";
+import { toQuery, usePagedResource } from "../lib/pagination";
+import { navigate, setQueryParam, useLocation } from "../lib/router";
+import { useSession } from "../lib/session";
+import type { ItemListPage, ItemRow, ItemType } from "../lib/types";
 
+type TypeTab = "" | ItemType;
+type StatusFilter = "active" | "inactive" | "all";
+
+const SORTS = [
+  { value: "name:asc", label: "Name A–Z" },
+  { value: "name:desc", label: "Name Z–A" },
+  { value: "sku:asc", label: "SKU" },
+  { value: "type:asc", label: "Type" },
+  { value: "salesPrice:desc", label: "Price, highest first" },
+  { value: "purchaseCost:desc", label: "Cost, highest first" },
+  { value: "quantity:asc", label: "Quantity, lowest first" },
+  { value: "updated:desc", label: "Recently changed" },
+];
+
+/**
+ * Products and services list on the QuickBooks model: stock cards, type tabs, server-side search, filters,
+ * sort and pagination, bulk status changes and CSV import/export. Stock quantities come from the ERP.
+ */
 export function ProductsServices() {
-  const { toast } = useFeedback();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { can, api, download } = useSession();
+  const { toast, confirm } = useFeedback();
+  const { currency } = useCompany();
+  const { query } = useLocation();
+  const type = (query.get("type") ?? "") as TypeTab;
+  const stock = (query.get("stock") ?? "") as "" | "low" | "out";
+  const status = (query.get("status") as StatusFilter) || "active";
+  const category = query.get("category") ?? "";
+  const source = query.get("source") ?? "";
+  const [sortKey, sortDir] = (query.get("sort") ?? "name:asc").split(":");
+  const [search, setSearch] = useState(query.get("q") ?? "");
+  const [debounced, setDebounced] = useState(search.trim());
+  const [editing, setEditing] = useState<{ id?: string; copyOf?: string } | null>(query.get("new") === "1" ? {} : null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
-  // Drawer form state
-  const [basicInfoOpen, setBasicInfoOpen] = useState(true);
-  const [salesOpen, setSalesOpen] = useState(true);
-  const [purchasingOpen, setPurchasingOpen] = useState(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebounced(search.trim());
+      setQueryParam("q", search.trim() || null);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-  const [serviceName, setServiceName] = useState("");
-  const [itemType, setItemType] = useState("Service");
-  const [sku, setSku] = useState("");
-  const [category, setCategory] = useState("");
+  const params = useMemo(
+    () => ({ q: debounced, type: type || undefined, stock: stock || undefined, status, category: category || undefined, source: source || undefined, sort: sortKey, dir: sortDir }),
+    [debounced, type, stock, status, category, source, sortKey, sortDir],
+  );
+  const list = usePagedResource<ItemRow>("/api/v1/inventory/items", params, { key: "items", defaultPageSize: 25 });
+  const page = list.data as ItemListPage | undefined;
+  const counts = page?.counts;
+  const categories = useMemo(() => (page?.categories ?? []).map((c) => c.name), [page?.categories]);
 
-  const [sellService, setSellService] = useState(true);
-  const [salesDesc, setSalesDesc] = useState("");
-  const [salesPrice, setSalesPrice] = useState("");
-  const [incomeAccount, setIncomeAccount] = useState("Services");
+  const rowIds = list.rows.map((r) => r.id).join(",");
+  useEffect(() => setSelected(new Set()), [rowIds]);
+  const allOnPage = list.rows.length > 0 && list.rows.every((r) => selected.has(r.id));
+  const toggleAll = () => setSelected(allOnPage ? new Set() : new Set(list.rows.map((r) => r.id)));
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const [purchaseService, setPurchaseService] = useState(false);
-  const [purchaseDesc, setPurchaseDesc] = useState("");
-  const [purchaseCost, setPurchaseCost] = useState("");
-  const [expenseAccount, setExpenseAccount] = useState("5000 Direct costs");
-
-  function handleSave(andNew = false) {
-    if (!serviceName.trim()) {
-      toast("Please enter a service name");
-      return;
+  async function setStatus(ids: string[], isActive: boolean, label: string) {
+    if (!isActive) {
+      const ok = await confirm({
+        title: `Make ${label} inactive?`,
+        body: "Inactive items are hidden from new invoices, bills and orders. Past transactions keep them, and you can make them active again at any time.",
+        confirmLabel: "Make inactive",
+      });
+      if (!ok) return;
     }
-    toast(`Service "${serviceName}" saved successfully`);
-    if (andNew) {
-      setServiceName("");
-      setSku("");
-      setSalesDesc("");
-      setSalesPrice("");
-      setPurchaseCost("");
-    } else {
-      setDrawerOpen(false);
+    setBulkBusy(true);
+    try {
+      const res = await api<{ updated: number }>("/api/v1/inventory/items/bulk-status", { method: "POST", body: JSON.stringify({ ids, isActive }) });
+      toast(`${ids.length === 1 ? label : plural(res.updated, "item")} ${isActive ? "made active" : "made inactive"}`);
+      setSelected(new Set());
+      list.reload();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBulkBusy(false);
     }
   }
 
-  return (
-    <div className="ee-ps-container">
-      {/* Breadcrumb matching mockup 59 */}
-      <div className="ee-ps-breadcrumb">
-        <Link to="/invoices">Sales &amp; Get Paid</Link>
-        <span className="ee-ps-breadcrumb-sep">/</span>
-        <span className="ee-ps-breadcrumb-curr">Products &amp; services</span>
-      </div>
+  async function exportCsv() {
+    try {
+      await download(`/api/v1/inventory/items/export.csv${toQuery({ ...params })}`, `products-and-services-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
 
-      <h1 className="ee-ps-page-title">Products &amp; services</h1>
-
-      {/* Hero card matching mockup 59 & 60 */}
-      <div className="ee-ps-hero-card">
-        <div className="ee-ps-hero-content">
-          <h2 className="ee-ps-hero-title">Get started with products and services</h2>
-          <p className="ee-ps-hero-sub">Save time creating your next invoice by adding items.</p>
-
-          <ul className="ee-ps-checklist">
-            <li className="ee-ps-check-item">
-              <span className="ee-ps-check-icon">
-                <Check size={12} strokeWidth={3} />
-              </span>
-              <span>Categorise products and services to manage items efficiently</span>
-            </li>
-            <li className="ee-ps-check-item">
-              <span className="ee-ps-check-icon">
-                <Check size={12} strokeWidth={3} />
-              </span>
-              <span>Auto-fill transactions with saved item details</span>
-            </li>
-            <li className="ee-ps-check-item">
-              <span className="ee-ps-check-icon">
-                <Check size={12} strokeWidth={3} />
-              </span>
-              <span>Gain insight into your business performance with detailed reports</span>
-            </li>
-          </ul>
-
-          <div className="ee-ps-hero-actions">
-            <button
-              type="button"
-              className="ee-btn-primary-blue"
-              onClick={() => setDrawerOpen(true)}
-            >
-              Create items
-            </button>
-            <button
-              type="button"
-              className="ee-btn-outline-blue"
-              onClick={() => toast("Import products and services from CSV or Excel")}
-            >
-              Import items
-            </button>
-          </div>
-        </div>
-
-        <div className="ee-ps-hero-image-wrap">
-          <img
-            src="/illustrations/products-services-hero.png"
-            alt="Products and services illustration"
-            className="ee-ps-hero-img"
-          />
-        </div>
-      </div>
-
-      {/* Tips & Resources section matching mockup 60 */}
-      <div className="ee-ps-resources">
-        <h3 className="ee-ps-res-title">TIPS &amp; RESOURCES</h3>
-        <a
-          href="#batch-import"
-          onClick={(e) => {
-            e.preventDefault();
-            toast("Opening batch import wizard…");
-          }}
-          className="ee-ps-res-link"
-        >
-          Got your products and services in a spreadsheet? Upload them using batch import
-        </a>
-      </div>
-
-      {/* Drawer: Add a new service matching mockups 61 & 62 */}
-      {drawerOpen && (
+  const manage = can("inventory:manage");
+  const dash = <span className="subtle">—</span>;
+  const columns: Column<ItemRow>[] = [
+    ...(manage
+      ? [
+          {
+            key: "sel",
+            header: <input type="checkbox" aria-label="Select all items on this page" checked={allOnPage} onChange={toggleAll} />,
+            width: 36,
+            render: (r: ItemRow) => <input type="checkbox" aria-label={`Select ${r.name}`} checked={selected.has(r.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(r.id)} />,
+          },
+        ]
+      : []),
+    {
+      key: "name",
+      header: "Name",
+      className: "cust-col-name",
+      render: (r) => (
         <>
-          <div className="ee-drawer-backdrop" onClick={() => setDrawerOpen(false)} />
-          <div className="ee-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-            <div className="ee-drawer-header">
-              <h2 id="drawer-title" className="ee-drawer-title">Add a new service</h2>
-              <button
-                type="button"
-                className="ee-drawer-close-btn"
-                onClick={() => setDrawerOpen(false)}
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="ee-drawer-body">
-              {/* Accordion 1: Basic info */}
-              <div className="ee-accordion-section">
-                <div
-                  className="ee-accordion-header"
-                  onClick={() => setBasicInfoOpen((o) => !o)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <h3 className="ee-accordion-title">Basic info</h3>
-                  {basicInfoOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                </div>
-
-                {basicInfoOpen && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
-                        <div>
-                          <label className="ee-field-label">Name*</label>
-                          <input
-                            type="text"
-                            className="ee-input-text"
-                            value={serviceName}
-                            onChange={(e) => setServiceName(e.target.value)}
-                            placeholder=""
-                            autoFocus
-                          />
-                        </div>
-                        <div>
-                          <label className="ee-field-label">Item type</label>
-                          <select
-                            className="ee-input-select"
-                            value={itemType}
-                            onChange={(e) => setItemType(e.target.value)}
-                          >
-                            <option value="Service">Service</option>
-                            <option value="Inventory">Inventory</option>
-                            <option value="Non-inventory">Non-inventory</option>
-                            <option value="Bundle">Bundle</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 20 }}>
-                        <div
-                          className="ee-image-upload-box"
-                          onClick={() => toast("Image upload prompt")}
-                          title="Add an image"
-                        >
-                          <ImageIcon size={28} strokeWidth={1.5} />
-                          <span>Add an image</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="ee-field-label">SKU</label>
-                      <input
-                        type="text"
-                        className="ee-input-text"
-                        value={sku}
-                        onChange={(e) => setSku(e.target.value)}
-                        placeholder=""
-                      />
-                    </div>
-
-                    <div>
-                      <label className="ee-field-label">Category</label>
-                      <select
-                        className="ee-input-select"
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                      >
-                        <option value="">Select a category</option>
-                        <option value="Consulting">Consulting</option>
-                        <option value="Accounting & Bookkeeping">Accounting &amp; Bookkeeping</option>
-                        <option value="Design & Creative">Design &amp; Creative</option>
-                        <option value="IT Services">IT Services</option>
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Training">Training</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Accordion 2: Sales (Mockup 62) */}
-              <div className="ee-accordion-section">
-                <div
-                  className="ee-accordion-header"
-                  onClick={() => setSalesOpen((o) => !o)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <h3 className="ee-accordion-title">Sales</h3>
-                  {salesOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                </div>
-
-                {salesOpen && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <label className="ee-checkbox-row" onClick={() => setSellService((s) => !s)}>
-                      <div className={`ee-checkbox-box ${sellService ? "checked" : ""}`}>
-                        {sellService && <Check size={14} strokeWidth={3} />}
-                      </div>
-                      <span>I sell this service to my customers</span>
-                    </label>
-
-                    {sellService && (
-                      <>
-                        <div>
-                          <label className="ee-field-label">Description</label>
-                          <textarea
-                            className="ee-input-text"
-                            style={{ height: 84, resize: "vertical", fontFamily: "inherit" }}
-                            value={salesDesc}
-                            onChange={(e) => setSalesDesc(e.target.value)}
-                            placeholder=""
-                          />
-                        </div>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                          <div>
-                            <label className="ee-field-label">Price/rate (RWF)</label>
-                            <input
-                              type="number"
-                              className="ee-input-text"
-                              value={salesPrice}
-                              onChange={(e) => setSalesPrice(e.target.value)}
-                              placeholder=""
-                            />
-                          </div>
-                          <div>
-                            <label className="ee-field-label">Income account*</label>
-                            <select
-                              className="ee-input-select"
-                              value={incomeAccount}
-                              onChange={(e) => setIncomeAccount(e.target.value)}
-                            >
-                              <option value="Services">Services</option>
-                              <option value="4000 Sales">4000 Sales</option>
-                              <option value="4100 Service income">4100 Service income</option>
-                              <option value="4200 Consulting income">4200 Consulting income</option>
-                              <option value="4900 Other income">4900 Other income</option>
-                            </select>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Accordion 3: Purchasing (Mockup 62) */}
-              <div className="ee-accordion-section">
-                <div
-                  className="ee-accordion-header"
-                  onClick={() => setPurchasingOpen((o) => !o)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <h3 className="ee-accordion-title">Purchasing</h3>
-                  {purchasingOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                </div>
-
-                {purchasingOpen && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <label className="ee-checkbox-row" onClick={() => setPurchaseService((s) => !s)}>
-                      <div className={`ee-checkbox-box ${purchaseService ? "checked" : ""}`}>
-                        {purchaseService && <Check size={14} strokeWidth={3} />}
-                      </div>
-                      <span>I purchase this service from a supplier</span>
-                    </label>
-
-                    {purchaseService && (
-                      <>
-                        <div>
-                          <label className="ee-field-label">Purchase Description</label>
-                          <textarea
-                            className="ee-input-text"
-                            style={{ height: 84, resize: "vertical", fontFamily: "inherit" }}
-                            value={purchaseDesc}
-                            onChange={(e) => setPurchaseDesc(e.target.value)}
-                            placeholder=""
-                          />
-                        </div>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                          <div>
-                            <label className="ee-field-label">Cost/rate (RWF)</label>
-                            <input
-                              type="number"
-                              className="ee-input-text"
-                              value={purchaseCost}
-                              onChange={(e) => setPurchaseCost(e.target.value)}
-                              placeholder=""
-                            />
-                          </div>
-                          <div>
-                            <label className="ee-field-label">Expense account*</label>
-                            <select
-                              className="ee-input-select"
-                              value={expenseAccount}
-                              onChange={(e) => setExpenseAccount(e.target.value)}
-                            >
-                              <option value="5000 Direct costs">5000 Direct costs</option>
-                              <option value="6100 Subscriptions">6100 Subscriptions</option>
-                              <option value="6200 Professional fees">6200 Professional fees</option>
-                              <option value="6300 Subcontractors">6300 Subcontractors</option>
-                            </select>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="ee-drawer-footer">
-              <button
-                type="button"
-                className="ee-btn-ghost-cancel"
-                onClick={() => setDrawerOpen(false)}
-              >
-                Cancel
-              </button>
-              <div style={{ display: "flex", gap: 12 }}>
-                <button
-                  type="button"
-                  className="ee-btn-outline-blue"
-                  onClick={() => handleSave(true)}
-                >
-                  Save and new
-                </button>
-                <button
-                  type="button"
-                  className="ee-btn-primary-blue"
-                  onClick={() => handleSave(false)}
-                >
-                  Save and close
-                </button>
-              </div>
-            </div>
-          </div>
+          <span className="strong cust-name-link">{r.name}</span>
+          {(r.category || !r.isActive || r.source === "ERP") && (
+            <span className="cust-row-meta">
+              {r.category && <span className="cust-chip">{r.category}</span>}
+              {!r.isActive && <Badge>Inactive</Badge>}
+              {r.source === "ERP" && <span className="ps-erp" title="Name, SKU and quantities come from the ERP">ERP</span>}
+            </span>
+          )}
+          {(r.salesDescription || r.purchaseDescription) && <span className="sub ps-desc">{r.salesDescription || r.purchaseDescription}</span>}
         </>
+      ),
+    },
+    { key: "sku", header: "SKU", className: "hide-md nowrap", render: (r) => r.sku || dash },
+    { key: "type", header: "Type", className: "hide-sm nowrap", render: (r) => ITEM_TYPE_LABEL[r.type] },
+    {
+      key: "price",
+      header: `Sales price (${currency})`,
+      numeric: true,
+      render: (r) => (r.salesPrice != null ? amount(r.salesPrice, r.salesPrice % 1 ? 2 : 0) : dash),
+    },
+    {
+      key: "cost",
+      header: "Cost",
+      numeric: true,
+      className: "hide-md",
+      render: (r) => {
+        const c = r.type === "INVENTORY" ? r.averageCost : r.purchaseCost;
+        return c != null ? <span title={r.type === "INVENTORY" ? "Average cost from the ERP" : undefined}>{amount(c, c % 1 ? 2 : 0)}</span> : dash;
+      },
+    },
+    {
+      key: "qty",
+      header: "Qty on hand",
+      numeric: true,
+      render: (r) => {
+        if (r.quantity == null) return dash;
+        const tone = r.stockStatus === "OUT" ? "text-negative strong" : r.stockStatus === "LOW" ? "ps-low strong" : undefined;
+        return (
+          <>
+            <span className={tone}>{amount(r.quantity)}</span>
+            {r.stockStatus === "OUT" && <span className="sub text-negative">Out of stock</span>}
+            {r.stockStatus === "LOW" && <span className="sub ps-low">Low · reorder at {amount(r.reorderPoint ?? 0)}</span>}
+          </>
+        );
+      },
+    },
+    { key: "reorder", header: "Reorder point", numeric: true, className: "sup-hide-lg", render: (r) => (r.reorderPoint != null ? amount(r.reorderPoint) : dash) },
+    ...(manage
+      ? [
+          {
+            key: "act",
+            header: <span className="cust-act-head">Action</span>,
+            width: 130,
+            render: (r: ItemRow) => (
+              <span className="cust-act" onClick={(e) => e.stopPropagation()}>
+                {r.isActive ? (
+                  <button type="button" className="link-button cust-act-main" onClick={() => setEditing({ id: r.id })}>
+                    Edit
+                  </button>
+                ) : (
+                  <button type="button" className="link-button cust-act-main" onClick={() => void setStatus([r.id], true, r.name)}>
+                    Make active
+                  </button>
+                )}
+                <Menu
+                  label=""
+                  ariaLabel={`More actions for ${r.name}`}
+                  triggerClassName="cust-act-caret"
+                  items={[
+                    !r.isActive && { label: "Edit", onSelect: () => setEditing({ id: r.id }) },
+                    { label: "Duplicate", onSelect: () => setEditing({ copyOf: r.id }) },
+                    r.isActive && { label: "Make inactive", onSelect: () => void setStatus([r.id], false, r.name) },
+                  ]}
+                />
+              </span>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const tabs: Array<[TypeTab, string, number | undefined]> = [
+    ["", "All", counts?.active],
+    ["SERVICE", "Services", counts?.service],
+    ["NON_INVENTORY", "Non-stock", counts?.nonInventory],
+    ["INVENTORY", "Stock", counts?.inventory],
+  ];
+  const filtered = Boolean(debounced || type || stock || category || source || status !== "active");
+
+  return (
+    <div className="cust-page">
+      <PageHeader
+        title="Products and services"
+        description={counts ? `${plural(counts.active, "active item")}${counts.inactive ? ` · ${counts.inactive} inactive` : ""}` : undefined}
+        actions={
+          <>
+            <Menu
+              label="Import / export"
+              items={[
+                manage && { label: "Import products and services", icon: Upload, onSelect: () => navigate("/products-services/import") },
+                { label: "Export to CSV", icon: Download, onSelect: () => void exportCsv() },
+              ]}
+            />
+            {manage && (
+              <button type="button" className="btn btn-primary" onClick={() => setEditing({})}>
+                <Plus size={16} aria-hidden="true" />
+                New
+              </button>
+            )}
+          </>
+        }
+      />
+
+      <div className="ps-cards" role="group" aria-label="Stock status">
+        <button type="button" className={`ps-card ${stock === "low" ? "on" : ""}`} onClick={() => setQueryParam("stock", stock === "low" ? null : "low")} aria-pressed={stock === "low"}>
+          <AlertTriangle size={20} className="ps-low" aria-hidden="true" />
+          <span>
+            <span className="ps-card-num">{counts ? counts.lowStock : "–"}</span>
+            <span className="ps-card-label">Low stock</span>
+          </span>
+        </button>
+        <button type="button" className={`ps-card ${stock === "out" ? "on" : ""}`} onClick={() => setQueryParam("stock", stock === "out" ? null : "out")} aria-pressed={stock === "out"}>
+          <PackageX size={20} className="text-negative" aria-hidden="true" />
+          <span>
+            <span className="ps-card-num">{counts ? counts.outOfStock : "–"}</span>
+            <span className="ps-card-label">Out of stock</span>
+          </span>
+        </button>
+        <p className="ps-cards-note small muted">Stock items and their quantities come from the ERP. Set a reorder point on an item to see it here when it runs low.</p>
+      </div>
+
+      <div className="tabs cust-tabs" role="tablist" aria-label="Item type">
+        {tabs.map(([key, label, n]) => (
+          <button key={key || "all"} type="button" role="tab" aria-selected={type === key} className={`tab ${type === key ? "on" : ""}`} onClick={() => setQueryParam("type", key || null)}>
+            {label}
+            {n !== undefined && <span className="cust-tab-count">{n}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="cust-toolbar">
+        <div className="cust-search">
+          <Search size={15} aria-hidden="true" />
+          <input className="input" type="search" placeholder="Search name, SKU, description or category" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products and services" />
+        </div>
+        <Select
+          aria-label="Status"
+          className="cust-select"
+          value={status}
+          onChange={(v) => setQueryParam("status", v === "active" ? null : v)}
+          searchable={false}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "inactive", label: `Inactive${counts ? ` (${counts.inactive})` : ""}` },
+            { value: "all", label: "All statuses" },
+          ]}
+        />
+        {categories.length > 0 && (
+          <Select
+            aria-label="Category"
+            className="cust-select"
+            value={category}
+            onChange={(v) => setQueryParam("category", v || null)}
+            searchable={categories.length > 8}
+            options={[{ value: "", label: "All categories" }, ...(page?.categories ?? []).map((c) => ({ value: c.name, label: c.name, hint: String(c.count) }))]}
+          />
+        )}
+        <Select
+          aria-label="Source"
+          className="cust-select"
+          value={source}
+          onChange={(v) => setQueryParam("source", v || null)}
+          searchable={false}
+          options={[
+            { value: "", label: "All sources" },
+            { value: "erp", label: "From the ERP" },
+            { value: "app", label: "Created here" },
+          ]}
+        />
+        <span className="grow" />
+        <Select aria-label="Sort" className="cust-select cust-sort" value={`${sortKey}:${sortDir}`} onChange={(v) => setQueryParam("sort", v === "name:asc" ? null : v)} searchable={false} options={SORTS} />
+        <button type="button" className="icon-button cust-icon-btn" title="Export to CSV" aria-label="Export to CSV" onClick={() => void exportCsv()}>
+          <Download size={16} aria-hidden="true" />
+        </button>
+      </div>
+
+      {selected.size > 0 && (
+        <div className="cust-bulk" role="region" aria-label="Bulk actions">
+          <strong>{plural(selected.size, "item")} selected</strong>
+          {status !== "inactive" && (
+            <button type="button" className="btn btn-sm" disabled={bulkBusy} onClick={() => void setStatus([...selected], false, plural(selected.size, "item"))}>
+              Make inactive
+            </button>
+          )}
+          {status !== "active" && (
+            <button type="button" className="btn btn-sm" disabled={bulkBusy} onClick={() => void setStatus([...selected], true, plural(selected.size, "item"))}>
+              Make active
+            </button>
+          )}
+          <button type="button" className="btn btn-sm btn-quiet" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {list.error && !list.data ? (
+        <div className="panel">
+          <ErrorState message={list.error} onRetry={list.reload} />
+        </div>
+      ) : (
+        <div className={list.refreshing ? "is-refreshing" : undefined}>
+          <DataTable
+            columns={columns}
+            rows={list.rows}
+            rowKey={(r) => r.id}
+            loading={list.loading}
+            showPagination={false}
+            onRowClick={manage ? (r) => setEditing({ id: r.id }) : undefined}
+            rowClassName={(r) => (selected.has(r.id) ? "selected" : undefined)}
+            empty={
+              filtered ? (
+                <EmptyState
+                  title="No matching items"
+                  body="Try a different search or clear the filters."
+                  action={
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setSearch("");
+                        navigate("/products-services", { replace: true });
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="No products or services yet"
+                  body="Add the services and goods you sell and buy, so their prices, accounts and tax fill in on invoices and bills. Stock items appear here automatically from the ERP."
+                  action={
+                    manage ? (
+                      <span style={{ display: "inline-flex", gap: 8 }}>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
+                          New item
+                        </button>
+                        <button type="button" className="btn btn-sm" onClick={() => navigate("/products-services/import")}>
+                          Import
+                        </button>
+                      </span>
+                    ) : undefined
+                  }
+                />
+              )
+            }
+          />
+          <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onPage={list.setPage} onPageSize={list.setPageSize} label="Item pages" />
+        </div>
+      )}
+
+      {editing && (
+        <ItemFormDrawer
+          itemId={editing.id}
+          copyOf={editing.copyOf}
+          initialName={!editing.id && !editing.copyOf && debounced && !list.total ? debounced : undefined}
+          categories={categories}
+          onClose={() => {
+            setEditing(null);
+            setQueryParam("new", null);
+          }}
+          onSaved={() => {
+            setEditing(null);
+            setQueryParam("new", null);
+            list.reload();
+          }}
+        />
       )}
     </div>
   );

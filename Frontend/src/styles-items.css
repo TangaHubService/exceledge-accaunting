@@ -1,0 +1,41 @@
+/* ── Products and services ─────────────────────────────── */
+
+.ps-cards { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; flex-wrap: wrap; }
+.ps-card {
+  display: inline-flex; align-items: center; gap: 12px; min-width: 170px; padding: 12px 16px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.ps-card:hover { border-color: var(--line-strong); }
+.ps-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ps-card > span { display: flex; flex-direction: column; }
+.ps-card-num { font-size: var(--fs-2xl); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ps-card-label { font-size: var(--fs-base); color: var(--muted); }
+.ps-cards-note { flex: 1 1 260px; margin: 0; max-width: 460px; }
+.ps-low { color: var(--warning); }
+.ps-erp {
+  display: inline-block; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em;
+  color: var(--accent); background: var(--accent-soft); line-height: 18px;
+}
+.ps-desc { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Item form */
+.ps-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.ps-type {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
+}
+.ps-type:hover:not(:disabled) { border-color: var(--line-strong); }
+.ps-type.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ps-type.on svg { color: var(--accent); }
+.ps-type:disabled { cursor: not-allowed; opacity: 0.6; background: var(--surface-2); }
+.ps-type .sub { font-size: var(--fs-sm); color: var(--muted); line-height: 1.4; }
+.ps-check { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ps-stock { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.ps-stock > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius); }
+.ps-stock-num { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ps-locations { margin-bottom: 8px; }
+
+@media (max-width: 640px) {
+  .ps-types, .ps-stock { grid-template-columns: 1fr; }
+  .ps-card { flex: 1 1 140px; min-width: 0; }
+}

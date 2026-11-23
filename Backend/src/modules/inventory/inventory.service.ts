@@ -724,7 +724,7 @@ export async function valuationReport(companyId: string, filter: { asOf?: string
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.location.localeCompare(b.location));
 
-  const categories = await prisma.inventoryItem.findMany({ where: { companyId, category: { not: null } }, distinct: ["category"], select: { category: true }, orderBy: { category: "asc" } });
+  const categories = await prisma.inventoryItem.findMany({ where: { companyId, type: "INVENTORY", category: { not: null } }, distinct: ["category"], select: { category: true }, orderBy: { category: "asc" } });
   return {
     asOf: (asOf ?? new Date()).toISOString().slice(0, 10),
     valuationMethod: method,

@@ -424,11 +424,13 @@ model Account {
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  parent       Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children     Account[]     @relation("AccountHierarchy")
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       Account?        @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children     Account[]       @relation("AccountHierarchy")
   journalLines JournalLine[]
   glEntries    GlEntry[]
+  incomeItems  InventoryItem[] @relation("ItemIncomeAccount")
+  expenseItems InventoryItem[] @relation("ItemExpenseAccount")
 
   @@unique([companyId, code])
   @@index([companyId, type])
@@ -1457,6 +1459,7 @@ model Supplier {
   commercialDocuments CommercialDocument[]
   itemReceipts        ItemReceipt[]
   supplierNotes       SupplierNote[]
+  preferredForItems   InventoryItem[]
 
   @@unique([companyId, code])
   @@unique([companyId, externalErpSupplierId])
@@ -1785,27 +1788,51 @@ enum InventoryMovementKind {
   SUPPLIER_RETURN
 }
 
-model InventoryItem {
-  id                String   @id @default(cuid())
-  companyId         String
-  externalProductId String
-  sku               String?
-  name              String
-  category          String?
-  unit              String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+enum ItemType {
+  SERVICE
+  NON_INVENTORY
+  INVENTORY
+}
 
-  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  balances         InventoryBalance[]
-  movements        InventoryMovement[]
-  layers           InventoryCostLayer[]
-  commercialLines  CommercialDocumentLine[]
-  itemReceiptLines ItemReceiptLine[]
-  adjustmentLines  InventoryAdjustmentLine[]
+/// Products and services. Stock items come from the ERP (externalProductId); services and non-stock items are created here.
+model InventoryItem {
+  id                  String   @id @default(cuid())
+  companyId           String
+  /// Set for items the ERP owns; null for items created in this app.
+  externalProductId   String?
+  type                ItemType @default(INVENTORY)
+  sku                 String?
+  name                String
+  category            String?
+  unit                String?
+  isActive            Boolean  @default(true)
+  salesDescription    String?
+  salesPrice          Decimal? @db.Decimal(18, 4)
+  incomeAccountId     String?
+  salesTaxCode        String?
+  purchaseDescription String?
+  purchaseCost        Decimal? @db.Decimal(18, 4)
+  expenseAccountId    String?
+  purchaseTaxCode     String?
+  preferredSupplierId String?
+  reorderPoint        Decimal? @db.Decimal(18, 4)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company           Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incomeAccount     Account?                  @relation("ItemIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
+  expenseAccount    Account?                  @relation("ItemExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: SetNull)
+  preferredSupplier Supplier?                 @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  balances          InventoryBalance[]
+  movements         InventoryMovement[]
+  layers            InventoryCostLayer[]
+  commercialLines   CommercialDocumentLine[]
+  itemReceiptLines  ItemReceiptLine[]
+  adjustmentLines   InventoryAdjustmentLine[]
 
   @@unique([companyId, externalProductId])
   @@index([companyId, name])
+  @@index([companyId, type, isActive])
   @@map("inventory_items")
 }
 

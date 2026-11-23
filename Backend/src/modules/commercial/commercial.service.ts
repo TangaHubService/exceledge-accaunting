@@ -78,7 +78,8 @@ export type DocumentBody = z.infer<typeof documentBody>;
 const audit = (companyId: string, actor: Actor, action: string, id: string, afterJson?: unknown) =>
   writeAudit({ companyId, erpUserId: actor.erpUserId ?? 0, erpRole: actor.erpRole, action, entityType: "CommercialDocument", entityId: id, afterJson, ...actor.meta });
 
-const withLines = { lines: { orderBy: { lineNumber: "asc" } } } satisfies Prisma.CommercialDocumentInclude;
+/** Lines carry their item's type: only stock is received, while services and non-stock items are billed directly. */
+const withLines = { lines: { orderBy: { lineNumber: "asc" }, include: { item: { select: { type: true } } } } } satisfies Prisma.CommercialDocumentInclude;
 
 /** Next free number per series: one past the highest numeric number in use. */
 export async function nextNumbers(companyId: string) {
@@ -407,7 +408,7 @@ async function billableReceipts(companyId: string, where: Prisma.ItemReceiptWher
 }
 
 /**
- * Bills what has been received plus any non-stock lines. Received goods debit goods received not invoiced at the
+ * Bills what has been received plus any lines that aren't stock (categories, services, non-stock items). Received goods debit goods received not invoiced at the
  * value they were received at, so stock isn't expensed a second time; unreceived stock lines wait for their receipt.
  */
 async function billPurchaseOrder(
@@ -429,8 +430,9 @@ async function billPurchaseOrder(
       if (orderLine) billedByLine.set(orderLine.id, (billedByLine.get(orderLine.id) ?? 0) + Number(l.quantity));
     }
   }
+  // Only stock waits for a goods receipt; services and non-stock items bill straight from the order.
   for (const l of doc.lines) {
-    if (l.itemId || Number(l.billedQuantity) > 0) continue;
+    if (l.item?.type === "INVENTORY" || Number(l.billedQuantity) > 0) continue;
     lines.push({ description: l.description, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discount: Number(l.discount), taxCode: l.taxCode, accountId: l.accountId });
     billedByLine.set(l.id, Number(l.quantity));
   }

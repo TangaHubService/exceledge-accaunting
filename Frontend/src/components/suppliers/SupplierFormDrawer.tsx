@@ -144,7 +144,7 @@ function validate(d: Draft, editing: boolean): Errors {
 }
 
 /** Collapsible group in the form. Opens itself when it holds an error so nothing invalid is hidden. */
-function Section({
+export function Section({
   title,
   icon: Icon,
   summary,

@@ -53,6 +53,7 @@ import { InventoryMovements } from "./pages/InventoryMovements";
 import { InventoryReconciliation } from "./pages/InventoryReconciliation";
 import { CostOfSalesReport, InventoryValuationReport, SlowMovingReport } from "./pages/InventoryReports";
 import { ImportSuppliers } from "./pages/ImportSuppliers";
+import { ImportItems } from "./pages/ImportItems";
 import { Invoices } from "./pages/Invoices";
 import { JournalNew } from "./pages/JournalNew";
 import { Journals } from "./pages/Journals";
@@ -180,6 +181,7 @@ const ROUTES: Route[] = [
   { pattern: "/inventory/movements", needs: "inventory:view", render: () => <InventoryMovements /> },
   { pattern: "/inventory/reconciliation", needs: "inventory:view", render: () => <InventoryReconciliation /> },
   { pattern: "/lists", needs: "inventory:view", render: () => <Lists /> },
+  { pattern: "/products-services/import", needs: "inventory:manage", render: () => <ImportItems /> },
   { pattern: "/products-services", needs: "inventory:view", render: () => <ProductsServices /> },
   { pattern: "/banking", needs: "bank:view", render: () => <Banking /> },
   { pattern: "/banking/accounts/:id", needs: "bank:view", render: (p) => <BankAccount key={p.id} id={p.id} /> },

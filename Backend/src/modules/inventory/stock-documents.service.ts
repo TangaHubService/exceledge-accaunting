@@ -12,8 +12,11 @@ const audit = (companyId: string, actor: Actor, action: string, entityType: stri
 
 async function assertItems(companyId: string, ids: string[]) {
   const unique = [...new Set(ids)];
-  const found = await prisma.inventoryItem.count({ where: { companyId, id: { in: unique } } });
-  if (found !== unique.length) throw new Error("A selected item does not exist");
+  const found = await prisma.inventoryItem.findMany({ where: { companyId, id: { in: unique } }, select: { name: true, type: true } });
+  if (found.length !== unique.length) throw new Error("A selected item does not exist");
+  // The ERP owns stock: only stock items can be received or adjusted.
+  const notStock = found.find((i) => i.type !== "INVENTORY");
+  if (notStock) throw new Error(`${notStock.name} isn't a stock item, so it can't be received into or adjusted in stock`);
 }
 
 async function resolveLocation(companyId: string, itemId: string, locationId?: string | null) {
@@ -23,9 +26,9 @@ async function resolveLocation(companyId: string, itemId: string, locationId?: s
   return location.id;
 }
 
-/** Every item, in stock or not: the first delivery of a product has to be receivable. */
+/** Every stock item, in stock or not: the first delivery of a product has to be receivable. Services and non-stock items are excluded. */
 export async function listItems(companyId: string) {
-  const items = await prisma.inventoryItem.findMany({ where: { companyId }, include: { balances: { select: { quantity: true, value: true } } }, orderBy: { name: "asc" }, take: 5000 });
+  const items = await prisma.inventoryItem.findMany({ where: { companyId, type: "INVENTORY" }, include: { balances: { select: { quantity: true, value: true } } }, orderBy: { name: "asc" }, take: 5000 });
   return items.map((item) => {
     const quantity = item.balances.reduce((sum, b) => sum + Number(b.quantity), 0);
     const value = item.balances.reduce((sum, b) => sum + Number(b.value), 0);
@@ -129,7 +132,7 @@ async function lockOrderForReceiving(companyId: string, orderId: string, supplie
 }
 
 async function applyReceiptToOrder(orderId: string, lines: Array<{ purchaseOrderLineId?: string | null; quantity: number; itemId: string }>) {
-  const orderLines = await prisma.commercialDocumentLine.findMany({ where: { documentId: orderId }, orderBy: { lineNumber: "asc" } });
+  const orderLines = await prisma.commercialDocumentLine.findMany({ where: { documentId: orderId }, orderBy: { lineNumber: "asc" }, include: { item: { select: { type: true } } } });
   const received = new Map(orderLines.map((l) => [l.id, Number(l.receivedQuantity)]));
   for (const line of lines) {
     const target = line.purchaseOrderLineId
@@ -142,7 +145,8 @@ async function applyReceiptToOrder(orderId: string, lines: Array<{ purchaseOrder
     received.set(target.id, after);
     await prisma.commercialDocumentLine.update({ where: { id: target.id }, data: { receivedQuantity: after } });
   }
-  const complete = orderLines.filter((l) => l.itemId).every((l) => received.get(l.id)! >= Number(l.quantity) - 0.0001);
+  // Services and non-stock items are billed, never received, so only stock decides whether the order is received.
+  const complete = orderLines.filter((l) => l.item?.type === "INVENTORY").every((l) => received.get(l.id)! >= Number(l.quantity) - 0.0001);
   await prisma.commercialDocument.update({ where: { id: orderId }, data: { status: complete ? "RECEIVED" : "PARTIALLY_RECEIVED" } });
 }
 

@@ -21,7 +21,7 @@ import { SummaryRows } from "../components/forms";
 import { Select } from "../components/Select";
 import { ApplySupplierCreditsDrawer } from "../components/suppliers/ApplySupplierCreditsDrawer";
 import { SupplierFormDrawer } from "../components/suppliers/SupplierFormDrawer";
-import { BillDrawer, poStatus, PurchaseOrderDrawer, SUPPLIER_TXN_LABEL, SupplierTxnDrawer } from "../components/suppliers/SupplierTxnDrawers";
+import { BillDrawer, isStockLine, poStatus, PurchaseOrderDrawer, SUPPLIER_TXN_LABEL, SupplierTxnDrawer } from "../components/suppliers/SupplierTxnDrawers";
 import { Badge, EmptyState, ErrorState, Loadable, Menu, PageHeader, Pagination, SkeletonRows } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, dateTime, humanize, isoDay, plural, toNumber } from "../lib/format";
@@ -824,7 +824,7 @@ function orderProgress(o: CommercialDoc) {
     const q = toNumber(l.quantity);
     ordered += q;
     billed += toNumber(l.billedQuantity ?? 0);
-    if (l.itemId) {
+    if (isStockLine(l)) {
       stock = true;
       received += toNumber(l.receivedQuantity ?? 0);
     } else received += q;

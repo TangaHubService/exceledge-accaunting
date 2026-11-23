@@ -307,6 +307,8 @@ export type CommercialDoc = {
     taxCode: string | null;
     tax: Decimal;
     itemId?: string | null;
+    /** The line's item type; only INVENTORY lines are received, the rest are billed directly. */
+    item?: { type: ItemType } | null;
     receivedQuantity?: Decimal;
     billedQuantity?: Decimal;
   }>;
@@ -1873,3 +1875,56 @@ export type CustomerCredits = {
   credits: Array<{ type: CustomerCreditSource; id: string; number: string; date: string; currency: string; available: number; description: string | null }>;
   invoices: Array<{ id: string; number: string; date: string; dueDate: string; currency: string; open: number; description: string | null; isOpening: boolean }>;
 };
+
+/* ── Products and services ─────────────────────────────── */
+
+export type ItemType = "SERVICE" | "NON_INVENTORY" | "INVENTORY";
+export type ItemAccountRef = { id: string; code: string; name: string } | null;
+
+export type ItemRow = {
+  id: string;
+  name: string;
+  sku: string | null;
+  type: ItemType;
+  category: string | null;
+  unit: string | null;
+  isActive: boolean;
+  /** ERP items keep name, SKU, category and unit in step with the ERP; APP items are created here. */
+  source: "ERP" | "APP";
+  salesDescription: string | null;
+  salesPrice: number | null;
+  salesTaxCode: string | null;
+  incomeAccount: ItemAccountRef;
+  purchaseDescription: string | null;
+  purchaseCost: number | null;
+  purchaseTaxCode: string | null;
+  expenseAccount: ItemAccountRef;
+  preferredSupplier: { id: string; name: string } | null;
+  reorderPoint: number | null;
+  quantity: number | null;
+  value: number | null;
+  averageCost: number | null;
+  stockStatus: "OK" | "LOW" | "OUT" | null;
+  updatedAt: string;
+};
+
+export type ItemDetail = ItemRow & {
+  externalProductId: string | null;
+  createdAt: string;
+  locations: Array<{ id: string; name: string; quantity: number; value: number }>;
+  lastMovement: { movementDate: string; kind: string } | null;
+};
+
+export type ItemCounts = { active: number; inactive: number; service: number; nonInventory: number; inventory: number; lowStock: number; outOfStock: number };
+
+export type ItemListPage = {
+  rows: ItemRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  counts: ItemCounts;
+  categories: Array<{ name: string; count: number }>;
+};
+
+export type ItemDuplicate = { id: string; name: string; sku: string | null; isActive: boolean; matched: Array<"name" | "sku"> };

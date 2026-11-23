@@ -4,7 +4,7 @@ import { useCompany } from "./company";
 import { amount, isoDay } from "./format";
 import { linkToProject, pushRecordInBackground, removeRecordInBackground } from "./server-store";
 import { useResource, useSession } from "./session";
-import type { AccountType, Customer, Supplier } from "./types";
+import type { AccountType, Customer, ItemType, Supplier, TaxCode, TaxType } from "./types";
 
 /* ── Terms & methods ───────────────────────────────────── */
 
@@ -141,22 +141,85 @@ export function useInventoryItems() {
   return list.data ?? EMPTY_ITEMS;
 }
 
-/** Product/service picker: income accounts (services) and stocked items, keyed "acct:" / "item:". */
+/** An active item from Products and services, with the defaults it brings to a transaction line. */
+export type ProductItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  type: ItemType;
+  unit: string | null;
+  salesDescription: string | null;
+  salesPrice: number | null;
+  incomeAccountId: string | null;
+  salesTaxCode: string | null;
+  purchaseDescription: string | null;
+  purchaseCost: number | null;
+  expenseAccountId: string | null;
+  purchaseTaxCode: string | null;
+};
+const EMPTY_PRODUCTS: ProductItem[] = [];
+
+/** Product/service picker: items from Products and services, then income accounts, keyed "item:" / "acct:". */
 export function useProductOptions() {
   const income = useIncomeAccountOptions();
-  const items = useInventoryItems();
+  const items = useProductItems();
   const options = useMemo<SelectOption[]>(
     () => [
-      ...items.map((i) => ({ value: `item:${i.id}`, label: i.name, hint: i.sku || undefined, group: "Products" })),
-      ...income.map((o) => ({ ...o, value: `acct:${o.value}`, group: "Services (income accounts)" })),
+      ...items.map((i) => ({ value: `item:${i.id}`, label: i.name, hint: i.sku || undefined, group: "Products and services" })),
+      ...income.map((o) => ({ ...o, value: `acct:${o.value}`, group: "Income accounts" })),
     ],
     [items, income],
   );
   return { options, items };
 }
 
-export function productAccountId(product: string) {
-  return product.startsWith("acct:") ? product.slice(5) : undefined;
+/** Bill item picker: services and non-stock items only. Stock is bought through ERP item receipts, so stock items stay off bills. */
+export function usePurchaseItemOptions() {
+  const all = useProductItems();
+  const items = useMemo(() => all.filter((i) => i.type !== "INVENTORY"), [all]);
+  const options = useMemo<SelectOption[]>(() => items.map((i) => ({ value: `item:${i.id}`, label: i.name, hint: i.sku || undefined })), [items]);
+  return { options, items };
+}
+
+function useProductItems() {
+  const { can } = useSession();
+  const list = useResource<ProductItem[]>(can("inventory:view") ? "/api/v1/inventory/items/options" : null);
+  return list.data ?? EMPTY_PRODUCTS;
+}
+
+/** The account a line posts to: the chosen account, or the chosen item's income (sales) or expense (purchase) account; else the server default. */
+export function productAccountId(product: string, items: ProductItem[] = EMPTY_PRODUCTS, side: "sales" | "purchase" = "sales") {
+  if (product.startsWith("acct:")) return product.slice(5);
+  if (product.startsWith("item:")) {
+    const item = items.find((i) => i.id === product.slice(5));
+    return (side === "sales" ? item?.incomeAccountId : item?.expenseAccountId) ?? undefined;
+  }
+  return undefined;
+}
+
+const SALES_TAX_TYPES: TaxType[] = ["OUTPUT_VAT", "ZERO_RATED", "EXEMPT", "EXCISE", "OTHER"];
+const PURCHASE_TAX_TYPES: TaxType[] = ["INPUT_VAT", "IMPORT_VAT", "ZERO_RATED", "EXEMPT", "EXCISE", "OTHER"];
+const NO_TAX: { options?: SelectOption[]; rates: Map<string, number> } = { options: undefined, rates: new Map() };
+
+/**
+ * Tax codes a sales or purchase line can carry on `onDate`, with their rates. `options` is undefined when the user
+ * can't see tax codes, which hides the Tax column.
+ */
+export function useLineTaxCodes(side: "sales" | "purchase", onDate: string) {
+  const { can } = useSession();
+  const codes = useResource<TaxCode[]>(can("tax:view") ? "/api/v1/tax/codes" : null);
+  return useMemo(() => {
+    if (!codes.data) return NO_TAX;
+    const types = side === "sales" ? SALES_TAX_TYPES : PURCHASE_TAX_TYPES;
+    const day = onDate || isoDay();
+    const usable = codes.data.filter(
+      (t) => t.isActive && types.includes(t.taxType) && t.effectiveFrom.slice(0, 10) <= day && (!t.effectiveTo || t.effectiveTo.slice(0, 10) >= day),
+    );
+    return {
+      options: [{ value: "", label: "No tax" }, ...usable.map((t) => ({ value: t.code, label: t.code, hint: `${t.ratePercent}%` }))],
+      rates: new Map(usable.map((t) => [t.code, Number(t.ratePercent)])),
+    };
+  }, [codes.data, side, onDate]);
 }
 
 /* ── Local records ─────────────────────────────────────── */

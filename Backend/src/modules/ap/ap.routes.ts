@@ -510,9 +510,10 @@ apRouter.post("/credit-notes", requireCapability("ap:manage"), async (req: Authe
         supplierReference: z.string().trim().max(80).optional(),
         noteDate: day,
         reason: z.string().trim().min(1).max(300),
-        net: z.number().positive(),
+        net: z.number().positive().optional(),
         tax: z.number().min(0).optional(),
         description: optionalText,
+        lines: documentLines.optional(),
         returnedItems: z
           .array(z.object({ itemId: z.string().min(1), locationId: z.string().min(1), quantity: z.number().positive() }))
           .max(200)
