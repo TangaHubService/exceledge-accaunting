@@ -337,6 +337,95 @@
   padding-top: 8px;
 }
 
+/* ── Manage users: live data (statuses, actions, role access) ── */
+.ee-manage-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ee-manage-filter { width: auto; min-width: 150px; }
+.ee-manage-muted { color: #667085; font-size: var(--fs-base); }
+.ee-manage-tag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8f0fe;
+  color: #1d4ed8;
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  vertical-align: middle;
+}
+.ee-manage-status.inactive { background: #f2f4f7; color: #475467; }
+.ee-manage-status.inactive .dot { background: #98a2b3; }
+.ee-manage-status.invited { background: #eff8ff; color: #175cd3; }
+.ee-manage-status.invited .dot { background: #2e90fa; }
+.ee-manage-status.expired { background: #fffaeb; color: #b54708; }
+.ee-manage-status.expired .dot { background: #f79009; }
+.ee-manage-table tr.is-inactive td { color: #667085; }
+.ee-manage-avatar.invited { background: #fff; border: 1.5px dashed; }
+.ee-manage-action-split .menu { display: inline-flex; }
+.ee-manage-action-split .menu summary .chevron { margin: 0; }
+.ee-manage-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: var(--fs-base);
+}
+.ee-manage-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #eff8ff;
+  color: #175cd3;
+  font-size: var(--fs-base);
+}
+.ee-manage-note svg { flex-shrink: 0; margin-top: 1px; }
+.ee-manage-access-row td { background: #f9fafb; }
+.ee-manage-access {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 20px;
+}
+.ee-manage-access li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eef1f5;
+  font-size: var(--fs-base);
+}
+.ee-manage-access-level { font-weight: 650; white-space: nowrap; }
+.ee-manage-access-level.full { color: #027a48; }
+.ee-manage-access-level.view { color: #175cd3; }
+.ee-manage-access-level.none { color: #98a2b3; font-weight: 500; }
+.ee-manage-role-pick { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.ee-manage-role-pick legend { font-weight: 650; margin-bottom: 8px; font-size: var(--fs-base); }
+.ee-manage-role-pick label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fff;
+}
+.ee-manage-role-pick label.selected { border-color: #2f6fed; background: #f5f8ff; }
+.ee-manage-role-pick input { margin-top: 3px; accent-color: #2f6fed; }
+.ee-manage-role-pick strong { display: block; font-size: var(--fs-md); color: #0b2a4a; }
+.ee-manage-role-pick small { display: block; margin-top: 2px; font-size: var(--fs-sm); color: #667085; line-height: 1.4; }
+.ee-manage-sub { margin: 20px 0 4px; font-size: var(--fs-md); font-weight: 650; color: #0b2a4a; }
+.ee-manage-role-info .ee-manage-access { grid-template-columns: 1fr; }
+.ee-manage-role-info > div { flex: 1; min-width: 0; }
+.ee-manage-form-grid select.input { height: 40px; }
+
 .ee-invite-card {
   background: #fff;
   border: 1px solid #e4e9f0;
@@ -998,3 +1087,26 @@
   background: #12b76a;
 }
 .ee-rule-active.off .dot { background: #9ca3af; }
+
+/* Phones: Manage users tables become stacked rows so status, role and actions stay reachable. */
+@media (max-width: 640px) {
+  .ee-manage-table,
+  .ee-manage-table tbody { display: block; }
+  .ee-manage-table thead { display: none; }
+  .ee-manage-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #eef1f5;
+  }
+  .ee-manage-table td { padding: 0; border: 0; }
+  .ee-manage-table td:first-child,
+  .ee-manage-table td:nth-child(2),
+  .ee-manage-table td[colspan] { flex-basis: 100%; }
+  .ee-manage-table td:nth-child(2) { color: #667085; font-size: var(--fs-base); overflow-wrap: anywhere; }
+  .ee-manage-table td:last-child:not(:first-child) { margin-left: auto; }
+  .ee-manage-desc { max-width: none; }
+  .ee-manage-toolbar-left, .ee-manage-search { width: 100%; }
+}
