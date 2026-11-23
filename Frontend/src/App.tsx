@@ -83,6 +83,7 @@ import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
 import { BackupRestore } from "./pages/BackupRestore";
 import { SignIn } from "./SignIn";
+import { AcceptInvite } from "./AcceptInvite";
 import { ProjectForm } from "./pages/projects/ProjectForm";
 import { ProjectDetail, ProjectsPage } from "./pages/projects/Projects";
 import { ProposalStart, StatementForm } from "./pages/txn/CustomerExtras";
@@ -284,6 +285,8 @@ export function App() {
     setToken(next);
   }
 
+  // Invitation links work whether or not someone is signed in on this browser (QuickBooks model).
+  if (window.location.pathname === "/accept-invite") return <AcceptInvite onSignedIn={signIn} />;
   if (!token) return <SignIn onSignedIn={signIn} notice={notice} />;
 
   return (

@@ -5353,3 +5353,66 @@ pre.json {
 @media (max-width: 640px) {
   input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
 }
+
+/* ── Accept invitation (QuickBooks-style steps) ───────────── */
+.ee-accept-wrap { max-width: 440px; }
+.ee-accept-steps {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: #98a2b3;
+}
+.ee-accept-steps li { display: inline-flex; align-items: center; gap: 6px; flex: 1; }
+.ee-accept-steps li:not(:last-child)::after { content: ""; flex: 1; height: 1px; background: #e4e7ec; margin-left: 4px; }
+.ee-accept-steps li.current { color: #0b2a4a; font-weight: 650; }
+.ee-accept-steps li.done { color: #027a48; }
+.ee-accept-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1.5px solid currentColor;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.ee-accept-steps li.current .ee-accept-step-dot { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+.ee-accept-steps li.done .ee-accept-step-dot { background: #027a48; border-color: #027a48; color: #fff; }
+.ee-accept-facts {
+  margin: 18px 0 14px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ee-accept-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: var(--fs-md);
+}
+.ee-accept-facts > div + div { border-top: 1px solid #eef1f5; }
+.ee-accept-facts dt { display: inline-flex; align-items: center; gap: 8px; color: #667085; }
+.ee-accept-facts dd { margin: 0; font-weight: 600; color: #0b2a4a; text-align: right; overflow-wrap: anywhere; }
+.ee-accept-access { margin-bottom: 16px; font-size: var(--fs-md); }
+.ee-accept-access summary { cursor: pointer; color: #2f6fed; font-weight: 600; }
+.ee-accept-access .ee-manage-access { grid-template-columns: 1fr; }
+.ee-accept-actions { display: grid; gap: 10px; margin-top: 8px; }
+.ee-accept-back { margin-top: 10px; justify-self: center; }
+.ee-accept-state, .ee-accept-done { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 24px 0; }
+.ee-accept-state-icon, .ee-accept-done-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #eff4ff;
+  color: #2f6fed;
+}
+.ee-accept-done-icon { background: #ecfdf3; color: #027a48; }
+.ee-accept-state .ee-signin-submit, .ee-accept-done .ee-signin-submit { width: 100%; margin-top: 8px; text-decoration: none; }
+.ee-invite-accept .check { align-items: flex-start; gap: 8px; line-height: 1.4; }
