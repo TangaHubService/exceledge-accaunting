@@ -20,6 +20,8 @@ export type Session = {
   token: string;
   email?: string;
   role?: string;
+  /** The company's custom role this person holds, if any (their access comes from it). */
+  customRole: { id: string; name: string } | null;
   can: (capability: AccountingCapability) => boolean;
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
   /** Like `api`, but also returns the envelope message (used by activation). */
@@ -160,7 +162,11 @@ export function SessionProvider({
   children: ReactNode;
 }) {
   const claims = useMemo(() => decodeClaims(token), [token]);
-  const capabilities = useMemo(() => new Set(capabilitiesForRole(claims?.role)), [claims]);
+  const roleCapabilities = useMemo(() => new Set<string>(capabilitiesForRole(claims?.role)), [claims]);
+  // Effective access comes from the server (a custom role replaces the built-in role's access).
+  const [access, setAccess] = useState<{ key: string; capabilities: Set<string>; customRole: Session["customRole"] } | null>(null);
+  const accessKey = `${claims?.userId ?? ""}:${(claims as { activeOrganizationId?: number } | null)?.activeOrganizationId ?? ""}:${claims?.role ?? ""}`;
+  const capabilities = access?.key === accessKey ? access.capabilities : roleCapabilities;
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
@@ -206,11 +212,28 @@ export function SessionProvider({
     [token, onTokenRefreshed],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    call<{ capabilities: string[]; customRole: Session["customRole"] }>("/api/v1/access/me")
+      .then(({ data }) => {
+        if (!cancelled) setAccess({ key: accessKey, capabilities: new Set(data.capabilities), customRole: data.customRole });
+      })
+      .catch(() => {
+        if (!cancelled) setAccess({ key: accessKey, capabilities: roleCapabilities, customRole: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Only when the person, company or role changes, not on every token refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessKey]);
+
   const session = useMemo<Session>(
     () => ({
       token,
       email: claims?.email,
       role: claims?.role,
+      customRole: access?.key === accessKey ? access.customRole : null,
       can: (c) => capabilities.has(c),
       api: async <T,>(path: string, init?: RequestInit) => (await call<T>(path, init)).data,
       apiWithMessage: call,
@@ -237,9 +260,17 @@ export function SessionProvider({
       },
       signOut: () => onSignOut(),
     }),
-    [token, claims, capabilities, call, onSignOut, onTokenRefreshed],
+    [token, claims, capabilities, access, accessKey, call, onSignOut, onTokenRefreshed],
   );
 
+  // Wait for the real access before showing screens, so nothing flashes then disappears.
+  if (access?.key !== accessKey) {
+    return (
+      <div className="session-loading" role="status" aria-live="polite">
+        <span className="sr-only">Loading your access…</span>
+      </div>
+    );
+  }
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 

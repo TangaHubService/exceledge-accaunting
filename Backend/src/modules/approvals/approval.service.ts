@@ -1,7 +1,7 @@
+import { actorCan } from "../../lib/access";
 import {
   approvalPlan,
   asDatePolicy,
-  hasCapability,
   parseApprovalTiers,
   roleForLevel,
   type AccountingCapability,
@@ -13,7 +13,7 @@ import { writeAudit } from "../audit/audit.service";
 import { isSignable, recordSignature } from "../books/signatures.service";
 import { notify } from "../notifications/notification.service";
 
-export type Actor = { erpUserId?: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } };
+export type Actor = { erpUserId?: number; erpRole?: string; capabilities?: readonly string[]; meta?: { ipAddress?: string; userAgent?: string } };
 
 export const APPROVAL_ENTITY_TYPES = ["Journal", "Expense", "ApBill", "Budget", "TaxAdjustment", "FixedAssetImpairment", "PeriodClose", "InventoryAdjustment", "PurchaseOrder"] as const;
 export type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
@@ -248,7 +248,7 @@ function blockReason(
 ): string | null {
   if (row.status !== "PENDING") return `This approval was already ${row.status.toLowerCase()}`;
   const capability = DECIDE_CAPABILITY[row.entityType as ApprovalEntityType];
-  if (!capability || !hasCapability(actor.erpRole, capability)) return `Missing capability: ${capability ?? "unknown entity"}`;
+  if (!capability || !actorCan(actor, capability)) return `Missing capability: ${capability ?? "unknown entity"}`;
   if (actor.erpUserId && row.requestedByErpUserId === actor.erpUserId) return "The requester cannot approve their own item";
   if (actor.erpUserId && createdBy === actor.erpUserId) return `You created this ${row.entityType.toLowerCase()}; someone else must approve it`;
   if (currentRound(row.decisions).some((d) => d.decision === "APPROVED" && d.erpUserId === actor.erpUserId)) {

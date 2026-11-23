@@ -10,7 +10,7 @@ export const faRouter = Router();
 faRouter.use(authenticateErpJwt, requireCapability("fa:view"), resolveCompany);
 
 function actor(req: AuthedRequest) {
-  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, meta: getRequestMeta(req) };
+  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, capabilities: req.capabilities ? [...req.capabilities] : undefined, meta: getRequestMeta(req) };
 }
 
 function fail(res: Response, e: unknown, status = 400) {

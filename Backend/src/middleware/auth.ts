@@ -7,6 +7,7 @@ import {
 } from "@exceledge/accounting-domain";
 import { env } from "../config/env";
 import { prisma } from "../lib/prisma";
+import { effectiveAccess } from "../modules/users/access.service";
 
 export interface ErpTokenPayload {
   userId: number;
@@ -26,8 +27,18 @@ export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 export interface AuthedRequest extends Request {
   erpUser?: ErpTokenPayload;
   organizationRole?: string;
+  /** Effective accounting capabilities: custom role in this company, else the ERP role's. */
+  capabilities?: Set<string>;
+  customRole?: { id: string; name: string } | null;
   companyId?: string;
   apiKey?: { id: string; scopes: string[] };
+}
+
+/** One permission check for every route: API key scopes, else the person's effective access. */
+export function can(req: AuthedRequest, capability: AccountingCapability) {
+  if (req.apiKey) return req.apiKey.scopes.includes(capability);
+  if (req.capabilities) return req.capabilities.has(capability);
+  return hasCapability(req.organizationRole ?? req.erpUser?.role, capability);
 }
 
 function sha256(value: string) {
@@ -78,23 +89,36 @@ export async function authenticate(req: AuthedRequest, res: Response, next: Next
   return next();
 }
 
-export function authenticateErpJwt(req: AuthedRequest, res: Response, next: NextFunction) {
+export async function authenticateErpJwt(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     return res.status(401).json({ success: false, error: "Missing Bearer token" });
   }
+  let payload: ErpTokenPayload;
   try {
     const token = header.slice("Bearer ".length);
-    const payload = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] }) as ErpTokenPayload;
+    payload = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] }) as ErpTokenPayload;
     if (!payload.userId) {
       return res.status(401).json({ success: false, error: "Invalid token payload" });
     }
-    req.erpUser = payload;
-    req.organizationRole = payload.role;
-    return next();
   } catch {
     return res.status(401).json({ success: false, error: "Invalid or expired token" });
   }
+  req.erpUser = payload;
+  req.organizationRole = payload.role;
+  try {
+    const access = await effectiveAccess({
+      erpOrganizationId: payload.activeOrganizationId ?? normalizeOrgId(payload.organizationId),
+      erpUserId: payload.userId,
+      email: payload.email,
+      erpRole: payload.role,
+    });
+    req.capabilities = new Set(access.capabilities);
+    req.customRole = access.customRole;
+  } catch {
+    return res.status(503).json({ success: false, error: "Could not load your access. Please try again." });
+  }
+  return next();
 }
 
 export function requireCapability(capability: AccountingCapability) {
@@ -105,8 +129,7 @@ export function requireCapability(capability: AccountingCapability) {
       }
       return next();
     }
-    const role = req.organizationRole ?? req.erpUser?.role;
-    if (!hasCapability(role, capability)) {
+    if (!can(req, capability)) {
       return res.status(403).json({
         success: false,
         error: `Missing capability: ${capability}`,

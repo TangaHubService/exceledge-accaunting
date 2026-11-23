@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { hasCapability } from "@exceledge/accounting-domain";
 import {
   AuthedRequest,
   authenticate,
+  can,
   getRequestMeta,
   requireCapability,
   resolveCompany,
@@ -27,7 +27,8 @@ function actor(req: AuthedRequest, creditOverride?: boolean) {
   return {
     erpUserId: req.erpUser!.userId,
     erpRole: role,
-    allowCreditOverride: Boolean(creditOverride) && hasCapability(role, "ar:credit-override"),
+    capabilities: req.capabilities ? [...req.capabilities] : undefined,
+    allowCreditOverride: Boolean(creditOverride) && can(req, "ar:credit-override"),
     meta: getRequestMeta(req),
   };
 }

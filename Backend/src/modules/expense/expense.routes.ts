@@ -1,7 +1,7 @@
-import { EXPENSE_PAYMENT_MODES, RECURRING_FREQUENCIES, hasCapability } from "@exceledge/accounting-domain";
+import { EXPENSE_PAYMENT_MODES, RECURRING_FREQUENCIES } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
-import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import { AuthedRequest, authenticateErpJwt, can, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as expense from "./expense.service";
 import { inTransaction } from "../../lib/prisma";
 
@@ -10,7 +10,7 @@ export const expenseRouter = Router();
 expenseRouter.use(authenticateErpJwt, requireCapability("expense:view"), resolveCompany);
 
 function actor(req: AuthedRequest) {
-  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, meta: getRequestMeta(req) };
+  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, capabilities: req.capabilities ? [...req.capabilities] : undefined, meta: getRequestMeta(req) };
 }
 
 function fail(res: Response, e: unknown, status = 400) {
@@ -165,7 +165,7 @@ expenseRouter.post(
   handle((req) =>
     expense.postExpense(req.companyId!, req.params.id, {
       ...actor(req),
-      canApprove: hasCapability(req.organizationRole ?? req.erpUser?.role, "expense:approve"),
+      canApprove: can(req, "expense:approve"),
     }),
   ),
 );

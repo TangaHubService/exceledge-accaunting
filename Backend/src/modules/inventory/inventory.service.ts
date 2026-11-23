@@ -30,6 +30,7 @@ const SYSTEM = { erpUserId: 0, erpRole: "SYSTEM" };
 type Actor = {
   erpUserId?: number;
   erpRole?: string;
+  capabilities?: readonly string[];
   meta?: { ipAddress?: string; userAgent?: string };
 };
 

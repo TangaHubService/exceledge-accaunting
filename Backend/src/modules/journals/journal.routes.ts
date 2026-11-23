@@ -1,13 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { hasCapability } from "@exceledge/accounting-domain";
-import {
-  AuthedRequest,
-  authenticateErpJwt,
-  getRequestMeta,
-  requireCapability,
-  resolveCompany,
-} from "../../middleware/auth";
+import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany, can } from "../../middleware/auth";
 import * as journals from "./journal.service";
 
 export const journalsRouter = Router();
@@ -16,7 +9,7 @@ journalsRouter.use(authenticateErpJwt, requireCapability("journal:view"), resolv
 function actor(req: AuthedRequest) {
   return {
     erpUserId: req.erpUser!.userId,
-    erpRole: req.organizationRole ?? req.erpUser!.role,
+    erpRole: req.organizationRole ?? req.erpUser!.role, capabilities: req.capabilities ? [...req.capabilities] : undefined,
     meta: getRequestMeta(req),
   };
 }
@@ -74,7 +67,7 @@ journalsRouter.post("/", requireCapability("journal:create"), async (req: Authed
   try {
     const body = journalBody.extend({ postImmediately: z.boolean().optional(), submit: z.boolean().optional() }).parse(req.body);
 
-    if (body.postImmediately && !hasCapability(req.organizationRole ?? req.erpUser?.role, "journal:post")) {
+    if (body.postImmediately && !can(req, "journal:post")) {
       return res.status(403).json({ success: false, error: "Missing capability: journal:post" });
     }
 

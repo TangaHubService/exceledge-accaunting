@@ -1,16 +1,14 @@
-import { hasCapability } from "@exceledge/accounting-domain";
 import { Router } from "express";
 import { z } from "zod";
 import { actorOf, handle, isoDay } from "../../lib/http";
-import { type AuthedRequest, authenticateErpJwt, requireCapability, resolveCompany } from "../../middleware/auth";
+import { type AuthedRequest, authenticateErpJwt, can, requireCapability, resolveCompany } from "../../middleware/auth";
 import { nextNumbers } from "../commercial/commercial.service";
 import * as projects from "./projects.service";
 import * as team from "./team.service";
 import { listTransactions } from "./transactions.service";
 import * as workspace from "./workspace.service";
 
-const roleOf = (req: AuthedRequest) => req.organizationRole ?? req.erpUser?.role;
-const userOf = (req: AuthedRequest) => ({ userId: req.erpUser!.userId, role: roleOf(req) });
+const userOf = (req: AuthedRequest): workspace.WorkspaceUser => ({ userId: req.erpUser!.userId, can: (c) => can(req, c) });
 const str = (q: unknown) => (typeof q === "string" && q.trim() ? q.trim() : undefined);
 
 /* ── Projects ─────────────────────────────────────────────────────────────────── */
@@ -40,7 +38,7 @@ tasksRouter.delete("/:id", manageProjects, handle((req) => projects.deleteTask(r
 export const teamRouter = Router();
 teamRouter.use(authenticateErpJwt, requireCapability("team:view"), resolveCompany);
 const manageTeam = requireCapability("team:manage");
-const canSeePrivate = (req: AuthedRequest) => hasCapability(roleOf(req), "team:manage");
+const canSeePrivate = (req: AuthedRequest) => can(req, "team:manage");
 
 teamRouter.get("/employees", handle((req) => team.listEmployees(req.companyId!, canSeePrivate(req))));
 teamRouter.get("/employees/:id", handle((req) => team.getEmployee(req.companyId!, req.params.id, canSeePrivate(req))));
@@ -67,14 +65,13 @@ workspaceRouter.use(authenticateErpJwt, resolveCompany);
 workspaceRouter.get(
   "/bootstrap",
   handle(async (req) => {
-    const role = roleOf(req);
     const [collections, numbers] = await Promise.all([workspace.bootstrap(req.companyId!, userOf(req)), nextNumbers(req.companyId!)]);
     return {
       collections,
       nextNumbers: numbers,
-      projects: hasCapability(role, "project:view") ? await projects.listProjects(req.companyId!) : [],
-      tasks: hasCapability(role, "project:view") ? await projects.listTasks(req.companyId!) : [],
-      transactions: hasCapability(role, "report:view") ? (await listTransactions(req.companyId!, { pageSize: 2000 })).rows : [],
+      projects: can(req, "project:view") ? await projects.listProjects(req.companyId!) : [],
+      tasks: can(req, "project:view") ? await projects.listTasks(req.companyId!) : [],
+      transactions: can(req, "report:view") ? (await listTransactions(req.companyId!, { pageSize: 2000 })).rows : [],
     };
   }),
 );

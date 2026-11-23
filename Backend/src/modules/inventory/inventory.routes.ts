@@ -99,7 +99,7 @@ inventoryRouter.post("/opening-snapshot", requireCapability("inventory:manage"),
     const token = (req.headers.authorization ?? "").slice("Bearer ".length);
     const data = await inventory.requestOpeningSnapshot(req.companyId!, token, {
       erpUserId: req.erpUser!.userId,
-      erpRole: req.organizationRole ?? req.erpUser?.role,
+      erpRole: req.organizationRole ?? req.erpUser?.role, capabilities: req.capabilities ? [...req.capabilities] : undefined,
       meta: getRequestMeta(req),
     });
     res.status(202).json({ success: true, data });

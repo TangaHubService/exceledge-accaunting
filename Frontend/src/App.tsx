@@ -83,6 +83,7 @@ import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
 import { BackupRestore } from "./pages/BackupRestore";
 import { SignIn } from "./SignIn";
+import { AcceptInvite } from "./AcceptInvite";
 import { ProjectForm } from "./pages/projects/ProjectForm";
 import { ProjectDetail, ProjectsPage } from "./pages/projects/Projects";
 import { ProposalStart, StatementForm } from "./pages/txn/CustomerExtras";
@@ -95,6 +96,7 @@ import { CustomFormStyles } from "./pages/CustomFormStyles";
 import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
 import { InviteFirm } from "./pages/InviteFirm";
 import { ManageUsers } from "./pages/ManageUsers";
+import { RoleEditor } from "./pages/RoleEditor";
 import { AdvancedSettings } from "./pages/settings/AdvancedSettings";
 import { CompanySettings } from "./pages/settings/CompanySettings";
 import { ExpensesSettings } from "./pages/settings/ExpensesSettings";
@@ -163,6 +165,8 @@ const ROUTES: Route[] = [
   { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
   { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
   { pattern: "/users/accounting-firms", needs: "setup:view", render: () => <ManageUsers /> },
+  { pattern: "/users/roles/new", needs: "setup:view", render: () => <RoleEditor key="new" /> },
+  { pattern: "/users/roles/:id", needs: "setup:view", render: (p) => <RoleEditor key={p.id} id={p.id} /> },
   { pattern: "/users/roles", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/users", needs: "setup:view", render: () => <ManageUsers /> },
   { pattern: "/customers", needs: "ar:view", render: () => <Customers /> },
@@ -284,6 +288,8 @@ export function App() {
     setToken(next);
   }
 
+  // Invitation links work whether or not someone is signed in on this browser (QuickBooks model).
+  if (window.location.pathname === "/accept-invite") return <AcceptInvite onSignedIn={signIn} />;
   if (!token) return <SignIn onSignedIn={signIn} notice={notice} />;
 
   return (

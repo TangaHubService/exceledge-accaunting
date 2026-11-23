@@ -173,6 +173,10 @@ model Company {
   faRevaluations        FixedAssetRevaluation[]
   faImpairments         FixedAssetImpairment[]
   recurringJournals     RecurringJournal[]
+  customRoles           CustomRole[]
+  userRoleAssignments   UserRoleAssignment[]
+  inviteRoleAssignments InviteRoleAssignment[]
+  accountingFirms       AccountingFirm[]
   periodCloses          PeriodClose[]
   periodCloseOverrides  PeriodCloseOverride[]
   exchangeRates         ExchangeRate[]
@@ -4000,4 +4004,82 @@ model WorkspaceRecord {
 
   @@id([companyId, collection, recordId, ownerErpUserId])
   @@map("workspace_records")
+}
+
+// ── Manage users: custom roles and accounting firms (QuickBooks model) ──────────
+// People, sign-in and the ERP membership role live in Excel Edge ERP. Accounting stores only
+// what is specific to the books: custom roles (an exact set of accounting capabilities) and who
+// holds one in this company.
+
+/// A company-defined role: an exact list of accounting capabilities. `erpRole` is the Excel Edge
+/// role the person gets in the ERP itself (POS, branches); Accounting access comes only from
+/// `capabilities`.
+model CustomRole {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  description        String?
+  capabilities       String[]
+  erpRole            String   @default("ACCOUNTANT")
+  createdByErpUserId Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company     Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignments UserRoleAssignment[]
+  invites     InviteRoleAssignment[]
+
+  @@unique([companyId, name])
+  @@map("custom_roles")
+}
+
+/// Which custom role an ERP user holds in this company (none = their ERP role decides).
+model UserRoleAssignment {
+  id                  String   @id @default(cuid())
+  companyId           String
+  erpUserId           Int
+  customRoleId        String
+  assignedByErpUserId Int
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customRole CustomRole @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, erpUserId])
+  @@index([customRoleId])
+  @@map("user_role_assignments")
+}
+
+/// A custom role chosen when inviting someone; becomes a UserRoleAssignment once they accept.
+model InviteRoleAssignment {
+  id                 String   @id @default(cuid())
+  companyId          String
+  email              String
+  customRoleId       String
+  createdByErpUserId Int
+  createdAt          DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customRole CustomRole @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, email])
+  @@map("invite_role_assignments")
+}
+
+/// An accounting firm invited to the company (QuickBooks "Accounting firms" tab). The person
+/// joins through a normal ERP invitation with the Accountant role.
+model AccountingFirm {
+  id                 String   @id @default(cuid())
+  companyId          String
+  firmName           String
+  email              String
+  invitedByErpUserId Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, email])
+  @@map("accounting_firms")
 }

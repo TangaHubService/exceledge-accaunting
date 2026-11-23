@@ -27,4 +27,8 @@ export const erpLinks = {
   handoff: (returnTo: string) => `${ERP_URL}/accounting-handoff?return=${encodeURIComponent(returnTo)}`,
   login: `${ERP_API_URL}/auth/login`,
   refresh: `${ERP_API_URL}/auth/refresh`,
+  switchOrganization: `${ERP_API_URL}/auth/switch-organization`,
+  invitation: (token: string) => `${ERP_API_URL}/organizations/get-invitation/${encodeURIComponent(token)}`,
+  acceptInvitation: (token: string) => `${ERP_API_URL}/organizations/accept-invitation/${encodeURIComponent(token)}`,
+  declineInvitation: (token: string) => `${ERP_API_URL}/organizations/decline-invitation/${encodeURIComponent(token)}`,
 };

@@ -1,21 +1,19 @@
-import { hasCapability } from "@exceledge/accounting-domain";
 import { Router } from "express";
 import { z } from "zod";
 import { actorOf, handle, HttpError, isoDay, optionalText } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
-import { type AuthedRequest, authenticateErpJwt, requireCapability, resolveCompany } from "../../middleware/auth";
+import { type AuthedRequest, authenticateErpJwt, can, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as commercial from "./commercial.service";
 
 export const commercialRouter = Router();
 
 commercialRouter.use(authenticateErpJwt, resolveCompany);
 
-const roleOf = (req: AuthedRequest) => req.organizationRole ?? req.erpUser?.role;
 
 /** Sales documents follow ar:*, purchase orders ap:*. */
 function assertSide(req: AuthedRequest, slug: commercial.KindSlug, level: "view" | "manage") {
   const capability = `${commercial.capabilityFor(slug)}:${level}` as const;
-  if (!hasCapability(roleOf(req), capability)) throw new HttpError(403, `Missing capability: ${capability}`);
+  if (!can(req, capability)) throw new HttpError(403, `Missing capability: ${capability}`);
 }
 
 function slugParam(req: AuthedRequest): commercial.KindSlug {
@@ -64,7 +62,7 @@ commercialRouter.post(
   handle(async (req) => {
     assertSide(req, await loadSlug(req), "manage");
     const body = commercial.convertBody.parse(req.body);
-    const allowCreditOverride = Boolean(body.creditOverride) && hasCapability(roleOf(req), "ar:credit-override");
+    const allowCreditOverride = Boolean(body.creditOverride) && can(req, "ar:credit-override");
     return commercial.convertDocument(req.companyId!, req.params.id, body, { ...actorOf(req), allowCreditOverride });
   }),
 );

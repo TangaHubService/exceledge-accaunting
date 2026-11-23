@@ -1,4 +1,4 @@
-/** Dummy data for Manage users / roles / accounting firms mocks. */
+/** Dummy data for mocks not yet wired to the server (form styles, shortcuts, side panels). */
 
 export const MANAGE_USERS = [
   {
@@ -24,98 +24,6 @@ export const MANAGE_USERS = [
     action: "Edit" as const,
   },
 ];
-
-export const SUGGESTED_ROLES = ["Sales and expense reports", "Invoices only", "Bills only"] as const;
-
-export const MANAGE_ROLES = [
-  {
-    name: "Accounts payable manager",
-    description: "Manage bills, suppliers and purchase transactions.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "Accounts receivable manager",
-    description: "Manage invoices, customers and sales collections.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "Company admin",
-    description: "Full company access, including user administration.",
-    users: 1,
-    updated: "16 Oct 2026",
-    action: "View" as const,
-  },
-  {
-    name: "Expense manager",
-    description: "Manage expense transactions, suppliers, products, taxes and currencies.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "In-house accountant",
-    description: "Access reports, bookkeeping and accounting tools; excludes payroll and user administration.",
-    users: 0,
-    updated: "—",
-    action: "View" as const,
-  },
-  {
-    name: "Inventory manager",
-    description: "Manage products, services and inventory operations.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "Payroll manager",
-    description: "Manage employee records and payroll processing.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "Sales manager",
-    description: "Manage sales transactions, customers, products, taxes and currencies.",
-    users: 0,
-    updated: "16 Oct 2026",
-    action: "Edit" as const,
-  },
-  {
-    name: "Standard all access",
-    description: "Full operational access including payroll, without admin privileges.",
-    users: 0,
-    updated: "—",
-    action: "View" as const,
-  },
-  {
-    name: "Standard limited customers and suppliers",
-    description: "Manage customers, sales, suppliers and purchases.",
-    users: 0,
-    updated: "—",
-    action: "View" as const,
-  },
-];
-
-export const ADD_USER_ROLES = [
-  "+ Add new role",
-  "In-house accountant",
-  "Standard all access",
-  "Standard no access",
-  "Accounts receivable manager",
-  "Accounts payable manager",
-  "Standard limited customers and suppliers",
-  "Company admin",
-  "Track time only",
-  "View company reports",
-  "Expense manager",
-  "Sales manager",
-  "Payroll manager",
-  "Inventory manager",
-] as const;
 
 export const FORM_STYLES = [
   {

@@ -41,10 +41,10 @@ export function handle<T>(fn: (req: AuthedRequest) => Promise<T>, status = 200):
   };
 }
 
-export type Actor = { erpUserId?: number; erpRole?: string; meta?: { ipAddress?: string; userAgent?: string } };
+export type Actor = { erpUserId?: number; erpRole?: string; capabilities?: readonly string[]; meta?: { ipAddress?: string; userAgent?: string } };
 
 export function actorOf(req: AuthedRequest): Actor {
-  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, meta: getRequestMeta(req) };
+  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser?.role, capabilities: req.capabilities ? [...req.capabilities] : undefined, meta: getRequestMeta(req) };
 }
 
 export const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Use a yyyy-mm-dd date");

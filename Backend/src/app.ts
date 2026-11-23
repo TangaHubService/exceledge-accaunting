@@ -17,6 +17,7 @@ import { faRouter } from "./modules/fixed-assets/fa.routes";
 import { journalsRouter } from "./modules/journals/journal.routes";
 import { glRouter } from "./modules/gl/gl.routes";
 import { setupRouter } from "./modules/setup/setup.routes";
+import { accessRouter, usersRouter } from "./modules/users/users.routes";
 import { commercialRouter } from "./modules/commercial/commercial.routes";
 import { projectsRouter, tasksRouter, teamRouter, workspaceRouter } from "./modules/workspace/workspace.routes";
 import { prisma } from "./lib/prisma";
@@ -71,6 +72,8 @@ export function createApp() {
     ["/api/v1/tasks", tasksRouter],
     ["/api/v1/team", teamRouter],
     ["/api/v1/workspace", workspaceRouter],
+    ["/api/v1/users", usersRouter],
+    ["/api/v1/access", accessRouter],
   ];
   /** For load balancers: unlike /health, this fails when the database can't be reached. */
   app.get("/ready", async (_req, res) => {
