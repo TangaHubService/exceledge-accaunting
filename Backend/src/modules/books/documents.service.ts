@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { type AccountingCapability, hasCapability } from "@exceledge/accounting-domain";
+import type { AccountingCapability } from "@exceledge/accounting-domain";
+import { actorCan } from "../../lib/access";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { documentStorage, newStorageKey } from "../../lib/storage";
 import { writeAudit } from "../audit/audit.service";
@@ -80,7 +81,7 @@ export function safeFileName(name: string) {
 }
 
 function canDo(actor: Actor, capability: AccountingCapability) {
-  return hasCapability(actor.erpRole, capability);
+  return actorCan(actor, capability);
 }
 
 function assertCan(actor: Actor, capability: AccountingCapability) {

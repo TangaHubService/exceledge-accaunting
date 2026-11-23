@@ -1,4 +1,4 @@
-import { type AccountingCapability, hasCapability } from "@exceledge/accounting-domain";
+import type { AccountingCapability } from "@exceledge/accounting-domain";
 import type { Prisma } from "@prisma/client";
 import { HttpError } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
@@ -36,15 +36,18 @@ function policyFor(collection: string) {
   return COLLECTIONS[collection];
 }
 
-function assertAllowed(role: string | undefined, capability: AccountingCapability) {
-  if (!hasCapability(role, capability)) throw new HttpError(403, `Missing capability: ${capability}`);
+/** The signed-in person and their effective permission check (custom role or ERP role). */
+export type WorkspaceUser = { userId: number; can: (capability: AccountingCapability) => boolean };
+
+function assertAllowed(user: WorkspaceUser, capability: AccountingCapability) {
+  if (!user.can(capability)) throw new HttpError(403, `Missing capability: ${capability}`);
 }
 
 const ownerFor = (policy: Policy, userId: number) => (policy.scope === "user" ? userId : 0);
 
-export async function listRecords(companyId: string, collection: string, user: { userId: number; role?: string }) {
+export async function listRecords(companyId: string, collection: string, user: WorkspaceUser) {
   const policy = policyFor(collection);
-  assertAllowed(user.role, policy.view);
+  assertAllowed(user, policy.view);
   const rows = await prisma.workspaceRecord.findMany({
     where: { companyId, collection, ownerErpUserId: ownerFor(policy, user.userId) },
     orderBy: { updatedAt: "desc" },
@@ -54,17 +57,17 @@ export async function listRecords(companyId: string, collection: string, user: {
 }
 
 /** Every collection this user may see, for loading the screens in one request. */
-export async function bootstrap(companyId: string, user: { userId: number; role?: string }) {
+export async function bootstrap(companyId: string, user: WorkspaceUser) {
   const out: Record<string, unknown[]> = {};
   for (const [collection, policy] of Object.entries(COLLECTIONS)) {
-    if (hasCapability(user.role, policy.view)) out[collection] = await listRecords(companyId, collection, user);
+    if (user.can(policy.view)) out[collection] = await listRecords(companyId, collection, user);
   }
   return out;
 }
 
-export async function saveRecord(companyId: string, collection: string, recordId: string, data: unknown, user: { userId: number; role?: string }) {
+export async function saveRecord(companyId: string, collection: string, recordId: string, data: unknown, user: WorkspaceUser) {
   const policy = policyFor(collection);
-  assertAllowed(user.role, policy.manage);
+  assertAllowed(user, policy.manage);
   if (data === null || typeof data !== "object" || Array.isArray(data)) throw new Error("A record must be an object");
   if (Buffer.byteLength(JSON.stringify(data)) > MAX_RECORD_BYTES) throw new HttpError(413, "This record is too large to save");
   const key = { companyId, collection, recordId, ownerErpUserId: ownerFor(policy, user.userId) };
@@ -77,9 +80,9 @@ export async function saveRecord(companyId: string, collection: string, recordId
   return json;
 }
 
-export async function deleteRecord(companyId: string, collection: string, recordId: string, user: { userId: number; role?: string }) {
+export async function deleteRecord(companyId: string, collection: string, recordId: string, user: WorkspaceUser) {
   const policy = policyFor(collection);
-  assertAllowed(user.role, policy.manage);
+  assertAllowed(user, policy.manage);
   const removed = await prisma.workspaceRecord.deleteMany({ where: { companyId, collection, recordId, ownerErpUserId: ownerFor(policy, user.userId) } });
   return { removed: removed.count };
 }

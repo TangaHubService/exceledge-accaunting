@@ -21,7 +21,7 @@ export const booksRouter = Router();
 booksRouter.use(authenticate, resolveCompany);
 
 function actor(req: AuthedRequest) {
-  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser!.role };
+  return { erpUserId: req.erpUser!.userId, erpRole: req.organizationRole ?? req.erpUser!.role, capabilities: req.capabilities ? [...req.capabilities] : undefined };
 }
 
 /** Companies whose books the caller may read: every ERP organization in their token. */

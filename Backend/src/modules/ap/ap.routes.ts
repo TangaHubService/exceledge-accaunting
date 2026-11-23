@@ -1,7 +1,7 @@
-import { AP_PAYMENT_METHODS, hasCapability } from "@exceledge/accounting-domain";
+import { AP_PAYMENT_METHODS } from "@exceledge/accounting-domain";
 import { type Response, Router } from "express";
 import { z } from "zod";
-import { AuthedRequest, authenticate, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import { AuthedRequest, authenticate, can, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import { inTransaction } from "../../lib/prisma";
 import { documentLines, notFoundStatus, periodQuery, sendPdf } from "../../lib/http-documents";
 import { exportFormat, sendReport } from "../../lib/report-export";
@@ -19,7 +19,7 @@ apRouter.use(authenticate, requireCapability("ap:view"), resolveCompany);
 function actor(req: AuthedRequest) {
   return {
     erpUserId: req.erpUser!.userId,
-    erpRole: req.organizationRole ?? req.erpUser?.role,
+    erpRole: req.organizationRole ?? req.erpUser?.role, capabilities: req.capabilities ? [...req.capabilities] : undefined,
     meta: getRequestMeta(req),
   };
 }
@@ -289,8 +289,8 @@ apRouter.get("/suppliers/:id/transactions", async (req: AuthedRequest, res) => {
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       })
       .parse(req.query);
-    const can = (c: "expense:view" | "inventory:view") => (req.apiKey ? req.apiKey.scopes.includes(c) : hasCapability(req.organizationRole ?? req.erpUser?.role, c));
-    const hidden: profile.SupplierTxnType[] = [...(can("expense:view") ? [] : (["EXPENSE"] as const)), ...(can("inventory:view") ? [] : (["ITEM_RECEIPT"] as const))];
+    const allowed = (c: "expense:view" | "inventory:view") => can(req, c);
+    const hidden: profile.SupplierTxnType[] = [...(allowed("expense:view") ? [] : (["EXPENSE"] as const)), ...(allowed("inventory:view") ? [] : (["ITEM_RECEIPT"] as const))];
     res.json({ success: true, data: await profile.supplierTransactions(req.companyId!, req.params.id, filter, parsePage(req.query, { defaultSize: 25, maxSize: 200 }), hidden) });
   } catch (e) {
     fail(res, e, e instanceof z.ZodError ? 400 : 404);
@@ -318,7 +318,7 @@ apRouter.get("/transactions/:type/:id", async (req: AuthedRequest, res) => {
     const type = z.enum(["PAYMENT", "CREDIT_NOTE", "DEBIT_NOTE", "ADVANCE", "EXPENSE", "ITEM_RECEIPT"]).parse(req.params.type);
     // Expenses and goods receipts belong to other modules; seeing them needs that module's permission too.
     const needs = type === "EXPENSE" ? "expense:view" : type === "ITEM_RECEIPT" ? "inventory:view" : null;
-    if (needs && !(req.apiKey ? req.apiKey.scopes.includes(needs) : hasCapability(req.organizationRole ?? req.erpUser?.role, needs))) {
+    if (needs && !can(req, needs)) {
       return res.status(403).json({ success: false, error: `Missing capability: ${needs}` });
     }
     res.json({ success: true, data: await profile.supplierTransactionDetail(req.companyId!, type, req.params.id) });

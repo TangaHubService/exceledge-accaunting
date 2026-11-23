@@ -5416,3 +5416,5 @@ pre.json {
 .ee-accept-done-icon { background: #ecfdf3; color: #027a48; }
 .ee-accept-state .ee-signin-submit, .ee-accept-done .ee-signin-submit { width: 100%; margin-top: 8px; text-decoration: none; }
 .ee-invite-accept .check { align-items: flex-start; gap: 8px; line-height: 1.4; }
+
+.session-loading { min-height: 100vh; background: var(--bg); }

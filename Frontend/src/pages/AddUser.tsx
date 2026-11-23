@@ -3,7 +3,8 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { Link, navigate } from "../lib/router";
 import { useSession } from "../lib/session";
-import { ASSIGNABLE_ROLES, ROLE_INFO, roleAccess, roleLabel, usersApi, type AssignableRole } from "../lib/users";
+import { usersApi, type CustomRole } from "../lib/users";
+import { AccessList, RolePicker, accessForPick, type PickedRole } from "./ManageUsers";
 
 type Branch = { id: string; externalErpBranchId: string; name: string | null; code: string | null; isActive: boolean };
 
@@ -13,7 +14,8 @@ export function AddUser() {
   const session = useSession();
   const { toast } = useFeedback();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<AssignableRole | "">("");
+  const [pick, setPick] = useState<PickedRole | null>(null);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   const [branchId, setBranchId] = useState("");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [touched, setTouched] = useState(false);
@@ -23,6 +25,10 @@ export function AddUser() {
   const canManage = session.can("setup:approve");
 
   useEffect(() => {
+    usersApi
+      .roles(session.api)
+      .then((r) => setCustomRoles(r.roles))
+      .catch(() => setCustomRoles([]));
     session
       .api<Branch[]>("/api/v1/setup/branches")
       .then((rows) => setBranches(rows.filter((b) => b.isActive && /^\d+$/.test(b.externalErpBranchId))))
@@ -30,16 +36,17 @@ export function AddUser() {
   }, [session]);
 
   const emailError = touched && !EMAIL_RE.test(email.trim()) ? "Enter a valid email address" : "";
-  const roleError = touched && !role ? "Choose a role" : "";
+  const roleError = touched && !pick ? "Choose a role" : "";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTouched(true);
-    if (!EMAIL_RE.test(email.trim()) || !role) return;
+    if (!EMAIL_RE.test(email.trim()) || !pick) return;
     setBusy(true);
     setError("");
     try {
-      await usersApi.invite(session.api, { email: email.trim(), role, branchId: branchId ? Number(branchId) : null });
+      const choice = pick.kind === "custom" ? { customRoleId: pick.id } : { role: pick.role };
+      await usersApi.invite(session.api, { email: email.trim(), ...choice, branchId: branchId ? Number(branchId) : null });
       toast(`Invitation sent to ${email.trim()}.`);
       navigate("/users");
     } catch (err) {
@@ -127,36 +134,21 @@ export function AddUser() {
         <h2>
           Assign a role <span className="req">*</span>
         </h2>
-        <p className="ee-manage-form-blurb">Each person sees only the features and company data their role allows.</p>
+        <p className="ee-manage-form-blurb">Pick a built-in role, or one of your custom roles. Each person sees only what their role allows.</p>
         <div className="ee-manage-role-row">
-          <fieldset className="ee-manage-role-pick" aria-invalid={Boolean(roleError)}>
-            <legend className="sr-only">Role</legend>
-            {ASSIGNABLE_ROLES.map((r) => (
-              <label key={r} className={role === r ? "selected" : undefined}>
-                <input type="radio" name="role" value={r} checked={role === r} onChange={() => setRole(r)} />
-                <span>
-                  <strong>{roleLabel(r)}</strong>
-                  <small>{ROLE_INFO[r]?.description}</small>
-                </span>
-              </label>
-            ))}
+          <div className="ee-manage-role-col">
+            <RolePicker value={pick} onChange={setPick} customRoles={customRoles} />
             {roleError && <span className="field-error">{roleError}</span>}
-          </fieldset>
+            {canManage && (
+              <Link to="/users/roles/new" className="ee-link-btn ee-manage-newrole">
+                + Create a custom role
+              </Link>
+            )}
+          </div>
           <aside className="ee-manage-role-info">
             <div>
-              <strong>{role ? `What ${roleLabel(role)} can do` : "Choose a role to see its access"}</strong>
-              {role && (
-                <ul className="ee-manage-access">
-                  {roleAccess(role).map((a) => (
-                    <li key={a.label}>
-                      <span>{a.label}</span>
-                      <span className={`ee-manage-access-level ${a.access === "Full" ? "full" : a.access === "None" ? "none" : "view"}`}>
-                        {a.access}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <strong>{pick ? "What this role can do" : "Choose a role to see its access"}</strong>
+              {accessForPick(pick, customRoles) && <AccessList access={accessForPick(pick, customRoles)!} />}
             </div>
           </aside>
         </div>

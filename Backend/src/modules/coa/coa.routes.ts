@@ -17,7 +17,7 @@ coaRouter.use(authenticateErpJwt, requireCapability("coa:view"), resolveCompany)
 function actor(req: AuthedRequest) {
   return {
     erpUserId: req.erpUser!.userId,
-    erpRole: req.organizationRole ?? req.erpUser!.role,
+    erpRole: req.organizationRole ?? req.erpUser!.role, capabilities: req.capabilities ? [...req.capabilities] : undefined,
     meta: getRequestMeta(req),
   };
 }
