@@ -87,7 +87,7 @@ export function BackupRestore() {
       {/* Header matching Mockup 83 */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: "#0c1c38", margin: 0, letterSpacing: "-0.02em" }}>
+          <h1 style={{ fontSize: "var(--fs-4xl)", fontWeight: 700, color: "#0c1c38", margin: 0, letterSpacing: "-0.02em" }}>
             Backup and Restore
           </h1>
         </div>
@@ -103,7 +103,7 @@ export function BackupRestore() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <button
               type="button"
-              style={{ background: "none", border: "none", color: "#0052ff", fontSize: 13.5, cursor: "pointer", padding: 0 }}
+              style={{ background: "none", border: "none", color: "#0052ff", fontSize: "var(--fs-base)", cursor: "pointer", padding: 0 }}
               onClick={() => toast("Backup settings opened.")}
             >
               Change backup settings
@@ -111,7 +111,7 @@ export function BackupRestore() {
             <span style={{ color: "#cbd5e1" }}>|</span>
             <button
               type="button"
-              style={{ background: "none", border: "none", color: "#0052ff", fontSize: 13.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
+              style={{ background: "none", border: "none", color: "#0052ff", fontSize: "var(--fs-base)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
               onClick={() => toast("Thank you for sharing your feedback!")}
             >
               <MessageSquare size={14} /> Feedback
@@ -162,7 +162,7 @@ export function BackupRestore() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13.5, color: "#1e293b", fontWeight: 500 }}>
+              <span style={{ fontSize: "var(--fs-base)", color: "#1e293b", fontWeight: 500 }}>
                 Show only backups expiring within 30 days
               </span>
               <label className="ee-switch" aria-label="Show only backups expiring within 30 days">
@@ -258,7 +258,7 @@ export function BackupRestore() {
                               display: "block",
                               width: "100%",
                               padding: "6px 12px",
-                              fontSize: 13,
+                              fontSize: "var(--fs-base)",
                               border: "none",
                               background: "none",
                               textAlign: "left",
@@ -275,7 +275,7 @@ export function BackupRestore() {
                               display: "block",
                               width: "100%",
                               padding: "6px 12px",
-                              fontSize: 13,
+                              fontSize: "var(--fs-base)",
                               border: "none",
                               background: "none",
                               textAlign: "left",
@@ -299,10 +299,10 @@ export function BackupRestore() {
 
       {tab !== "Backups" && (
         <div className="ee-tools-table-container" style={{ padding: 48, textAlign: "center" }}>
-          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0c1c38", margin: "0 0 8px" }}>
+          <h3 style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: "#0c1c38", margin: "0 0 8px" }}>
             {tab}
           </h3>
-          <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>
+          <p style={{ fontSize: "var(--fs-md)", color: "#64748b", margin: 0 }}>
             {tab === "Restore" && "Point-in-time recovery tools and historical restoration jobs."}
             {tab === "Copy" && "Copy company ledger or duplicate sandbox environment for testing."}
             {tab === "Personal cloud archive" && "Sync automated company snapshots to Google Drive or OneDrive."}
@@ -319,7 +319,7 @@ export function BackupRestore() {
           />
           <aside className="ee-backup-drawer" role="dialog" aria-modal="true">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <h2 style={{ fontSize: 24, fontWeight: 800, color: "#0c1c38", margin: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-3xl)", fontWeight: 800, color: "#0c1c38", margin: 0 }}>
                 Run manual backup
               </h2>
               <button
@@ -331,7 +331,7 @@ export function BackupRestore() {
               </button>
             </div>
 
-            <p style={{ fontSize: 14, color: "#475569", margin: "0 0 24px" }}>
+            <p style={{ fontSize: "var(--fs-md)", color: "#475569", margin: "0 0 24px" }}>
               Select the kind of backup you need.
             </p>
 
@@ -349,10 +349,10 @@ export function BackupRestore() {
                   style={{ marginTop: 3 }}
                 />
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-lg)", fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
                     Incremental
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-base)", color: "#475569", lineHeight: 1.5 }}>
                     <li>Backs up any data that has changed since last backup</li>
                     <li>Fastest option</li>
                   </ul>
@@ -371,10 +371,10 @@ export function BackupRestore() {
                   style={{ marginTop: 3 }}
                 />
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-lg)", fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
                     Full
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-base)", color: "#475569", lineHeight: 1.5 }}>
                     <li>Backs up any data that Excel Edge ERP has marked as changed</li>
                     <li>Takes less time than a complete backup</li>
                   </ul>
@@ -393,10 +393,10 @@ export function BackupRestore() {
                   style={{ marginTop: 3 }}
                 />
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-lg)", fontWeight: 700, color: "#0c1c38", marginBottom: 6 }}>
                     Complete
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-base)", color: "#475569", lineHeight: 1.5 }}>
                     <li>Backs up all company data after a thorough search for changes</li>
                     <li>Takes the longest time to complete</li>
                   </ul>
@@ -408,7 +408,7 @@ export function BackupRestore() {
             <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 20 }}>
               <button
                 type="button"
-                style={{ background: "none", border: "none", color: "#0052ff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                style={{ background: "none", border: "none", color: "#0052ff", fontSize: "var(--fs-md)", fontWeight: 600, cursor: "pointer" }}
                 onClick={() => setManualDrawerOpen(false)}
               >
                 Cancel

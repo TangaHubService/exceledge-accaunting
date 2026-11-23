@@ -107,7 +107,7 @@ export function BankReconciliations() {
         {/* MODE 1: DASHBOARD (Mockup 76) */}
         {viewMode === "dashboard" && (
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", marginBottom: 8 }}>
+            <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "#1e293b", marginBottom: 8 }}>
               Reconcile
             </div>
 
@@ -152,7 +152,7 @@ export function BankReconciliations() {
                   <button
                     type="button"
                     className="ee-btn-blue"
-                    style={{ height: 44, padding: "0 28px", fontSize: 15 }}
+                    style={{ height: 44, padding: "0 28px", fontSize: "var(--fs-md)" }}
                     onClick={() => setViewMode("setup")}
                   >
                     Get started
@@ -186,7 +186,7 @@ export function BankReconciliations() {
         {viewMode === "setup" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ fontSize: 13, color: "#0052ff", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: "var(--fs-base)", color: "#0052ff", display: "flex", alignItems: "center", gap: 6 }}>
                 <Link to="/accounting/chart-of-accounts" style={{ color: "#0052ff", textDecoration: "none" }}>
                   Accounting
                 </Link>
@@ -197,7 +197,7 @@ export function BankReconciliations() {
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <a
                   href="#learn-more"
-                  style={{ color: "#0c1c38", fontSize: 14, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  style={{ color: "#0c1c38", fontSize: "var(--fs-md)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
                   onClick={(e) => {
                     e.preventDefault();
                     toast("Reconciliation documentation opened.");
@@ -205,16 +205,16 @@ export function BankReconciliations() {
                 >
                   Learn more <ExternalLink size={14} />
                 </a>
-                <Link to="/accounting/chart-of-accounts" style={{ color: "#0052ff", fontSize: 14, textDecoration: "none" }}>
+                <Link to="/accounting/chart-of-accounts" style={{ color: "#0052ff", fontSize: "var(--fs-md)", textDecoration: "none" }}>
                   Chart of accounts
                 </Link>
-                <Link to="/accounting/chart-of-accounts" style={{ color: "#0052ff", fontSize: 14, textDecoration: "none" }}>
+                <Link to="/accounting/chart-of-accounts" style={{ color: "#0052ff", fontSize: "var(--fs-md)", textDecoration: "none" }}>
                   Register
                 </Link>
                 <button
                   type="button"
                   className="ee-btn-outline"
-                  style={{ height: 32, padding: "0 14px", fontSize: 13 }}
+                  style={{ height: 32, padding: "0 14px", fontSize: "var(--fs-base)" }}
                   onClick={() => setViewMode("history")}
                 >
                   Summary
@@ -222,7 +222,7 @@ export function BankReconciliations() {
                 <button
                   type="button"
                   className="ee-btn-outline"
-                  style={{ height: 32, padding: "0 14px", fontSize: 13 }}
+                  style={{ height: 32, padding: "0 14px", fontSize: "var(--fs-base)" }}
                   onClick={() => setViewMode("history")}
                 >
                   History by account
@@ -230,7 +230,7 @@ export function BankReconciliations() {
               </div>
             </div>
 
-            <h1 style={{ fontSize: 32, fontWeight: 700, color: "#0c1c38", margin: "0 0 24px", letterSpacing: "-0.02em" }}>
+            <h1 style={{ fontSize: "var(--fs-4xl)", fontWeight: 700, color: "#0c1c38", margin: "0 0 24px", letterSpacing: "-0.02em" }}>
               Reconcile
             </h1>
 
@@ -405,10 +405,10 @@ export function BankReconciliations() {
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div>
-                <h1 style={{ fontSize: 28, fontWeight: 700, color: "#0c1c38", margin: "0 0 6px" }}>
+                <h1 style={{ fontSize: "var(--fs-3xl)", fontWeight: 700, color: "#0c1c38", margin: "0 0 6px" }}>
                   Reconciliation summary & history
                 </h1>
-                <p style={{ color: "#64748b", margin: 0, fontSize: 14 }}>
+                <p style={{ color: "#64748b", margin: 0, fontSize: "var(--fs-md)" }}>
                   Overview of all bank accounts and past reconciliation statements.
                 </p>
               </div>

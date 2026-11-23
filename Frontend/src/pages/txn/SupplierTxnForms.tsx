@@ -9,9 +9,17 @@ import {
   categoryLinesSchema,
   categoryTotal,
   emptyCategoryLine,
+  emptyProductLine,
   filledCategoryLines,
+  filledProductLines,
   fmt,
   num,
+  type ProductLine,
+  productColumns,
+  productLinesPayload,
+  productLinesSchema,
+  productTax,
+  productTotal,
 } from "../../components/txn/lines";
 import {
   AttachmentBox,
@@ -60,7 +68,9 @@ import {
   useCustomers,
   useExpenseAccountOptions,
   useInventoryItems,
+  useLineTaxCodes,
   usePayees,
+  usePurchaseItemOptions,
   useSuppliers,
 } from "../../lib/txn";
 import type { ApBill, Supplier } from "../../lib/types";
@@ -232,7 +242,11 @@ type CatForm = {
   message: string;
   memo: string;
   lines: CategoryLine[];
+  /** Bills, purchase orders and supplier credits: services and non-stock items, priced from their purchasing defaults. */
+  itemLines: ProductLine[];
 };
+
+const ITEM_KINDS: CatKind[] = ["bill", "purchase-order", "supplier-credit"];
 
 const CAT_TITLES: Record<CatKind, string> = { bill: "Bill", cheque: "Cheque", "purchase-order": "Purchase Order", "supplier-credit": "Supplier Credit", "credit-card-credit": "Credit Card Credit" };
 const CAT_BACK: Record<CatKind, string> = { bill: "/bills", cheque: "/banking", "purchase-order": "/bills", "supplier-credit": "/bills", "credit-card-credit": "/banking" };
@@ -270,6 +284,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     message: "",
     memo: "",
     lines: kind === "cheque" ? [emptyCategoryLine()] : [emptyCategoryLine(), emptyCategoryLine()],
+    itemLines: ITEM_KINDS.includes(kind) ? [emptyProductLine(), emptyProductLine()] : [],
   });
   const [form, setForm] = useState<CatForm>(blank);
   const [files, setFiles] = useState<PickedFile[]>([]);
@@ -282,7 +297,16 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const [ccOpen, setCcOpen] = useState(false);
   const [more, setMore] = useState(false);
 
-  const total = categoryTotal(form.lines);
+  /** Bills, purchase orders and supplier credits carry an Item details grid under the categories, as in QuickBooks. */
+  const hasItems = ITEM_KINDS.includes(kind);
+  const purchaseItems = usePurchaseItemOptions();
+  const lineTax = useLineTaxCodes("purchase", form.date);
+  const itemLines = hasItems ? form.itemLines ?? [] : [];
+  const categorySubtotal = categoryTotal(form.lines);
+  const itemSubtotal = productTotal(itemLines);
+  const itemTax = productTax(itemLines, lineTax.rates);
+  const itemsFilled = filledProductLines(itemLines).length > 0;
+  const total = Math.round((categorySubtotal + itemSubtotal + itemTax) * 100) / 100;
   const supplier = suppliers.find((s) => s.id === form.party);
   const payee = usesBank ? payees.lookup(form.party) : undefined;
   const partyName = supplier?.name ?? payee?.name ?? "";
@@ -332,11 +356,25 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     shipVia: yup.string().max(60, "Use 60 characters or fewer"),
     message: yup.string().max(1000, "Use 1,000 characters or fewer"),
     memo: yup.string().max(1000, "Use 1,000 characters or fewer"),
-    lines: categoryLinesSchema(),
+    lines: hasItems
+      ? categoryLinesSchema(true, true).test("any", "Add at least one category or item line with an amount", function (rows) {
+          return filledCategoryLines((rows ?? []) as CategoryLine[]).length > 0 || filledProductLines((this.parent.itemLines ?? []) as ProductLine[]).length > 0;
+        })
+      : categoryLinesSchema(),
+    itemLines: hasItems ? productLinesSchema({ requireProduct: true, optional: true }) : yup.array(),
   });
 
   const accountLines = () =>
     filledCategoryLines(form.lines).map((l) => ({ accountId: l.category, amount: Math.round(num(l.amount) * 100) / 100, description: (l.description.trim() || categories.find((c) => c.value === l.category)?.label || title).slice(0, 300) }));
+
+  /** Item lines keep their item so a purchase order shows what was ordered and converts to a bill with it. */
+  const itemPayloadWithIds = () => {
+    const filled = filledProductLines(itemLines);
+    return productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase").map((l, i) => ({
+      ...l,
+      itemId: filled[i].product.startsWith("item:") ? filled[i].product.slice(5) : undefined,
+    }));
+  };
 
   async function post(): Promise<{ id: string; number: string; posted: boolean }> {
     const description = form.memo.trim() || undefined;
@@ -350,7 +388,10 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             billDate: form.date,
             dueDate: form.dueDate || undefined,
             description,
-            lines: accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+            lines: [
+              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
+            ],
           }),
         });
         if (files.length) {
@@ -362,7 +403,18 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
       case "supplier-credit": {
         const note = await api<{ id: string; creditNoteNumber?: string; noteNumber?: string }>("/api/v1/ap/credit-notes", {
           method: "POST",
-          body: JSON.stringify({ supplierId: form.party, supplierReference: form.number.trim() || undefined, noteDate: form.date, reason: description ?? "Supplier credit", net: Math.round(total * 100) / 100, description: accountLines().map((l) => l.description).join("; ").slice(0, 500) }),
+          body: JSON.stringify({
+            supplierId: form.party,
+            supplierReference: form.number.trim() || undefined,
+            noteDate: form.date,
+            reason: description ?? "Supplier credit",
+            description: accountLines().map((l) => l.description).join("; ").slice(0, 500) || undefined,
+            // Each line credits its own expense account, as the bill it reverses debited it.
+            lines: [
+              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
+            ],
+          }),
         });
         return { id: note.id, number: note.creditNoteNumber ?? note.noteNumber ?? form.number, posted: true };
       }
@@ -397,7 +449,10 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             dueDate: form.dueDate,
             memo: form.memo,
             note: form.message,
-            lines: accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+            lines: [
+              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+              ...itemPayloadWithIds(),
+            ],
           }),
         });
         takeNumber("purchase-order", doc.number);
@@ -472,19 +527,19 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     const center: ReactNode[] = [];
     if (kind === "bill" || kind === "purchase-order" || kind === "cheque")
       center.push(
-        <button key="print" type="button" className="txn-btn-outline" style={{ fontSize: 18 }} onClick={() => setPreview(true)}>
+        <button key="print" type="button" className="txn-btn-outline" onClick={() => setPreview(true)}>
           Print
         </button>,
       );
     center.push(
-      <button key="rec" type="button" className="txn-btn-outline" style={{ fontSize: 18 }} onClick={() => setRecurring(true)}>
+      <button key="rec" type="button" className="txn-btn-outline" onClick={() => setRecurring(true)}>
         Make recurring
       </button>,
     );
     if (kind === "cheque")
       center.push(
         <span key="more" style={{ position: "relative" }}>
-          <button type="button" className="txn-btn-outline" style={{ fontSize: 18 }} onClick={() => setMore((m) => !m)}>
+          <button type="button" className="txn-btn-outline" onClick={() => setMore((m) => !m)}>
             More
           </button>
           {more ? (
@@ -551,7 +606,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
       <TField label={kind === "cheque" ? "Bank Account" : "Bank/Credit account"} required error={v.errors.account} className="w-lg">
         <Select value={form.account} onChange={(a) => set("account", a)} options={financialAccountOptions(banks.data ?? [])} placeholder="Choose an account" invalid={Boolean(v.errors.account)} />
       </TField>
-      <span style={{ paddingBottom: v.errors.account ? 30 : 9, fontSize: 16 }}>
+      <span style={{ paddingBottom: v.errors.account ? 30 : 9, fontSize: "var(--fs-lg)" }}>
         <strong>Balance</strong> {rwf(bank?.balance ?? 0, currency)}
       </span>
     </div>
@@ -636,7 +691,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
               <BandAmount label={amountLabel} value={rwf(total, currency)} />
             </div>
             <div className="txn-row" style={{ alignItems: "center" }}>
-              <strong style={{ fontSize: 16 }}>Purchase Order status</strong>
+              <strong style={{ fontSize: "var(--fs-lg)" }}>Purchase Order status</strong>
               <div style={{ width: 120 }}>
                 <Select value={form.status} onChange={(s) => set("status", s)} searchable={false} options={[{ value: "OPEN", label: "OPEN" }, { value: "CLOSED", label: "CLOSED" }]} aria-label="Purchase Order status" />
               </div>
@@ -713,8 +768,33 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
         toolbar={<GridTools onPaste={pasteLines} onSettings={() => navigate("/accounting/chart-of-accounts")} />}
         extraButtons={null}
       />
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -58, marginBottom: 30, pointerEvents: "none" }}>
-        <Totals rows={[{ label: "Total", value: rwf(total, currency), strong: true, big: true }]} />
+      {hasItems ? (
+        <>
+          <h3 className="txn-section-title">Item details</h3>
+          <LineGrid
+            columns={productColumns(purchaseItems.options, purchaseItems.items, { date: false, side: "purchase", taxOptions: lineTax.options })}
+            rows={itemLines}
+            onChange={(rows) => (set("itemLines", rows), v.clear("lines"))}
+            newRow={emptyProductLine}
+            errors={v.errors}
+            errorPrefix="itemLines"
+            copy={false}
+          />
+          {purchaseItems.options.length === 0 ? <p className="muted">No services or non-stock items yet. Add them under Products and services to pick them here.</p> : null}
+        </>
+      ) : null}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: hasItems ? 0 : -58, marginBottom: 30, pointerEvents: "none" }}>
+        <Totals
+          rows={[
+            ...(itemsFilled
+              ? [
+                  { label: "Subtotal", value: rwf(categorySubtotal + itemSubtotal, currency) },
+                  ...(itemLines.some((l) => l.tax) ? [{ label: "Tax", value: rwf(itemTax, currency) }] : []),
+                ]
+              : []),
+            { label: "Total", value: rwf(total, currency), strong: true, big: true },
+          ]}
+        />
       </div>
 
       <div className="txn-lower" style={{ gap: 30 }}>
@@ -762,8 +842,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             party={partyName}
             partyAddress={form.mailing}
             dates={kind === "bill" || kind === "purchase-order" ? [["Date", form.date], ["Due date", form.dueDate]] : [["Date", form.date]]}
-            lines={filledCategoryLines(form.lines).map((l) => ({ description: [categories.find((c) => c.value === l.category)?.label, l.description].filter(Boolean).join(" — "), amount: num(l.amount) }))}
-            totals={[["Total", rwf(total, currency)]]}
+            lines={[
+              ...filledCategoryLines(form.lines).map((l) => ({ description: [categories.find((c) => c.value === l.category)?.label, l.description].filter(Boolean).join(" — "), amount: num(l.amount) })),
+              ...filledProductLines(itemLines).map((l) => ({ description: l.description || purchaseItems.options.find((o) => o.value === l.product)?.label || "", qty: l.qty, rate: l.rate, amount: num(l.amount) })),
+            ]}
+            totals={[...(itemTax ? ([["Tax", rwf(itemTax, currency)]] as Array<[string, string]>) : []), ["Total", rwf(total, currency)]]}
             note={form.message || form.memo}
           />
         </Modal>
@@ -903,7 +986,7 @@ export function ItemReceiptForm() {
           </TField>
         </div>
       </HeaderBand>
-      <h3 style={{ fontSize: 24, margin: "0 0 4px" }}>Item details</h3>
+      <h3 style={{ fontSize: "var(--fs-3xl)", margin: "0 0 4px" }}>Item details</h3>
       <LineGrid
         columns={[
           {

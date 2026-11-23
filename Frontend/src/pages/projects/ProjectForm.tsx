@@ -140,7 +140,7 @@ export function ProjectForm({ id }: { id?: string }) {
                 <ChevronsLeft size={18} />
               </button>
             </div>
-            <p style={{ fontSize: 17, margin: "16px 0" }}>Upload files like contracts, estimates, or proposals to add project details.</p>
+            <p style={{ fontSize: "var(--fs-xl)", margin: "16px 0" }}>Upload files like contracts, estimates, or proposals to add project details.</p>
             <div
               className={`txn-autofill-drop ${over ? "over" : ""}`}
               style={{ flex: "none", textAlign: "left" }}
@@ -153,7 +153,7 @@ export function ProjectForm({ id }: { id?: string }) {
                 <span className="ic">
                   <Upload size={26} />
                 </span>
-                <span style={{ color: "#1238e6", fontSize: 19 }}>Upload from this device</span>
+                <span style={{ color: "#1238e6", fontSize: "var(--fs-xl)" }}>Upload from this device</span>
                 <span style={{ fontWeight: 450 }}>PDF, JPG, PNG, XLSX, XLS</span>
               </button>
               <input ref={input} type="file" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" onChange={(e) => (void addFiles(e.target.files), (e.target.value = ""))} />
@@ -171,7 +171,7 @@ export function ProjectForm({ id }: { id?: string }) {
                 ))}
               </ul>
             ) : null}
-            <p style={{ fontSize: 16, margin: "16px 10px" }}>Files you upload will be saved as project attachments and will remain accessible for your use.</p>
+            <p style={{ fontSize: "var(--fs-lg)", margin: "16px 10px" }}>Files you upload will be saved as project attachments and will remain accessible for your use.</p>
             <div className="txn-autofill-foot" style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 14, justifyContent: "space-between" }}>
               <button type="button" className="txn-link" style={{ textDecoration: "underline" }} onClick={() => setAbout(true)}>
                 About project assistance

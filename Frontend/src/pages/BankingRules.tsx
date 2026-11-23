@@ -115,7 +115,7 @@ export function BankingRules() {
           <div style={{ position: "relative" }}>
             <select
               className="ee-input-select"
-              style={{ height: 38, width: 140, padding: "6px 12px", fontSize: 14 }}
+              style={{ height: 38, width: 140, padding: "6px 12px", fontSize: "var(--fs-md)" }}
               value={ruleTypeFilter}
               onChange={(e) => setRuleTypeFilter(e.target.value)}
             >
@@ -150,7 +150,7 @@ export function BankingRules() {
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span>Priority</span>
                   <HelpCircle size={13} color="#64748b" />
-                  <span style={{ fontSize: 10 }}>▲</span>
+                  <span style={{ fontSize: "var(--fs-2xs)" }}>▲</span>
                 </div>
               </th>
               <th>Rule name</th>
@@ -209,7 +209,7 @@ export function BankingRules() {
                     e.preventDefault();
                     toast("Condition added");
                   }}
-                  style={{ color: "#0052ff", fontSize: 14, fontWeight: 500, textDecoration: "none" }}
+                  style={{ color: "#0052ff", fontSize: "var(--fs-md)", fontWeight: 500, textDecoration: "none" }}
                 >
                   + Add a condition
                 </a>
@@ -225,7 +225,7 @@ export function BankingRules() {
 
               {/* Priority row matching mockup 70 */}
               <div className="ee-priority-row">
-                <div style={{ display: "flex", alignItems: "center", fontSize: 14, color: "#1e293b", fontWeight: 600 }}>
+                <div style={{ display: "flex", alignItems: "center", fontSize: "var(--fs-md)", color: "#1e293b", fontWeight: 600 }}>
                   <span>Priority</span>
                   <input
                     type="number"
@@ -266,10 +266,10 @@ export function BankingRules() {
                   <option value="reference">Reference</option>
                 </select>
 
-                <span style={{ fontSize: 14, color: "#475569" }}>and</span>
+                <span style={{ fontSize: "var(--fs-md)", color: "#475569" }}>and</span>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: "#1e293b" }}>Auto-post</span>
+                  <span style={{ fontSize: "var(--fs-md)", fontWeight: 500, color: "#1e293b" }}>Auto-post</span>
                   <button
                     type="button"
                     className={`ee-switch-toggle ${autoPost ? "on" : ""}`}
@@ -319,7 +319,7 @@ export function BankingRules() {
                       e.preventDefault();
                       toast("Split row added");
                     }}
-                    style={{ color: "#0052ff", fontSize: 13, textDecoration: "none", fontWeight: 500 }}
+                    style={{ color: "#0052ff", fontSize: "var(--fs-base)", textDecoration: "none", fontWeight: 500 }}
                   >
                     + Add a split
                   </a>
@@ -357,7 +357,7 @@ export function BankingRules() {
                   <label
                     className="ee-checkbox-row"
                     onClick={() => setKeepExistingMemo((k) => !k)}
-                    style={{ fontSize: 13.5 }}
+                    style={{ fontSize: "var(--fs-base)" }}
                   >
                     <div className={`ee-checkbox-box ${keepExistingMemo ? "checked" : ""}`}>
                       {keepExistingMemo && <Check size={14} strokeWidth={3} />}

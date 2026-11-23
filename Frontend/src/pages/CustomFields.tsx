@@ -90,7 +90,7 @@ export function CustomFields() {
         <button
           type="button"
           className="ee-btn-outline-blue"
-          style={{ padding: "6px 16px", fontSize: 13.5 }}
+          style={{ padding: "6px 16px", fontSize: "var(--fs-base)" }}
           onClick={() => toast("Feedback form opened")}
         >
           Give feedback
@@ -180,14 +180,14 @@ export function CustomFields() {
                     toast("Playing video guide…");
                   }}
                   className="ee-cf-video-link"
-                  style={{ fontSize: 14.5, marginBottom: 8 }}
+                  style={{ fontSize: "var(--fs-md)", marginBottom: 8 }}
                 >
                   <div className="ee-play-circle-icon" style={{ width: 22, height: 22 }}>
                     <Play size={10} fill="#fff" color="#fff" style={{ marginLeft: 2 }} />
                   </div>
                   <span>See how it works (3:03)</span>
                 </a>
-                <p style={{ fontSize: 13, color: "#64748b", margin: "4px 0 0" }}>
+                <p style={{ fontSize: "var(--fs-base)", color: "#64748b", margin: "4px 0 0" }}>
                   Learn how to create and use custom fields in Excel Edge ERP.{" "}
                   <a
                     href="#learn-more"
@@ -235,7 +235,7 @@ export function CustomFields() {
 
                 {/* Select category */}
                 <div style={{ marginBottom: 28 }}>
-                  <label className="ee-field-label" style={{ fontSize: 15, marginBottom: 12 }}>
+                  <label className="ee-field-label" style={{ fontSize: "var(--fs-md)", marginBottom: 12 }}>
                     Select category
                   </label>
                   <div className="ee-cf-category-grid">
@@ -259,7 +259,7 @@ export function CustomFields() {
 
                 {/* Select forms matching mockup 68 */}
                 <div>
-                  <label className="ee-field-label" style={{ fontSize: 15, marginBottom: 12 }}>
+                  <label className="ee-field-label" style={{ fontSize: "var(--fs-md)", marginBottom: 12 }}>
                     Select forms
                   </label>
 
@@ -291,7 +291,7 @@ export function CustomFields() {
                               >
                                 <div className="ee-switch-toggle-knob" />
                               </button>
-                              <span style={{ fontSize: 13, color: "#64748b" }}>Print on form</span>
+                              <span style={{ fontSize: "var(--fs-base)", color: "#64748b" }}>Print on form</span>
                             </div>
                           )}
                         </div>

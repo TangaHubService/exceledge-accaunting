@@ -14,7 +14,7 @@
 
 .ee-coa-head h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: var(--fs-4xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #0b2a4a;
@@ -31,7 +31,7 @@
 }
 
 .drawer:has(.ee-coa-form) .drawer-head h2 {
-  font-size: 26px;
+  font-size: var(--fs-3xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #0b2a4a;
@@ -48,7 +48,7 @@
 }
 
 .drawer:has(.ee-coa-form) .field-label {
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -63,7 +63,7 @@
   height: 40px;
   border: 1px solid #cfd8e6;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #111827;
 }
 
@@ -122,7 +122,7 @@
   background: transparent;
   padding: 10px 12px;
   border-radius: 8px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #0b2a4a;
   cursor: pointer;
 }
@@ -164,7 +164,7 @@
   flex: 1;
   min-width: 0;
   height: 100%;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   background: transparent;
   color: #111827;
 }
@@ -182,7 +182,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: #4b5563;
 }
 
@@ -201,7 +201,7 @@
   border: 0;
   background: transparent;
   color: var(--ee-blue, #2f6fed);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
   padding: 4px 0;
@@ -222,14 +222,14 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 760px;
-  font-size: 14px; /* body / account names */
+  font-size: var(--fs-md); /* body / account names */
   font-variant-numeric: tabular-nums;
 }
 
 .ee-coa-table th {
   text-align: left;
   padding: 12px 8px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 700;
   letter-spacing: -0.01em;
   color: #0f172a;
@@ -241,7 +241,7 @@
 .ee-coa-table th.num,
 .ee-coa-table td.num {
   text-align: right;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -280,7 +280,7 @@
 }
 
 .ee-coa-sort {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #9ca3af;
   margin-left: 2px;
 }
@@ -291,7 +291,7 @@
   padding: 0;
   color: #111827;
   font-weight: 500;
-  font-size: 14px;
+  font-size: var(--fs-md);
   text-align: left;
   cursor: pointer;
 }
@@ -317,7 +317,7 @@
   border-radius: 999px;
   background: #16a34a;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -354,7 +354,7 @@
 
 .ee-coa-caption {
   margin: 12px 4px 0;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #6b7280;
 }
 
@@ -414,7 +414,7 @@
   border: 1px solid #cfd8e6;
   border-radius: 6px;
   background: #fff;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #111827;
   cursor: pointer;
   text-align: left;
@@ -445,7 +445,7 @@
 
 .ee-coa-type-group-label {
   padding: 8px 14px 4px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -459,7 +459,7 @@
   border: 0;
   background: transparent;
   padding: 8px 14px 8px 22px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #000;
   font-weight: 400;
   cursor: pointer;
@@ -495,7 +495,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #111827;
   cursor: pointer;
 }
@@ -565,7 +565,7 @@
   align-items: center;
   gap: 6px;
   color: var(--ee-blue, #2f6fed);
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
   text-decoration: none;
 }
@@ -650,7 +650,7 @@
 }
 
 .ee-coa-batch-count {
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: #0b2a4a;
 }
@@ -683,7 +683,7 @@
 .ee-coa-inline {
   height: 32px;
   padding: 0 8px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   width: 84px;
 }
 
@@ -707,7 +707,7 @@
   border: 1px solid #c7d7fe;
   background: #eef4ff;
   border-radius: 10px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #0b2a4a;
 }
 
@@ -727,7 +727,7 @@
   border-radius: 12px;
   background: #f8fafc;
   color: #334155;
-  font-size: 14px;
+  font-size: var(--fs-md);
   text-align: center;
   cursor: pointer;
 }
@@ -747,7 +747,7 @@
 
 .ee-coa-import-table {
   min-width: 620px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .ee-coa-import-ok {
@@ -797,7 +797,7 @@
 
 .ee-coa-settings-title {
   padding: 6px 14px 4px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -809,7 +809,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #111827;
   cursor: pointer;
 }
@@ -833,7 +833,7 @@
 
 .ee-coa-lock-state {
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #64748b;
 }
 
@@ -862,7 +862,7 @@
   border-radius: 999px;
   background: #f1f5f9;
   color: #64748b;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 600;
 }
 
@@ -883,7 +883,7 @@
   height: 24px;
   border-radius: 50%;
   background: #fff;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 
 .ee-imp-steps li.on .ee-imp-step-dot {
@@ -903,7 +903,7 @@
 
 .ee-imp-h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -922,7 +922,7 @@
 
 .ee-imp-hint {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .ee-imp-done {

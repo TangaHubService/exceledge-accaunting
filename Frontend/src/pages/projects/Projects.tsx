@@ -909,7 +909,7 @@ function DetailsTab({ project: p, update }: { project: Project; update: (patch: 
             </button>
           </div>
         ) : (
-          <button type="button" className="txn-link" style={{ marginTop: 18, fontSize: 18 }} onClick={() => setAdding(true)}>
+          <button type="button" className="txn-link" style={{ marginTop: 18, fontSize: "var(--fs-xl)" }} onClick={() => setAdding(true)}>
             + Add custom field
           </button>
         )}

@@ -12,6 +12,7 @@ import {
   productColumns,
   productLinesPayload,
   productLinesSchema,
+  productTax,
   productTotal,
 } from "../../components/txn/lines";
 import {
@@ -52,6 +53,7 @@ import {
   toBankMethod,
   type TxnKind,
   useCustomers,
+  useLineTaxCodes,
   useProductOptions,
 } from "../../lib/txn";
 import type { ArInvoiceList, Customer } from "../../lib/types";
@@ -339,7 +341,7 @@ export function ReceivePaymentForm() {
 
       {form.customerId ? (
         <section style={{ marginBottom: 26 }}>
-          <h3 style={{ fontSize: 20, margin: "0 0 8px" }}>Outstanding transactions</h3>
+          <h3 style={{ fontSize: "var(--fs-2xl)", margin: "0 0 8px" }}>Outstanding transactions</h3>
           {open.loading ? (
             <p className="muted">Loading open invoices…</p>
           ) : invoices.length === 0 ? (
@@ -560,7 +562,14 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
   const [customise, setCustomise] = useState(false);
   const [showDate, setShowDate] = useState(true);
 
-  const total = productTotal(form.lines);
+  // Only a sales receipt sends its lines to the server to be priced, so only it carries tax codes.
+  const taxable = kind === "sales-receipt";
+  const lineTax = useLineTaxCodes("sales", form.date);
+  const taxExempt = Boolean(customer?.taxExempt);
+  const subtotal = productTotal(form.lines);
+  const taxed = taxable && form.lines.some((l) => l.tax);
+  const tax = taxable && !taxExempt ? productTax(form.lines, lineTax.rates) : 0;
+  const total = Math.round((subtotal + tax) * 100) / 100;
   const set = <K extends keyof LineForm>(k: K, val: LineForm[K]) => (setForm((f) => ({ ...f, [k]: val })), v.clear(k));
 
   const schema = yup.object({
@@ -575,11 +584,11 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
     message: yup.string().max(1000, "Use 1,000 characters or fewer"),
     statementMessage: yup.string().max(1000, "Use 1,000 characters or fewer"),
     memo: yup.string().max(1000, "Use 1,000 characters or fewer"),
-    lines: productLinesSchema({ requireAccount: kind === "refund-receipt" }),
+    lines: productLinesSchema({ requireAccount: kind === "refund-receipt", items }),
   });
 
   async function post(): Promise<{ id: string; number: string; posted: boolean }> {
-    const lines = productLinesPayload(form.lines, productOptions);
+    const lines = productLinesPayload(form.lines, productOptions, items).map((l) => (taxable && !taxExempt ? l : { ...l, taxCode: null }));
     const description = form.statementMessage.trim() || form.memo.trim() || undefined;
     if (kind === "credit-note") {
       const note = await api<{ id: string; creditNoteNumber: string }>("/api/v1/ar/credit-notes", {
@@ -589,11 +598,13 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
       return { id: note.id, number: note.creditNoteNumber, posted: true };
     }
     if (kind === "sales-receipt") {
-      const inv = await api<{ id: string; invoiceNumber: string }>("/api/v1/ar/invoices", {
+      const inv = await api<{ id: string; invoiceNumber: string; gross: number | string }>("/api/v1/ar/invoices", {
         method: "POST",
         body: JSON.stringify({ customerId: form.customerId, invoiceDate: form.date, dueDate: form.date, lines, description: form.message.trim() || description }),
       });
       if (files.length) await uploadAttachments(api, "ArInvoice", inv.id, files);
+      // Collect exactly what the server billed, so a rounding difference never leaves the sale part-paid.
+      const received = Math.round(Number(inv.gross ?? total) * 100) / 100;
       try {
         await api("/api/v1/ar/receipts", {
           method: "POST",
@@ -601,10 +612,10 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
             customerId: form.customerId,
             receiptDate: form.date,
             method: form.method,
-            amount: Math.round(total * 100) / 100,
+            amount: received,
             reference: form.reference.trim() || undefined,
             financialAccountId: form.account || undefined,
-            allocations: [{ invoiceId: inv.id, amount: Math.round(total * 100) / 100 }],
+            allocations: [{ invoiceId: inv.id, amount: received }],
           }),
         });
       } catch (e) {
@@ -672,7 +683,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
     }
   }
 
-  const columns = productColumns(productOptions, items, { date: showDate });
+  const columns = productColumns(productOptions, items, { date: showDate, taxOptions: taxable ? lineTax.options : undefined });
   const saveDisabled = kind === "refund-receipt" && !form.customerId;
 
   const footerRight = (() => {
@@ -797,7 +808,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
         copy={false}
         minRows={1}
       />
-      {kind === "refund-receipt" ? <p className="muted" style={{ marginTop: -12 }}>Refund lines post against the income account chosen as the product/service.</p> : null}
+      {kind === "refund-receipt" ? <p className="muted" style={{ marginTop: -12 }}>Refund lines post against the chosen income account, or the chosen item's income account.</p> : null}
 
       <div className="txn-lower">
         <div className="txn-lower-left" style={{ width: "min(620px, 100%)" }}>
@@ -824,7 +835,8 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
                   ]
                 : kind === "sales-receipt"
                   ? [
-                      { label: "Subtotal", value: rwf(total, currency) },
+                      { label: "Subtotal", value: rwf(subtotal, currency) },
+                      ...(taxed ? [{ label: taxExempt ? "Tax (customer is tax-exempt)" : "Tax", value: rwf(tax, currency) }] : []),
                       { label: "Total", value: rwf(total, currency), strong: true },
                       { label: "Amount received", value: rwf(total, currency) },
                       { label: "Balance due", value: rwf(0, currency), strong: true, rule: true },

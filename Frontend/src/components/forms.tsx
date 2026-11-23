@@ -82,7 +82,7 @@ export function Footer({ onCancel, busy, label, formId, danger }: { onCancel: ()
 
 export function SummaryRows({ rows }: { rows: Array<[ReactNode, ReactNode, boolean?]> }) {
   return (
-    <table className="table" style={{ marginTop: 18, fontSize: 13.5 }}>
+    <table className="table" style={{ marginTop: 18, fontSize: "var(--fs-base)" }}>
       <tbody>
         {rows.map(([label, value, total], i) => (
           <tr key={i} style={total ? { fontWeight: 600 } : undefined}>

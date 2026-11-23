@@ -6,7 +6,7 @@
   gap: 16px;
 }
 .ee-manage-head h1 {
-  font-size: 28px;
+  font-size: var(--fs-3xl);
   font-weight: 700;
   letter-spacing: -0.025em;
   color: #0b2a4a;
@@ -14,7 +14,7 @@
 .ee-manage-head p {
   margin-top: 4px;
   color: #667085;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 .ee-manage-head-row {
   display: flex;
@@ -25,7 +25,7 @@
 .ee-manage-crumb {
   display: flex;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: #2f6fed;
 }
 .ee-manage-back {
@@ -42,7 +42,7 @@
   padding: 10px 2px 12px;
   color: #667085;
   text-decoration: none;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 550;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -67,7 +67,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 650;
   color: #0b2a4a;
 }
@@ -82,7 +82,7 @@
   color: #2f6fed;
   border-radius: 999px;
   padding: 6px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 550;
   cursor: pointer;
 }
@@ -109,7 +109,7 @@
   border: 0;
   outline: none;
   width: 100%;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   background: transparent;
 }
 .ee-manage-toolbar-right {
@@ -127,14 +127,14 @@
 .ee-manage-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
 }
 .ee-manage-table th {
   text-align: left;
   padding: 12px 14px;
   border-bottom: 1px solid #e4e9f0;
   color: #667085;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -148,7 +148,7 @@
 .ee-manage-desc { color: #445468; max-width: 420px; }
 .ee-manage-count {
   padding: 12px 14px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-manage-user {
@@ -164,7 +164,7 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 .ee-manage-status {
@@ -175,7 +175,7 @@
   border-radius: 999px;
   background: #ecfdf3;
   color: #027a48;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 .ee-manage-status .dot {
@@ -229,12 +229,12 @@
 }
 .ee-manage-empty-art svg { position: relative; z-index: 1; }
 .ee-manage-empty-card h2 {
-  font-size: 20px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   color: #0b2a4a;
 }
 .ee-manage-empty-card p { color: #667085; max-width: 420px; }
-.ee-manage-empty-note { font-size: 13px; }
+.ee-manage-empty-note { font-size: var(--fs-base); }
 
 .ee-manage-form-card {
   background: #fff;
@@ -243,14 +243,14 @@
   padding: 20px;
 }
 .ee-manage-form-card h2 {
-  font-size: 17px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: #0b2a4a;
 }
 .ee-manage-form-blurb {
   margin: 4px 0 16px;
   color: #667085;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
 }
 .ee-manage-form-grid {
   display: grid;
@@ -261,7 +261,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 550;
   color: #344054;
 }
@@ -284,7 +284,7 @@
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #0b2a4a;
 }
 .ee-manage-select-menu {
@@ -311,7 +311,7 @@
   padding: 9px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #0b2a4a;
 }
 .ee-manage-select-menu button:hover { background: #f3f5f8; }
@@ -324,10 +324,10 @@
   background: #e8f0fe;
   color: #0b2a4a;
 }
-.ee-manage-role-info strong { display: block; font-size: 13.5px; }
+.ee-manage-role-info strong { display: block; font-size: var(--fs-base); }
 .ee-manage-role-info p {
   margin-top: 4px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #445468;
 }
 .ee-manage-form-foot {
@@ -352,7 +352,7 @@
   margin-bottom: 14px;
 }
 .ee-invite-card-head h2 {
-  font-size: 17px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -370,7 +370,7 @@
   align-items: center;
   gap: 10px;
   margin: 14px 0 8px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 550;
   color: #0b2a4a;
   cursor: pointer;
@@ -382,7 +382,7 @@
   gap: 6px;
 }
 .ee-invite-field label {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 550;
   color: #344054;
 }
@@ -483,7 +483,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 550;
   color: #344054;
   margin-bottom: 14px;
@@ -508,14 +508,14 @@
 }
 .ee-style-editor-menu strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #0b2a4a;
 }
 .ee-style-editor-menu em {
   display: block;
   margin-top: 2px;
   font-style: normal;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-style-editor-icon {
@@ -537,7 +537,7 @@
   display: flex;
   gap: 8px;
   margin-top: 16px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-style-editor-preview {
@@ -552,7 +552,7 @@
   margin-bottom: 14px;
 }
 .ee-style-editor-preview-head h2 {
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -578,7 +578,7 @@
 .ee-style-editor-zoom span {
   min-width: 48px;
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .ee-style-editor-paper-wrap {
@@ -598,17 +598,17 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: #445468;
 }
 .ee-style-editor-paper > header strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #0b2a4a;
   margin-bottom: 4px;
 }
 .ee-style-editor-inv-title {
-  font-size: 28px;
+  font-size: var(--fs-3xl);
   font-weight: 800;
   color: #2f6fed;
   letter-spacing: 0.02em;
@@ -618,12 +618,12 @@
   justify-content: space-between;
   gap: 24px;
   margin: 22px 0 16px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .ee-style-editor-meta .label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #667085;
   margin-bottom: 4px;
 }
@@ -640,13 +640,13 @@
 .ee-style-editor-meta dt {
   text-transform: uppercase;
   color: #667085;
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 .ee-style-editor-meta dd { margin: 0; font-weight: 600; color: #0b2a4a; }
 .ee-style-editor-paper table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .ee-style-editor-paper th {
   background: #e8f0fe;
@@ -664,17 +664,17 @@
   align-items: baseline;
   gap: 16px;
   margin-top: 18px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .ee-style-editor-due strong {
-  font-size: 20px;
+  font-size: var(--fs-2xl);
   color: #0b2a4a;
 }
 .ee-style-editor-paper > footer {
   display: flex;
   justify-content: space-between;
   margin-top: 28px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #98a2b3;
 }
 .ee-style-editor-foot {
@@ -718,7 +718,7 @@
   border-bottom: 1px solid #eef1f5;
 }
 .ee-shortcuts-head h2 {
-  font-size: 17px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -734,13 +734,13 @@
   background: #f8fafc;
 }
 .ee-shortcuts-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 650;
   color: #667085;
   margin-bottom: 4px;
 }
 .ee-shortcuts-id-value {
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #0b2a4a;
@@ -762,7 +762,7 @@
   padding: 10px 2px 12px;
   cursor: pointer;
   color: #667085;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 550;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -775,14 +775,14 @@
 .ee-shortcuts-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
 }
 .ee-shortcuts-table th {
   text-align: left;
   padding: 10px 8px;
   border-bottom: 1px solid #e4e9f0;
   color: #667085;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .ee-shortcuts-table td {
   padding: 12px 8px;
@@ -802,7 +802,7 @@
   border: 1px solid #d0d5dd;
   border-radius: 6px;
   background: #f8fafc;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 650;
   color: #344054;
 }
@@ -864,13 +864,13 @@
 }
 .list-card-body { display: flex; flex-direction: column; gap: 4px; }
 .list-card-title {
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: #0b2a4a;
   margin: 0;
 }
 .list-card-sub {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
   margin: 0;
   line-height: 1.4;
@@ -880,7 +880,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #445468;
 }
 .list-arrow {
@@ -914,17 +914,17 @@
   align-items: flex-start;
   gap: 8px;
 }
-.ee-cf-name { font-size: 14px; font-weight: 700; color: #0b2a4a; margin: 0; }
-.ee-cf-applies { font-size: 12px; color: #667085; margin: 0; }
+.ee-cf-name { font-size: var(--fs-md); font-weight: 700; color: #0b2a4a; margin: 0; }
+.ee-cf-applies { font-size: var(--fs-sm); color: #667085; margin: 0; }
 .ee-cf-meta {
   display: flex;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .ee-cf-badge {
   padding: 2px 8px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 650;
 }
 .ee-cf-badge.active { background: #ecfdf3; color: #027a48; }
@@ -934,7 +934,7 @@
   background: #fff;
   border-radius: 6px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #344054;
 }
 .ee-cf-toggle {
@@ -943,7 +943,7 @@
   justify-content: space-between;
   align-items: center;
 }
-.ee-cf-required { font-size: 11px; color: #e11d48; font-weight: 650; }
+.ee-cf-required { font-size: var(--fs-xs); color: #e11d48; font-weight: 650; }
 
 @media (max-width: 960px) {
   .ee-custom-fields { grid-template-columns: 1fr; }
@@ -954,7 +954,7 @@
 .ee-rules-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   background: #fff;
   border: 1px solid #e4e9f0;
   border-radius: 10px;
@@ -965,7 +965,7 @@
   padding: 12px 14px;
   border-bottom: 1px solid #eef1f5;
   color: #667085;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -987,7 +987,7 @@
   border-radius: 999px;
   background: #ecfdf3;
   color: #027a48;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 .ee-rule-active.off { background: #f3f4f6; color: #6b7280; }

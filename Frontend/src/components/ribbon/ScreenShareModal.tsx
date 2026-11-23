@@ -40,7 +40,7 @@ export function ScreenShareModal({ open, onClose }: Props) {
             }}
           >
             <span>Learn about screen sharing permissions</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#0052ff", fontSize: 13 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#0052ff", fontSize: "var(--fs-base)" }}>
               {expanded ? "Hide" : "Show"}
               {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </span>

@@ -36,7 +36,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 16px 12px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -71,7 +71,7 @@
   border-radius: 8px;
   background: transparent;
   color: #344054;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -94,7 +94,7 @@
 .ee-apps-dock-item .ee-apps-label {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   letter-spacing: -0.01em;
 }
 .ee-apps-dock-chevron {
@@ -116,7 +116,7 @@
   margin-left: 2px;
   padding: 7px 12px 7px 14px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.3;
   color: #475467;
   text-decoration: none;
@@ -150,7 +150,7 @@
   border-radius: 8px;
   background: transparent;
   color: #667085;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -173,7 +173,7 @@
   border: 1px solid #dfe8f5;
 }
 .ee-team-hero-copy h2 {
-  font-size: 26px;
+  font-size: var(--fs-3xl);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #0b2a4a;
@@ -182,7 +182,7 @@
 }
 .ee-team-hero-sub {
   margin-top: 10px;
-  font-size: 14.5px;
+  font-size: var(--fs-md);
   color: #475467;
   line-height: 1.45;
   max-width: 42ch;
@@ -198,7 +198,7 @@
 .ee-team-bullets li {
   position: relative;
   padding-left: 18px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: #344054;
   line-height: 1.4;
 }
@@ -255,13 +255,13 @@
   flex: none;
 }
 .ee-team-tips-intro h3 {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 650;
   color: #0b2a4a;
 }
 .ee-team-tips-intro p {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: #667085;
 }
 .ee-team-tips ul {
@@ -276,7 +276,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
   color: var(--ee-blue);
   text-decoration: none;
@@ -331,7 +331,7 @@
   border-radius: 999px;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 650;
   border: 1.5px solid #cfd6e0;
   background: #fff;
@@ -345,7 +345,7 @@
   color: #fff;
 }
 .ee-team-stepper-label {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: #667085;
   text-align: center;
@@ -358,7 +358,7 @@
 .ee-team-stepper-item.done .ee-team-stepper-label { color: #344054; }
 
 .ee-team-step-title {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 650;
   color: #0b2a4a;
   margin: 0 0 12px;
@@ -366,13 +366,13 @@
 .ee-team-step-title-spaced { margin-top: 22px; }
 .ee-team-step-lead {
   margin: -4px 0 14px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #667085;
 }
 .ee-field-hint {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-team-photo { margin-bottom: 16px; }
@@ -390,7 +390,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 500;
 }
 .ee-team-photo-btn:hover { border-color: var(--ee-blue); color: var(--ee-blue); }
@@ -405,7 +405,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 550;
   color: #0b2a4a;
   cursor: pointer;
@@ -428,7 +428,7 @@
   background: #f7fbff;
 }
 .ee-team-doc-card-title {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 650;
   color: #0b2a4a;
   margin-bottom: 8px;
@@ -446,7 +446,7 @@
   background: #fff;
   color: #344054;
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
 }
 .ee-team-doc-drop:hover { border-color: var(--ee-blue); color: var(--ee-blue); }
@@ -468,7 +468,7 @@
   flex-wrap: wrap;
 }
 .ee-team-step-count {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #98a2b3;
   margin-left: 4px;
 }
@@ -502,7 +502,7 @@
   gap: 10px;
   color: #0b2a4a;
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 .ee-time-brand img {
   border-radius: 999px;
@@ -520,7 +520,7 @@
   place-items: center;
 }
 .ee-time-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 450;
   color: #667085;
   margin-top: 1px;
@@ -566,7 +566,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #344054;
   cursor: pointer;
 }
@@ -576,7 +576,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 550;
   color: #0b2a4a;
   margin-bottom: 2px;
@@ -654,7 +654,7 @@
   padding: 12px 12px 10px;
   background: #eef4fc;
   border-bottom: 1px solid #dfe8f5;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 650;
   color: #0b2a4a;
 }
@@ -672,7 +672,7 @@
   text-align: center;
 }
 .ee-weekly-day-sum {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: #667085;
 }
@@ -706,7 +706,7 @@
 .ee-weekly-row-bill {
   align-self: center;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: #344054;
   font-variant-numeric: tabular-nums;
 }

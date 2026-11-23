@@ -29,7 +29,7 @@
   background: #0a1f3d;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-md);
   letter-spacing: -0.02em;
 }
 .ee-settings-brand img {
@@ -60,7 +60,7 @@
   border: 0;
   background: none;
   color: #445468;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
   padding: 8px 10px;
@@ -87,7 +87,7 @@
 .ee-settings-rail-title {
   color: #fff;
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--fs-lg);
   padding: 4px 10px 16px;
   flex: none;
 }
@@ -104,7 +104,7 @@
   border-radius: 8px;
   color: #d7e3f2;
   text-decoration: none;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 500;
 }
 .ee-settings-rail-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; text-decoration: none; }
@@ -138,7 +138,7 @@
   margin-bottom: 20px;
 }
 .ee-settings-page-head h1 {
-  font-size: 28px;
+  font-size: var(--fs-3xl);
   font-weight: 700;
   letter-spacing: -0.025em;
   color: #0b2a4a;
@@ -146,7 +146,7 @@
 .ee-settings-page-head p {
   margin-top: 4px;
   color: #667085;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 .ee-settings-content {
   flex: 1;
@@ -164,14 +164,14 @@
 .ee-settings-card-flat { padding: 0 20px; }
 .ee-settings-card-head { margin-bottom: 8px; }
 .ee-settings-card-head h2 {
-  font-size: 17px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: #0b2a4a;
 }
 .ee-settings-card-head p {
   margin-top: 4px;
   color: #667085;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .ee-settings-card-head-row {
   display: flex;
@@ -190,8 +190,8 @@
 }
 .ee-settings-card-flat .ee-settings-row,
 .ee-settings-card > .ee-settings-row:first-of-type { border-top: 0; }
-.ee-settings-row-label { font-size: 13.5px; color: #344054; font-weight: 500; }
-.ee-settings-row-value { margin-top: 2px; font-size: 14px; color: #0b2a4a; }
+.ee-settings-row-label { font-size: var(--fs-base); color: #344054; font-weight: 500; }
+.ee-settings-row-value { margin-top: 2px; font-size: var(--fs-md); color: #0b2a4a; }
 
 .ee-settings-profile {
   display: flex;
@@ -228,7 +228,7 @@
   border: 2px solid #fff;
 }
 .ee-settings-profile-label {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: #0b2a4a;
 }
@@ -244,7 +244,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 650;
   color: #0b2a4a;
 }
@@ -269,7 +269,7 @@
 }
 .ee-settings-hint {
   margin-top: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-settings-pill {
@@ -280,7 +280,7 @@
   border-radius: 999px;
   background: #e8f0fe;
   color: #2f6fed;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 
@@ -301,7 +301,7 @@
   gap: 12px;
   padding: 10px 0;
   border-top: 1px solid #eef1f5;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   color: #344054;
 }
 .ee-settings-pref-list li:first-child { border-top: 0; }
@@ -314,7 +314,7 @@
   border-radius: 4px;
   background: #e11d48;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   vertical-align: middle;
@@ -328,7 +328,7 @@
   border-radius: 8px;
   background: #e8f0fe;
   color: #0b2a4a;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   margin-bottom: 16px;
 }
 .ee-settings-info svg { color: #2f6fed; flex: none; margin-top: 1px; }
@@ -341,7 +341,7 @@
 }
 .ee-settings-group-label {
   margin: 14px 0 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -368,7 +368,7 @@
   background: #fff;
   cursor: pointer;
   text-align: left;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 500;
   color: #0b2a4a;
 }
@@ -397,7 +397,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 28px;
+  font-size: var(--fs-3xl);
   font-weight: 700;
   letter-spacing: 0.08em;
   color: rgba(249, 115, 22, 0.28);
@@ -405,7 +405,7 @@
   pointer-events: none;
 }
 .ee-settings-preview-page h4 {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: #0b2a4a;
 }
@@ -413,7 +413,7 @@
   width: 100%;
   margin-top: 12px;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .ee-settings-preview-table th {
   text-align: left;
@@ -431,7 +431,7 @@
   display: flex;
   justify-content: space-between;
   margin-top: 14px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #667085;
 }
 
@@ -440,7 +440,7 @@
   justify-content: center;
   gap: 8px;
   margin-top: 28px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #2f6fed;
 }
 .ee-settings-legal a { color: #2f6fed; }
@@ -474,7 +474,7 @@
   border-radius: 999px;
   background: #e8f0fe;
   color: #0b2a4a;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 550;
 }
 .ee-settings-schedule svg { color: #2f6fed; flex: none; }
@@ -486,7 +486,7 @@
   height: 24px;
   padding: 0 12px;
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 .ee-settings-on-badge { background: #e8f0fe; color: #2f6fed; }
@@ -496,7 +496,7 @@
 .ee-settings-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
 }
 .ee-settings-table th {
   text-align: left;
@@ -504,7 +504,7 @@
   border-bottom: 1px solid #e4e9f0;
   color: #667085;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .ee-settings-table td {
   padding: 14px 8px;
@@ -517,7 +517,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 4px 0;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: #667085;
 }
 .ee-settings-card-brand {
@@ -531,7 +531,7 @@
   border-radius: 4px;
   background: #1a1f71;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: 800;
   letter-spacing: 0.04em;
   vertical-align: middle;
@@ -544,7 +544,7 @@
   border-radius: 999px;
   background: #e8f0fe;
   color: #0b2a4a;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.03em;
 }
@@ -556,7 +556,7 @@
   padding: 36px 16px 28px;
   text-align: center;
   color: #667085;
-  font-size: 13.5px;
+  font-size: var(--fs-base);
 }
 .ee-settings-empty-art {
   position: relative;
@@ -602,7 +602,7 @@
   gap: 6px;
   margin-top: 8px;
   color: #b45309;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .ee-settings-cloud-actions {
   display: flex;

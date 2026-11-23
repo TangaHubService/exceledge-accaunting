@@ -216,10 +216,10 @@ export function ImportData() {
           <aside className="ee-backup-drawer" style={{ width: 520 }} role="dialog" aria-modal="true">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div>
-                <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#0c1c38" }}>
+                <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 700, margin: 0, color: "#0c1c38" }}>
                   Import {selectedItem.title}
                 </h2>
-                <span style={{ fontSize: 13, color: "#64748b" }}>
+                <span style={{ fontSize: "var(--fs-base)", color: "#64748b" }}>
                   {importStep === "file" && "Step 1: Select CSV or Excel file"}
                   {importStep === "map" && "Step 2: Map columns & verify preview"}
                   {importStep === "complete" && "Import finished"}
@@ -236,7 +236,7 @@ export function ImportData() {
 
             {importStep === "file" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1 }}>
-                <p style={{ fontSize: 14, color: "#475569", margin: 0, lineHeight: 1.5 }}>
+                <p style={{ fontSize: "var(--fs-md)", color: "#475569", margin: 0, lineHeight: 1.5 }}>
                   {selectedItem.description}
                 </p>
 
@@ -258,10 +258,10 @@ export function ImportData() {
                   }}
                 >
                   <Upload size={36} color="#0052ff" style={{ margin: "0 auto 12px" }} />
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#0c1c38", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "#0c1c38", marginBottom: 6 }}>
                     Drag & drop your file here, or browse
                   </div>
-                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
+                  <div style={{ fontSize: "var(--fs-base)", color: "#64748b", marginBottom: 16 }}>
                     Supports CSV, XLS, XLSX (up to 10MB)
                   </div>
                   <label className="ee-btn-blue" style={{ display: "inline-flex", cursor: "pointer" }}>
@@ -283,7 +283,7 @@ export function ImportData() {
                       background: "none",
                       border: "none",
                       color: "#0052ff",
-                      fontSize: 13.5,
+                      fontSize: "var(--fs-base)",
                       fontWeight: 600,
                       cursor: "pointer",
                       display: "inline-flex",
@@ -310,11 +310,11 @@ export function ImportData() {
 
             {importStep === "map" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: 6, fontSize: 13.5, color: "#166534" }}>
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: 6, fontSize: "var(--fs-base)", color: "#166534" }}>
                   File selected: <strong>{selectedFileName}</strong>
                 </div>
 
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#0c1c38" }}>
+                <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "#0c1c38" }}>
                   Match columns with Excel Edge ERP fields:
                 </div>
 
@@ -332,8 +332,8 @@ export function ImportData() {
                         borderRadius: 6,
                       }}
                     >
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{col}</span>
-                      <span style={{ fontSize: 12, color: "#0052ff", display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b" }}>{col}</span>
+                      <span style={{ fontSize: "var(--fs-sm)", color: "#0052ff", display: "flex", alignItems: "center", gap: 4 }}>
                         <Check size={14} /> Mapped to Column {idx + 1}
                       </span>
                     </div>
@@ -366,10 +366,10 @@ export function ImportData() {
                 <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#dcfce7", color: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Check size={36} />
                 </div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#0c1c38" }}>
+                <h3 style={{ fontSize: "var(--fs-xl)", fontWeight: 700, margin: 0, color: "#0c1c38" }}>
                   Import complete!
                 </h3>
-                <p style={{ fontSize: 14, color: "#475569", margin: 0, maxWidth: 320 }}>
+                <p style={{ fontSize: "var(--fs-md)", color: "#475569", margin: 0, maxWidth: 320 }}>
                   All records for <strong>{selectedItem.title}</strong> were successfully verified and added to your books.
                 </p>
 

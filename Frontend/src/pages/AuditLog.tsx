@@ -90,7 +90,7 @@ export function AuditLog() {
     <div className="ee-tools-page">
       {/* Header matching Mockup 82 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 700, color: "#0c1c38", margin: 0, letterSpacing: "-0.02em" }}>
+        <h1 style={{ fontSize: "var(--fs-4xl)", fontWeight: 700, color: "#0c1c38", margin: 0, letterSpacing: "-0.02em" }}>
           Audit Log
         </h1>
         <button
@@ -261,7 +261,7 @@ export function AuditLog() {
           />
           <aside className="ee-backup-drawer" role="dialog" aria-modal="true">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#0c1c38" }}>
+              <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 700, margin: 0, color: "#0c1c38" }}>
                 Audit event history
               </h2>
               <button
@@ -275,23 +275,23 @@ export function AuditLog() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Date & Time</span>
-                <div style={{ fontSize: 14, color: "#0c1c38" }}>{viewingItem.dateChanged}</div>
+                <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "#64748b" }}>Date & Time</span>
+                <div style={{ fontSize: "var(--fs-md)", color: "#0c1c38" }}>{viewingItem.dateChanged}</div>
               </div>
               <div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Initiated By</span>
-                <div style={{ fontSize: 14, color: "#0c1c38", fontWeight: 600 }}>{viewingItem.user}</div>
+                <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "#64748b" }}>Initiated By</span>
+                <div style={{ fontSize: "var(--fs-md)", color: "#0c1c38", fontWeight: 600 }}>{viewingItem.user}</div>
               </div>
               <div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Action Taken</span>
-                <div style={{ fontSize: 14, color: "#0c1c38" }}>{viewingItem.event}</div>
+                <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "#64748b" }}>Action Taken</span>
+                <div style={{ fontSize: "var(--fs-md)", color: "#0c1c38" }}>{viewingItem.event}</div>
               </div>
 
               <div style={{ marginTop: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 14 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#0c1c38", display: "block", marginBottom: 8 }}>
+                <span style={{ fontSize: "var(--fs-base)", fontWeight: 700, color: "#0c1c38", display: "block", marginBottom: 8 }}>
                   Snapshot Diff
                 </span>
-                <div style={{ fontFamily: "monospace", fontSize: 12, color: "#166534", background: "#f0fdf4", padding: 8, borderRadius: 4 }}>
+                <div style={{ fontFamily: "monospace", fontSize: "var(--fs-sm)", color: "#166534", background: "#f0fdf4", padding: 8, borderRadius: 4 }}>
                   + Account: Reconciliation Discrepancies<br />
                   + Type: Expense / Discrepancy Adjustment<br />
                   + Created: System Setup Initializer

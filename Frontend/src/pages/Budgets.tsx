@@ -91,12 +91,12 @@ export function Budgets() {
         <div className="ee-budget-hero-wrap">
           {/* Top breadcrumb row */}
           <div className="ee-budget-breadcrumb">
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: "var(--txn-ink)", textTransform: "none", letterSpacing: "-0.01em" }}>Budgets</h1>
+            <h1 style={{ margin: 0, fontSize: "var(--fs-3xl)", fontWeight: 800, color: "var(--txn-ink)", textTransform: "none", letterSpacing: "-0.01em" }}>Budgets</h1>
             {budgets.data && budgets.data.length > 0 && (
               <button
                 type="button"
                 className="ee-btn-outline"
-                style={{ marginLeft: "auto", height: 32, fontSize: 13, padding: "0 14px" }}
+                style={{ marginLeft: "auto", height: 32, fontSize: "var(--fs-base)", padding: "0 14px" }}
                 onClick={() => setBudgetMode("list")}
               >
                 View all budgets ({budgets.data.length})
@@ -186,10 +186,10 @@ export function Budgets() {
         <div className="ee-tools-page">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
             <div>
-              <h1 style={{ fontSize: 28, fontWeight: 700, color: "#0c1c38", margin: "0 0 6px" }}>
+              <h1 style={{ fontSize: "var(--fs-3xl)", fontWeight: 700, color: "#0c1c38", margin: "0 0 6px" }}>
                 Budgets
               </h1>
-              <p style={{ color: "#64748b", margin: 0, fontSize: 14 }}>
+              <p style={{ color: "#64748b", margin: 0, fontSize: "var(--fs-md)" }}>
                 Compare planned and actual income and spending month by month.
               </p>
             </div>

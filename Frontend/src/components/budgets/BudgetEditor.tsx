@@ -152,7 +152,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           {/* Period */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Period</span>
+            <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "#64748b" }}>Period</span>
             <select
               className="ee-input-field"
               style={{ height: 36, minWidth: 220 }}
@@ -166,7 +166,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
 
           {/* Compare reference data switch */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
-            <span style={{ fontSize: 13.5, color: "#1e293b", fontWeight: 500 }}>
+            <span style={{ fontSize: "var(--fs-base)", color: "#1e293b", fontWeight: 500 }}>
               Compare reference data
             </span>
             <label className="ee-switch" aria-label="Compare reference data">
@@ -182,7 +182,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
           {/* Reference data dropdown */}
           {compareRef && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Reference data</span>
+              <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "#64748b" }}>Reference data</span>
               <select
                 className="ee-input-field"
                 style={{ height: 36, minWidth: 180 }}
@@ -207,7 +207,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
                 border: "none",
                 background: interval === seg ? "#0052ff" : "none",
                 color: interval === seg ? "#ffffff" : "#475569",
-                fontSize: 13,
+                fontSize: "var(--fs-base)",
                 fontWeight: 600,
                 padding: "6px 16px",
                 borderRadius: 4,
@@ -229,7 +229,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
           <button
             type="button"
             className="ee-btn-outline"
-            style={{ height: 36, fontSize: 13, padding: "0 14px" }}
+            style={{ height: 36, fontSize: "var(--fs-base)", padding: "0 14px" }}
             onClick={() => toast("Batch action applied to selected rows.")}
           >
             Batch actions <ChevronDown size={14} />
@@ -241,7 +241,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
             <input
               type="search"
               className="ee-input-field"
-              style={{ height: 36, paddingLeft: 32, width: "100%", fontSize: 13 }}
+              style={{ height: 36, paddingLeft: 32, width: "100%", fontSize: "var(--fs-base)" }}
               placeholder="Find by account name or number"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -250,13 +250,13 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#16a34a", fontWeight: 600 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-base)", color: "#16a34a", fontWeight: 600 }}>
             <Check size={16} /> Autosave on
           </div>
           <button
             type="button"
             className="ee-btn-outline"
-            style={{ height: 36, fontSize: 13, padding: "0 12px" }}
+            style={{ height: 36, fontSize: "var(--fs-base)", padding: "0 12px" }}
             onClick={() => toast("Showing all reference data columns.")}
           >
             Show all reference data
@@ -264,7 +264,7 @@ export function BudgetEditor({ onClose, onOpenSpreadsheetSync }: Props) {
           <button
             type="button"
             className="ee-btn-outline"
-            style={{ height: 36, fontSize: 13, padding: "0 12px" }}
+            style={{ height: 36, fontSize: "var(--fs-base)", padding: "0 12px" }}
             onClick={handleExport}
           >
             Export/Print <ChevronDown size={14} />

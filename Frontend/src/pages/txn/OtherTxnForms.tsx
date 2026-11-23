@@ -185,7 +185,7 @@ export function BankDepositForm() {
           <TField label="Account" required error={v.errors.account} className="w-md">
             <Select value={form.account} onChange={(a) => (setForm((f) => ({ ...f, account: a })), v.clear("account"))} options={bankOptions} placeholder="Cash and cash equivalents" invalid={Boolean(v.errors.account)} />
           </TField>
-          <span style={{ paddingBottom: 9, fontSize: 16 }}>
+          <span style={{ paddingBottom: 9, fontSize: "var(--fs-lg)" }}>
             <strong>Balance</strong> {rwf(bank?.balance ?? 0, currency)}
           </span>
           <TField label="Date" required error={v.errors.date} className="w-sm" >
@@ -214,7 +214,7 @@ export function BankDepositForm() {
             errors={v.errors}
             copy={false}
           />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 60, marginTop: -54, marginBottom: 28, fontSize: 18, fontWeight: 750, pointerEvents: "none" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 60, marginTop: -54, marginBottom: 28, fontSize: "var(--fs-xl)", fontWeight: 750, pointerEvents: "none" }}>
             <span>Other funds total</span>
             <span>{rwf(fundsTotal, currency)}</span>
           </div>
@@ -239,7 +239,7 @@ export function BankDepositForm() {
               <input className="txn-input num" inputMode="decimal" value={form.cashBack} onChange={(e) => (setForm((f) => ({ ...f, cashBack: e.target.value.replace(/[^\d.,]/g, "") })), v.clear("cashBack"))} onBlur={() => cashBack && setForm((f) => ({ ...f, cashBack: fmt(cashBack) }))} />
             </TField>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 100, fontSize: 24, fontWeight: 800 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 100, fontSize: "var(--fs-3xl)", fontWeight: 800 }}>
             <span>Total</span>
             <span>{rwf(total, currency)}</span>
           </div>
@@ -339,13 +339,13 @@ export function TransferForm() {
             <Select value={form.from} onChange={(a) => set("from", a)} options={options} placeholder="Transfer Funds From" invalid={Boolean(v.errors.from)} />
           </TField>
           <TField label="Balance">
-            <span style={{ fontSize: 16, minHeight: 40, display: "flex", alignItems: "center" }}>{balance(from)}</span>
+            <span style={{ fontSize: "var(--fs-lg)", minHeight: 40, display: "flex", alignItems: "center" }}>{balance(from)}</span>
           </TField>
           <TField label="Transfer Funds To" required error={v.errors.to}>
             <Select value={form.to} onChange={(a) => set("to", a)} options={options} placeholder="Transfer Funds To" invalid={Boolean(v.errors.to)} />
           </TField>
           <TField label="Balance">
-            <span style={{ fontSize: 16, minHeight: 40, display: "flex", alignItems: "center" }}>{balance(to)}</span>
+            <span style={{ fontSize: "var(--fs-lg)", minHeight: 40, display: "flex", alignItems: "center" }}>{balance(to)}</span>
           </TField>
           <TField label="Transfer Amount" required error={v.errors.amount} className="w-sm">
             <input className="txn-input num" inputMode="decimal" value={form.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d.,]/g, ""))} onBlur={() => amt && set("amount", fmt(amt))} />
@@ -548,7 +548,7 @@ export function JournalEntryForm() {
         errors={v.errors}
         footerRow={
           <tr>
-            <td colSpan={3} className="right" style={{ fontSize: 18 }}>
+            <td colSpan={3} className="right" style={{ fontSize: "var(--fs-xl)" }}>
               Total
             </td>
             <td className="right" style={{ color: balanced ? undefined : "#b42318" }}>{rwf(debits, currency)}</td>
@@ -757,7 +757,7 @@ export function InventoryAdjustmentForm() {
           </TField>
         </div>
       </HeaderBand>
-      <h3 style={{ fontSize: 24, margin: "0 0 4px" }}>Item details</h3>
+      <h3 style={{ fontSize: "var(--fs-3xl)", margin: "0 0 4px" }}>Item details</h3>
       <LineGrid
         columns={[
           {
@@ -918,7 +918,7 @@ export function PayDownCreditCardForm() {
       <ValidationSummary count={v.count} />
       <div style={{ display: "flex", gap: 40, alignItems: "flex-start", paddingTop: 20 }}>
         <div style={{ width: "min(890px, 100%)", display: "grid", gap: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 21 }}>Record payments made to your balance</h2>
+          <h2 style={{ margin: 0, fontSize: "var(--fs-2xl)" }}>Record payments made to your balance</h2>
           <TField label="Which credit card did you pay?" required error={v.errors.card}>
             <Select value={form.card} onChange={(c) => set("card", c)} options={cards} placeholder="Select credit card" invalid={Boolean(v.errors.card)} emptyText="No liability accounts — add a credit card account in the chart of accounts" />
           </TField>
@@ -950,7 +950,7 @@ export function PayDownCreditCardForm() {
           <Privacy />
         </div>
         <div style={{ marginLeft: "auto", textAlign: "right", paddingTop: 30 }}>
-          <div style={{ fontSize: 20, fontWeight: 750 }}>Total paid</div>
+          <div style={{ fontSize: "var(--fs-2xl)", fontWeight: 750 }}>Total paid</div>
           <div className="txn-amount">{rwf(amt, currency)}</div>
         </div>
       </div>

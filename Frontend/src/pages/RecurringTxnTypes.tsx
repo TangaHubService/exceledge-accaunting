@@ -47,7 +47,7 @@ export function RecurringTxnTypes() {
     <div className="ee-rec-container">
       {/* Top breadcrumb & quick links matching mockup 63 & 64 */}
       <div className="ee-rec-top-bar">
-        <div style={{ fontSize: 14, color: "#64748b" }}>
+        <div style={{ fontSize: "var(--fs-md)", color: "#64748b" }}>
           <span>Accounting</span>
           <span style={{ margin: "0 6px" }}>/</span>
           <span style={{ color: "#0c1c38", fontWeight: 500 }}>Recurring transactions</span>
@@ -171,7 +171,7 @@ export function RecurringTxnTypes() {
               <th style={{ width: "20%" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span>TEMPLATE NAME</span>
-                  <span style={{ fontSize: 10 }}>▲</span>
+                  <span style={{ fontSize: "var(--fs-2xs)" }}>▲</span>
                 </div>
               </th>
               <th>TYPE</th>

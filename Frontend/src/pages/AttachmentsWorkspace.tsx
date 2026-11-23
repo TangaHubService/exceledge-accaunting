@@ -154,7 +154,7 @@ export function AttachmentsWorkspace() {
               <th>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span>TYPE</span>
-                  <span style={{ fontSize: 10 }}>▲</span>
+                  <span style={{ fontSize: "var(--fs-2xs)" }}>▲</span>
                 </div>
               </th>
               <th>NAME</th>
@@ -203,7 +203,7 @@ export function AttachmentsWorkspace() {
                     <button
                       type="button"
                       className="ee-lists-item-link"
-                      style={{ fontSize: 14 }}
+                      style={{ fontSize: "var(--fs-md)" }}
                       onClick={() => toast(`Downloading ${att.name}…`)}
                     >
                       {att.name}

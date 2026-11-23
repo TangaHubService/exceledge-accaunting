@@ -138,7 +138,7 @@ export function StatementForm() {
       }
     >
       <ErrorBanner message={error} onClose={() => setError("")} />
-      <HeaderBand collapsible={false} amountLabel="" aside={<><span style={{ fontSize: 17 }}>Total balance for selected customers</span><strong className="txn-amount">{rwf(total, currency)}</strong></>}>
+      <HeaderBand collapsible={false} amountLabel="" aside={<><span style={{ fontSize: "var(--fs-xl)" }}>Total balance for selected customers</span><strong className="txn-amount">{rwf(total, currency)}</strong></>}>
         <div className="txn-row">
           <TField label="Statement date" required error={v.errors.statementDate} className="w-md">
             <input className="txn-input" type="date" value={form.statementDate} onChange={(e) => set("statementDate")(e.target.value)} />
@@ -257,7 +257,7 @@ export function ProposalStart() {
         <span>Excel Edge ERP</span>
       </div>
       <header className="txn-head" style={{ background: "#fff" }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "#0f1b8d" }}>Create proposal</h1>
+        <h1 style={{ margin: 0, fontSize: "var(--fs-3xl)", fontWeight: 800, color: "#0f1b8d" }}>Create proposal</h1>
         <button type="button" className="txn-icon" aria-label="Close" onClick={() => navigate("/invoices")}>
           <X size={24} />
         </button>
@@ -265,16 +265,16 @@ export function ProposalStart() {
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <div className="txn-modal" role="dialog" aria-modal="true" aria-label="Who's this proposal for?" style={{ maxWidth: 860, color: "#0f1b8d" }}>
           <div className="txn-modal-head">
-            <h2 style={{ fontSize: 34 }}>Who's this proposal for?</h2>
+            <h2 style={{ fontSize: "var(--fs-4xl)" }}>Who's this proposal for?</h2>
             <button type="button" className="txn-icon" aria-label="Close" onClick={() => navigate("/invoices")}>
               <X size={26} />
             </button>
           </div>
           <div className="txn-modal-body" style={{ gap: 22 }}>
-            <p style={{ margin: 0, fontSize: 21 }}>Choose a customer to create your proposal.</p>
+            <p style={{ margin: 0, fontSize: "var(--fs-2xl)" }}>Choose a customer to create your proposal.</p>
             <div className="txn-segment" role="radiogroup" aria-label="Proposal recipient type">
               {(["customer", "lead"] as const).map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => (setMode(m), setError(""))} style={{ fontSize: 21, padding: "12px 30px" }}>
+                <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => (setMode(m), setError(""))} style={{ fontSize: "var(--fs-2xl)", padding: "12px 30px" }}>
                   {m === "customer" ? "Customer" : "Lead"}
                 </button>
               ))}
@@ -295,10 +295,10 @@ export function ProposalStart() {
             )}
           </div>
           <div className="txn-modal-foot">
-            <button type="button" className="txn-btn-outline blue" onClick={() => navigate("/invoices")} style={{ fontSize: 20 }}>
+            <button type="button" className="txn-btn-outline blue" onClick={() => navigate("/invoices")} style={{ fontSize: "var(--fs-2xl)" }}>
               Cancel
             </button>
-            <button type="button" className="txn-btn-primary" disabled={!ready} onClick={proceed} style={{ fontSize: 20 }}>
+            <button type="button" className="txn-btn-primary" disabled={!ready} onClick={proceed} style={{ fontSize: "var(--fs-2xl)" }}>
               Continue
             </button>
           </div>

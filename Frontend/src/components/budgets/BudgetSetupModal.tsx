@@ -40,7 +40,7 @@ export function BudgetSetupModal({
       >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0c1c38", margin: 0 }}>
+          <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 700, color: "#0c1c38", margin: 0 }}>
             Create a budget
           </h2>
           <button
@@ -55,18 +55,18 @@ export function BudgetSetupModal({
         {/* Content 2-column: Left Form, Right Illustration */}
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 32, alignItems: "center" }}>
           <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0c1c38", margin: "0 0 6px", letterSpacing: "-0.02em" }}>
+            <h1 style={{ fontSize: "var(--fs-3xl)", fontWeight: 800, color: "#0c1c38", margin: "0 0 6px", letterSpacing: "-0.02em" }}>
               How do you want to set up your budget?
             </h1>
-            <p style={{ fontSize: 14, color: "#475569", margin: "0 0 20px" }}>
+            <p style={{ fontSize: "var(--fs-md)", color: "#475569", margin: "0 0 20px" }}>
               Select your preferred options
             </p>
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {/* Budget type */}
               <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>Budget type</span>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, color: "#0c1c38", cursor: "pointer" }}>
+                <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b" }}>Budget type</span>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-md)", color: "#0c1c38", cursor: "pointer" }}>
                   <input
                     type="radio"
                     name="budgetType"
@@ -80,7 +80,7 @@ export function BudgetSetupModal({
 
               {/* Period */}
               <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>Period</span>
+                <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b" }}>Period</span>
                 <select
                   className="ee-input-field"
                   value={period}
@@ -94,9 +94,9 @@ export function BudgetSetupModal({
 
               {/* Budget format */}
               <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>Budget format</span>
+                <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b" }}>Budget format</span>
                 <div style={{ display: "flex", gap: 16 }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, color: "#0c1c38", cursor: "pointer" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-md)", color: "#0c1c38", cursor: "pointer" }}>
                     <input
                       type="radio"
                       name="format"
@@ -106,7 +106,7 @@ export function BudgetSetupModal({
                     <span>Consolidated</span>
                     <HelpCircle size={14} color="#64748b" />
                   </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, color: "#0c1c38", cursor: "pointer" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-md)", color: "#0c1c38", cursor: "pointer" }}>
                     <input
                       type="radio"
                       name="format"
@@ -121,7 +121,7 @@ export function BudgetSetupModal({
 
               {/* Pre-fill data */}
               <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>Pre-fill data</span>
+                <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b" }}>Pre-fill data</span>
                 <select
                   className="ee-input-field"
                   value={prefill}
@@ -136,7 +136,7 @@ export function BudgetSetupModal({
 
               {/* Available setup option card */}
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 8 }}>
+                <div style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "#1e293b", marginBottom: 8 }}>
                   Available setup option
                 </div>
                 <div className="ee-budget-setup-option-card">
@@ -150,15 +150,15 @@ export function BudgetSetupModal({
                     <span style={{ width: 12, height: 12, transform: "rotate(45deg)", border: "2px solid #0052ff", margin: "1px" }} />
                     <span style={{ width: 13, height: 13, border: "2px solid #0052ff" }} />
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0c1c38" }}>Custom budgets</div>
-                  <div style={{ fontSize: 12, color: "#64748b" }}>Create a budget from scratch</div>
+                  <div style={{ fontSize: "var(--fs-md)", fontWeight: 700, color: "#0c1c38" }}>Custom budgets</div>
+                  <div style={{ fontSize: "var(--fs-sm)", color: "#64748b" }}>Create a budget from scratch</div>
                 </div>
               </div>
 
               <div style={{ marginTop: 4 }}>
                 <button
                   type="button"
-                  style={{ background: "none", border: "none", color: "#0052ff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                  style={{ background: "none", border: "none", color: "#0052ff", fontSize: "var(--fs-base)", fontWeight: 600, cursor: "pointer", padding: 0 }}
                   onClick={onOpenSpreadsheetSync}
                 >
                   Create budget in spreadsheet

@@ -111,7 +111,7 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
               ]}
             />
           </TField>
-          <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 17 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: "var(--fs-xl)" }}>
             Recurring task
             <button type="button" role="switch" aria-checked={form.recurring} aria-label="Recurring task" className={`txn-toggle ${form.recurring ? "on" : ""}`} onClick={() => set("recurring", !form.recurring)} />
           </div>
@@ -161,7 +161,7 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
                     emptyText="No saved transactions yet"
                   />
                 ) : (
-                  <button type="button" className="txn-link" style={{ fontSize: 19 }} onClick={() => setPicking(true)}>
+                  <button type="button" className="txn-link" style={{ fontSize: "var(--fs-xl)" }} onClick={() => setPicking(true)}>
                     <Link2 size={22} /> Link a record
                   </button>
                 )}
@@ -193,10 +193,10 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
                       <FolderOpen size={56} />
                     </span>
                     <h3>Nothing to see here yet</h3>
-                    <p style={{ margin: 0, fontSize: 17 }}>Upload a document to get started</p>
+                    <p style={{ margin: 0, fontSize: "var(--fs-xl)" }}>Upload a document to get started</p>
                   </div>
                 )}
-                <button type="button" className="txn-link" style={{ fontSize: 19 }} onClick={() => fileInput.current?.click()}>
+                <button type="button" className="txn-link" style={{ fontSize: "var(--fs-xl)" }} onClick={() => fileInput.current?.click()}>
                   <Paperclip size={22} /> Add a document
                 </button>
                 <input
@@ -217,7 +217,7 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
           </section>
         </div>
         <div className="side-panel-foot">
-          <button type="button" className="txn-btn-primary" style={{ fontSize: 19, fontWeight: 750 }} onClick={() => void save()}>
+          <button type="button" className="txn-btn-primary" style={{ fontSize: "var(--fs-xl)", fontWeight: 750 }} onClick={() => void save()}>
             Save
           </button>
         </div>
@@ -405,7 +405,7 @@ export function AIAssistantPanel({ onClose }: { onClose: () => void }) {
       </form>
       <p className="ai-foot">
         AI can make mistakes. Review important information.{" "}
-        <button type="button" className="txn-link" style={{ fontSize: 12.5, fontWeight: 700 }} onClick={() => navigate("/settings/advanced")}>
+        <button type="button" className="txn-link" style={{ fontSize: "var(--fs-sm)", fontWeight: 700 }} onClick={() => navigate("/settings/advanced")}>
           How we use AI.
         </button>
       </p>

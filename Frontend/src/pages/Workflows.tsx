@@ -225,7 +225,7 @@ export function Workflows() {
                   minWidth: 160,
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", color: "#64748b" }}>
+                <div style={{ fontSize: "var(--fs-sm)", fontWeight: 700, padding: "4px 8px", color: "#64748b" }}>
                   TRANSACTION TYPE
                 </div>
                 {["all", "Invoice", "Bill", "Estimate"].map((t) => (
@@ -240,7 +240,7 @@ export function Workflows() {
                       border: "none",
                       padding: "6px 8px",
                       borderRadius: 4,
-                      fontSize: 13,
+                      fontSize: "var(--fs-base)",
                       color: filterType === t ? "#0052ff" : "#1e293b",
                       cursor: "pointer",
                     }}
@@ -355,7 +355,7 @@ export function Workflows() {
                               display: "block",
                               width: "100%",
                               padding: "6px 12px",
-                              fontSize: 13,
+                              fontSize: "var(--fs-base)",
                               border: "none",
                               background: "none",
                               textAlign: "left",
@@ -372,7 +372,7 @@ export function Workflows() {
                               display: "block",
                               width: "100%",
                               padding: "6px 12px",
-                              fontSize: 13,
+                              fontSize: "var(--fs-base)",
                               border: "none",
                               background: "none",
                               textAlign: "left",
@@ -392,7 +392,7 @@ export function Workflows() {
                               display: "block",
                               width: "100%",
                               padding: "6px 12px",
-                              fontSize: 13,
+                              fontSize: "var(--fs-base)",
                               border: "none",
                               background: "none",
                               textAlign: "left",
@@ -417,8 +417,8 @@ export function Workflows() {
       {/* TAB 2: TEMPLATES */}
       {tab === "templates" && (
         <section className="ee-workflows-section" aria-label="Workflow templates">
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "#0c1c38" }}>
-            Workflow templates <span style={{ fontSize: 14, fontWeight: 400, color: "#64748b" }}>{templates.length} templates</span>
+          <h2 style={{ fontSize: "var(--fs-xl)", fontWeight: 700, margin: "0 0 16px", color: "#0c1c38" }}>
+            Workflow templates <span style={{ fontSize: "var(--fs-md)", fontWeight: 400, color: "#64748b" }}>{templates.length} templates</span>
           </h2>
           <div className="ee-workflows-grid">
             {templates.map((t) => {
@@ -520,7 +520,7 @@ export function Workflows() {
           />
           <aside className="ee-backup-drawer" role="dialog" aria-modal="true">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#0c1c38" }}>
+              <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 700, margin: 0, color: "#0c1c38" }}>
                 Create custom workflow
               </h2>
               <button

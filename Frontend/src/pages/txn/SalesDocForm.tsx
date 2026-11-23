@@ -13,6 +13,7 @@ import {
   productColumns,
   productLinesPayload,
   productLinesSchema,
+  productTax,
   productTotal,
 } from "../../components/txn/lines";
 import {
@@ -56,6 +57,7 @@ import {
   termDays,
   type TxnKind,
   useCustomers,
+  useLineTaxCodes,
   useProductOptions,
 } from "../../lib/txn";
 import { yup } from "../../lib/validation";
@@ -191,9 +193,15 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
 
   const customer = customers.find((c) => c.id === form.customerId);
   const partyName = customer?.name ?? form.leadName;
+  const lineTax = useLineTaxCodes("sales", form.docDate);
+  // A tax-exempt customer is billed without tax, whatever codes the lines carry (the server does the same).
+  const taxExempt = Boolean(customer?.taxExempt);
   const subtotal = productTotal(form.lines);
   const discount = Math.min(subtotal, (subtotal * (num(form.discountPct) || 0)) / 100);
-  const total = Math.round((subtotal - discount) * 100) / 100;
+  const taxed = form.lines.some((l) => l.tax);
+  const tax = taxExempt ? 0 : productTax(form.lines, lineTax.rates, num(form.discountPct) || 0);
+  const total = Math.round((subtotal - discount + tax) * 100) / 100;
+  const taxRow: Array<[string, string]> = taxed ? [[taxExempt ? "Tax (customer is tax-exempt)" : "Tax", rwf(tax, currency)]] : [];
   const deposit = form.depositMode === "%" ? (total * (num(form.deposit) || 0)) / 100 : num(form.deposit) || 0;
 
   function set<K extends keyof Form>(key: K, value: Form[K]) {
@@ -266,7 +274,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
 
   /** Lines with the "Edit totals" discount spread across them (the server prices per line). */
   function pricedLines() {
-    const payload = productLinesPayload(form.lines, productOptions);
+    const payload = productLinesPayload(form.lines, productOptions, items).map((l) => (taxExempt ? { ...l, taxCode: null } : l));
     if (!discount) return payload;
     let left = Math.round(discount * 100) / 100;
     return payload.map((l, i) => {
@@ -328,7 +336,8 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
             projectId: query.get("project") || null,
             meta: { paymentOptions: form.paymentOptions },
             lines: filledProductLines(form.lines).map((l) => ({
-              ...productLinesPayload([l], productOptions)[0],
+              ...productLinesPayload([l], productOptions, items)[0],
+              ...(taxExempt ? { taxCode: null } : {}),
               itemId: l.product.startsWith("item:") ? l.product.slice(5) : null,
               serviceDate: l.date,
             })),
@@ -406,7 +415,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
 
   const locked = Boolean(saved) && isInvoice;
   const docTitle = saved ? `${title} ${saved.number}` : isInvoice ? `${title}` : `${title} ${isOrder ? "#" : ""}${form.number}`;
-  const columns = productColumns(productOptions, items, { date: !isOrder, sku: custom.sku }).filter(
+  const columns = productColumns(productOptions, items, { date: !isOrder, sku: custom.sku, taxOptions: lineTax.options }).filter(
     (c) => (c.key !== "description" || custom.description) && (c.key !== "qty" || custom.quantity) && (c.key !== "rate" || custom.rate),
   );
 
@@ -422,6 +431,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
       totals={[
         ["Subtotal", rwf(subtotal, currency)],
         ...(discount ? ([["Discount", `-${rwf(discount, currency)}`]] as Array<[string, string]>) : []),
+        ...taxRow,
         [isInvoice ? "Balance due" : `${title} total`, rwf(total, currency)],
       ]}
       note={form.note}
@@ -742,11 +752,12 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
                 rows={[
                   { label: "Subtotal", value: rwf(subtotal, currency) },
                   ...(discount ? [{ label: `Discount (${form.discountPct}%)`, value: `-${rwf(discount, currency)}` }] : []),
+                  ...taxRow.map(([label, value]) => ({ label, value })),
                   { label: `${isOrder ? "Sales order" : title} total`, value: rwf(total, currency), strong: true, rule: isOrder },
                 ]}
               />
               {isOrder ? (
-                <div className="txn-deposit" style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 17 }}>
+                <div className="txn-deposit" style={{ display: "flex", alignItems: "center", gap: 18, fontSize: "var(--fs-xl)" }}>
                   <span>Deposit request</span>
                   <input
                     className={`txn-input num ${v.errors.deposit ? "invalid" : ""}`}
@@ -831,7 +842,7 @@ function DocBand({ children }: { children: ReactNode }) {
 function LabelLeft({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
     <>
-      <span style={{ fontSize: 16.5 }}>{label}</span>
+      <span style={{ fontSize: "var(--fs-lg)" }}>{label}</span>
       <span style={{ display: "grid", gap: 4 }}>
         {children}
         {error ? <span className="field-error">{error}</span> : null}
@@ -993,7 +1004,7 @@ function TourPopover({ step, onStep, title }: { step: number; onStep: (s: number
   return (
     <div className="txn-popover" style={{ position: "fixed", top: 150, right: 40, width: 380, zIndex: 80 }} role="dialog" aria-label={`${title} tour`}>
       <div className="txn-popover-head">
-        <strong style={{ fontSize: 18 }}>{heading}</strong>
+        <strong style={{ fontSize: "var(--fs-xl)" }}>{heading}</strong>
         <button type="button" className="txn-icon sm" aria-label="Close tour" onClick={() => onStep(null)}>
           <X size={18} />
         </button>

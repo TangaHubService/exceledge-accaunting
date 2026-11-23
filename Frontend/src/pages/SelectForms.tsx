@@ -50,9 +50,9 @@ export function SelectForms() {
                   <h3 className="ee-cf-name">{f.name}</h3>
                   <p className="ee-cf-applies">{f.type} · Default for {f.defaultFor}</p>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#2f6fed" }}>{f.type}</span>
+                <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, color: "#2f6fed" }}>{f.type}</span>
               </div>
-              <p style={{ fontSize: 12.5, color: "#667085", margin: "8px 0 0" }}>{f.description}</p>
+              <p style={{ fontSize: "var(--fs-sm)", color: "#667085", margin: "8px 0 0" }}>{f.description}</p>
               <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
                 <button type="button" className="btn btn-quiet" onClick={() => toast(`Editing ${f.name}…`)}>
                   Edit
@@ -66,7 +66,7 @@ export function SelectForms() {
         )}
       </div>
 
-      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10, color: "#667085", fontSize: 12.5 }}>
+      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10, color: "#667085", fontSize: "var(--fs-sm)" }}>
         <FileText size={14} strokeWidth={1.5} />
         <span>
           Forms appear on invoices, estimates, sales receipts, sales orders, bills and purchase orders. You can customise each template under Settings &gt; Form styles.
