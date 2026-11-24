@@ -398,17 +398,24 @@ export type RecurringTemplate = {
   id: string;
   kind: TxnKind;
   name: string;
+  mode: "SCHEDULED" | "REMINDER" | "UNSCHEDULED";
   interval: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
   every: number;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
+  nextDate: string | null;
+  previousDate: string | null;
   daysInAdvance: number;
-  snapshot: unknown;
-  createdAt: string;
+  partyName: string | null;
+  amount: number | null;
+  payload: unknown;
+  isActive: boolean;
+  lastError: string | null;
 };
 
-export function saveRecurring(t: Omit<RecurringTemplate, "id" | "createdAt">) {
-  return saveLocal<RecurringTemplate>("recurring", { ...t, id: newId(), createdAt: new Date().toISOString() });
+export function daysBetween(from: string, to: string) {
+  const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+  return Number.isFinite(days) ? Math.min(Math.max(days, 0), 365) : 0;
 }
 
 export const today = () => isoDay();

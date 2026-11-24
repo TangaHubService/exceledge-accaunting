@@ -16,6 +16,8 @@ What was added so the mockup screens save to the server instead of the browser, 
 | Employees | `GET /team/employees`, `GET,PUT,DELETE /team/employees/:id` | `team:view`, `team:manage` |
 | Time | `GET,POST /team/time`, `POST /team/time/weekly`, `DELETE /team/time/:id` | `team:view`, `team:manage` (delete) |
 | Combined transaction list | `GET /workspace/transactions` | `report:view` |
+| Recurring transactions | `GET,POST /recurring`; `PUT,DELETE /recurring/:id`; `POST /recurring/:id/use` | `report:view`, plus the capability to post that kind |
+| Bank rules | `GET,POST /banking/rules`; `PUT,DELETE /banking/rules/:id`; `POST /banking/rules/preview`, `/rules/:id/apply` | `bank:view`, `bank:manage` |
 | Screen state, sign-in load | `GET /workspace/bootstrap`, `GET /workspace/records/:collection`, `PUT,DELETE /workspace/records/:collection/:id` | per collection |
 
 ## Accounting rules
@@ -33,8 +35,8 @@ What was added so the mockup screens save to the server instead of the browser, 
 - Item receipts and adjustments move stock in Accounting only. If the ERP also records the same stock, Inventory reconciliation will show a difference.
 - Purchase orders with stock lines can't be raised from the current form, which only has account lines. The API supports them.
 - Foreign-currency orders can't be received at cost; bill them directly.
-- `recurring` templates are stored but don't generate documents.
-- Settings pages still show sample values. The `settings` collection is ready for them.
+- Recurring templates create invoices and bills only; other kinds are reminders. Templates saved earlier in the `recurring` collection are not migrated.
+- Settings are saved per section in the `settings` collection; many switches are stored but no form reads them yet.
 - Users and roles belong to the ERP (JWT), so Manage users still shows sample data.
 - Employee pay and bank fields are access-controlled but not encrypted at rest.
 

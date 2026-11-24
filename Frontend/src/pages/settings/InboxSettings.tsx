@@ -1,16 +1,7 @@
-import { CalendarDays } from "lucide-react";
-import { useState } from "react";
-import { useFeedback } from "../../components/feedback";
-import { SettingsEditButton } from "../../components/settings/SettingsEditButton";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
-import { SettingsToggle } from "../../components/settings/SettingsToggle";
-import { INBOX_SETTINGS } from "../../lib/settings-dummy";
+import { SettingsSection } from "../../components/settings/SettingsSection";
 
 export function InboxSettings() {
-  const { toast } = useFeedback();
-  const [alerts, setAlerts] = useState(INBOX_SETTINGS.companyAlerts);
-  const [ai, setAi] = useState(INBOX_SETTINGS.aiFollowUp);
-
   return (
     <SettingsLayout title="Inbox" subtitle="Manage connected email accounts and messaging preferences.">
       <section className="ee-settings-card">
@@ -22,49 +13,19 @@ export function InboxSettings() {
           <div>
             <div className="ee-settings-row-label">Email connections</div>
             <div className="ee-settings-hint" style={{ marginTop: 4 }}>
-              Connect an email account to send and receive messages
+              Receiving email needs a mail provider, which isn't connected yet.
             </div>
           </div>
-          <button type="button" className="btn btn-primary" onClick={() => toast("Connect email account")}>
+          <button type="button" className="btn btn-primary" disabled>
             Connect email account
           </button>
         </div>
       </section>
-
-      <section className="ee-settings-card">
-        <header className="ee-settings-card-head ee-settings-card-head-row">
-          <div>
-            <h2>Messages</h2>
-            <p>Control team alerts and automatic follow-up.</p>
-          </div>
-          <SettingsEditButton section="Messages" />
-        </header>
-
-        <div className="ee-settings-row ee-settings-row-top">
-          <div>
-            <div className="ee-settings-row-label">Company alerts</div>
-            <div className="ee-settings-hint" style={{ marginTop: 4 }}>
-              Assigned team members receive reminders to reply to new messages.
-            </div>
-            <div className="ee-settings-schedule">
-              <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
-              {INBOX_SETTINGS.companyAlertsSchedule}
-            </div>
-          </div>
-          <SettingsToggle label="Company alerts" on={alerts} onChange={setAlerts} />
-        </div>
-
-        <div className="ee-settings-row ee-settings-row-top">
-          <div>
-            <div className="ee-settings-row-label">AI follow-up</div>
-            <div className="ee-settings-hint" style={{ marginTop: 4 }}>
-              Excel Edge AI requests more details when replies to accountants or team members are incomplete.
-              Applies only to messages sent by accountants and team members.
-            </div>
-          </div>
-          <SettingsToggle label="AI follow-up" on={ai} onChange={setAi} />
-        </div>
-      </section>
+        <SettingsSection id="inbox-messages" title="Messages" description="Control team alerts and automatic follow-up." rows={[
+          { key: "alerts", label: "Company alerts", kind: "toggle", value: true, hint: "Assigned team members receive reminders to reply to new messages." },
+          { key: "schedule", label: "Alert day", kind: "select", value: "Every Monday", options: ["Every day", "Every Monday", "Every Friday"] },
+          { key: "ai", label: "AI follow-up", kind: "toggle", value: true, hint: "Asks for more details when replies to accountants or team members are incomplete." },
+        ]} />
     </SettingsLayout>
   );
 }

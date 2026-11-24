@@ -249,7 +249,7 @@ export function BankDepositForm() {
         <AttachmentBox files={files} onChange={setFiles} showExisting={false} />
       </TField>
       {files.length ? <p className="muted">Bank transactions don't store files yet — keep deposit slips with your records.</p> : null}
-      {recurring ? <RecurringModal kind="bank-deposit" defaultName="Recurring deposit" snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind="bank-deposit" defaultName="Recurring deposit" onClose={() => setRecurring(false)} /> : null}
     </TxnPage>
   );
 }
@@ -362,7 +362,7 @@ export function TransferForm() {
         </TField>
       </div>
       <Privacy />
-      {recurring ? <RecurringModal kind="transfer" defaultName="Recurring transfer" snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind="transfer" defaultName="Recurring transfer" onClose={() => setRecurring(false)} /> : null}
     </TxnPage>
   );
 }
@@ -563,7 +563,7 @@ export function JournalEntryForm() {
           <AttachmentBox files={files} onChange={setFiles} showExisting={false} />
         </TField>
       </div>
-      {recurring ? <RecurringModal kind="journal" defaultName={`Journal ${form.number} recurring`} snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind="journal" defaultName={`Journal ${form.number} recurring`} onClose={() => setRecurring(false)} /> : null}
       {importing ? <JournalImportModal onClose={() => setImporting(false)} onRows={importRows} /> : null}
     </TxnPage>
   );

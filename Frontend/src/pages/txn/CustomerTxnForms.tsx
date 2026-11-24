@@ -855,7 +855,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
       {isDelayed ? <p className="muted">Delayed {kind === "delayed-credit" ? "credits" : "charges"} don't post to the books — add them to the customer's next invoice.</p> : null}
       <Privacy />
 
-      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${customer?.name ?? cfg.title} recurring`} snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${customer?.name ?? cfg.title} recurring`} onClose={() => setRecurring(false)} /> : null}
       {preview ? (
         <PreviewModal onClose={() => setPreview(false)}>
           <DocPreview

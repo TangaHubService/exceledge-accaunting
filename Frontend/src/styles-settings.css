@@ -620,3 +620,14 @@
   .ee-settings-reports { grid-template-columns: 1fr; }
   .ee-settings-actions-bar { flex-wrap: wrap; }
 }
+
+/* ── Editable sections ────────────────────────────────────── */
+.ee-settings-val { max-width: 60%; text-align: right; overflow-wrap: anywhere; white-space: pre-line; }
+.ee-settings-field { width: min(280px, 60%); }
+.ee-settings-field.wide { width: 100%; }
+.ee-settings-edit-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid #eef1f5; }
+.ee-switch:disabled { opacity: 0.55; cursor: not-allowed; }
+.ee-settings-preview-table.banded tbody tr:nth-child(even) { background: #f6f8fb; }
+.ee-settings-preview-table.no-grid td, .ee-settings-preview-table.no-grid th { border-color: transparent; }
+.ee-settings-preview-table.col-hi td.num { background: #eef4ff; }
+.ee-settings-preview-table.compact td { padding-top: 2px; padding-bottom: 2px; }

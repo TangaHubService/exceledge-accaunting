@@ -53,6 +53,7 @@ import { amount, date, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import {
+  daysBetween,
   addDays,
   customerOptions,
   emailListValid,
@@ -367,6 +368,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const accountLines = () =>
     filledCategoryLines(form.lines).map((l) => ({ accountId: l.category, amount: Math.round(num(l.amount) * 100) / 100, description: (l.description.trim() || categories.find((c) => c.value === l.category)?.label || title).slice(0, 300) }));
 
+  const billLines = () => [
+    ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+    ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
+  ];
+
   /** Item lines keep their item so a purchase order shows what was ordered and converts to a bill with it. */
   const itemPayloadWithIds = () => {
     const filled = filledProductLines(itemLines);
@@ -388,10 +394,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             billDate: form.date,
             dueDate: form.dueDate || undefined,
             description,
-            lines: [
-              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
-              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
-            ],
+            lines: billLines(),
           }),
         });
         if (files.length) {
@@ -410,10 +413,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             reason: description ?? "Supplier credit",
             description: accountLines().map((l) => l.description).join("; ").slice(0, 500) || undefined,
             // Each line credits its own expense account, as the bill it reverses debited it.
-            lines: [
-              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
-              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
-            ],
+            lines: billLines(),
           }),
         });
         return { id: note.id, number: note.creditNoteNumber ?? note.noteNumber ?? form.number, posted: true };
@@ -823,7 +823,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
           }}
         />
       ) : null}
-      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} partyName={partyName || undefined} template={kind === "bill" ? { supplierId: form.party, description: form.memo.trim() || undefined, dueInDays: daysBetween(form.date, form.dueDate), lines: billLines() } : undefined} amount={total} onClose={() => setRecurring(false)} /> : null}
       {preview ? (
         <Modal
           title="Print preview"

@@ -13,6 +13,7 @@ import { inventoryRouter } from "./modules/inventory/inventory.routes";
 import { taxRouter } from "./modules/tax/tax.routes";
 import { expenseRouter } from "./modules/expense/expense.routes";
 import { booksRouter } from "./modules/books/books.routes";
+import { recurringRouter } from "./modules/books/recurring-templates.routes";
 import { faRouter } from "./modules/fixed-assets/fa.routes";
 import { journalsRouter } from "./modules/journals/journal.routes";
 import { glRouter } from "./modules/gl/gl.routes";
@@ -67,6 +68,7 @@ export function createApp() {
     ["/api/v1/exceptions", exceptionsRouter],
     ["/api/v1/audit", auditRouter],
     ["/api/v1/books", booksRouter],
+    ["/api/v1/recurring", recurringRouter],
     ["/api/v1/commercial", commercialRouter],
     ["/api/v1/projects", projectsRouter],
     ["/api/v1/tasks", tasksRouter],

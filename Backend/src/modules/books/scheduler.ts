@@ -6,6 +6,7 @@ import { openStartedPeriods } from "../journals/journal.service";
 import { deliverDueEmails } from "../notifications/email-outbox.service";
 import { notify } from "../notifications/notification.service";
 import { deliverDueWebhooks } from "../platform/webhook.service";
+import { runDueTemplates } from "./recurring-templates.service";
 import { automationDue, purgeApiKeyUsage, runAutomation, runRecurring } from "./books.service";
 
 const SYSTEM = { erpUserId: 0, erpRole: "SYSTEM" };
@@ -80,7 +81,7 @@ export async function dailyAlerts(companyId: string, now: Date) {
 
 /** Opens started periods and runs due recurring journals and expenses, once per UTC day. */
 async function runDailyWork(companyId: string, now: Date) {
-  const summary = { periodsOpened: 0, recurringJournals: 0, recurringExpenses: 0 };
+  const summary = { periodsOpened: 0, recurringJournals: 0, recurringExpenses: 0, recurringDocuments: 0 };
   summary.periodsOpened = await openStartedPeriods(companyId, now);
 
   if (await prisma.recurringJournal.count({ where: { companyId, isActive: true, nextRunDate: { lte: now } } })) {
@@ -107,6 +108,11 @@ async function runDailyWork(companyId: string, now: Date) {
     } catch (e) {
       await notifyFailure(companyId, `Recurring expense ${template.name} failed`, e);
     }
+  }
+  try {
+    summary.recurringDocuments = (await runDueTemplates(companyId, now)).created;
+  } catch (e) {
+    await notifyFailure(companyId, "Recurring transactions did not run", e);
   }
   try {
     await dailyAlerts(companyId, now);

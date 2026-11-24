@@ -165,6 +165,8 @@ model Company {
   expenseCategories     ExpenseCategory[]
   expenses              Expense[]
   recurringExpenses     RecurringExpense[]
+  recurringTemplates    RecurringTemplate[]
+  bankRules             BankRule[]
   fixedAssetCategories  FixedAssetCategory[]
   fixedAssets           FixedAsset[]
   faDepreciationRuns    FixedAssetDepreciationRun[]
@@ -4082,4 +4084,60 @@ model AccountingFirm {
 
   @@unique([companyId, email])
   @@map("accounting_firms")
+}
+
+/// QuickBooks-style recurring transaction. SCHEDULED invoices and bills are created when due; REMINDER only notifies.
+model RecurringTemplate {
+  id                 String    @id @default(cuid())
+  companyId          String
+  kind               String
+  name               String
+  mode               String
+  interval           String
+  every              Int       @default(1)
+  startDate          DateTime
+  endDate            DateTime?
+  occurrences        Int       @default(0)
+  nextDate           DateTime?
+  previousDate       DateTime?
+  daysInAdvance      Int       @default(0)
+  partyName          String?
+  amount             Decimal?  @db.Decimal(18, 4)
+  payload            Json?
+  isActive           Boolean   @default(true)
+  lastError          String?
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, nextDate])
+  @@map("recurring_templates")
+}
+
+/// Categorises imported statement lines that meet its conditions. Lower priority numbers win.
+model BankRule {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  priority           Int
+  direction          String
+  financialAccountId String?
+  matchAll           Boolean  @default(true)
+  conditions         Json
+  splits             Json
+  payee              String?
+  memo               String?
+  keepMemo           Boolean  @default(false)
+  autoPost           Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, priority])
+  @@map("bank_rules")
 }

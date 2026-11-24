@@ -305,7 +305,7 @@ export async function suggestionsForLine(companyId: string, lineId: string) {
 export async function recordStatementLine(
   companyId: string,
   lineId: string,
-  input: { kind?: StatementLineKind; accountId?: string; description?: string },
+  input: { kind?: StatementLineKind; accountId?: string; description?: string; partyName?: string; splits?: Array<{ accountId: string; percent: number }> },
   actor: Actor = {},
 ) {
   const line = await prisma.bankStatementLine.findFirst({ where: { id: lineId, companyId } });
@@ -315,16 +315,26 @@ export async function recordStatementLine(
   const amount = money(line.amount);
   const kind = input.kind ?? suggestStatementLineKind(line.description, amount);
   const defaults = await defaultsFor(companyId);
-  const accountId = input.accountId ?? (kind === "BANK_CHARGE" ? defaults.bankChargesId : kind === "INTEREST" ? defaults.interestIncomeId : null);
+  const accountId = input.splits?.[0]?.accountId ?? input.accountId ?? (kind === "BANK_CHARGE" ? defaults.bankChargesId : kind === "INTEREST" ? defaults.interestIncomeId : null);
   if (!accountId) throw new Error(kind === "OTHER" ? "Choose the account for this item" : `Map the ${kind === "BANK_CHARGE" ? "bank charges" : "interest income"} account in Company setup, or choose an account`);
+  const text = input.description || line.description;
+  let left = roundMoney(Math.abs(amount));
+  const splits = input.splits?.length ? input.splits : [{ accountId, percent: 100 }];
+  const allocations = splits
+    .map((s, i) => {
+      const share = i === splits.length - 1 ? left : Math.round(Math.abs(amount) * s.percent) / 100;
+      left = roundMoney(left - share);
+      return { accountId: s.accountId, amount: share, description: text };
+    })
+    .filter((l) => l.amount > 0);
   const common = {
     financialAccountId: account.id,
     transactionDate: line.transactionDate,
-    lines: [{ accountId, amount: Math.abs(amount), description: input.description || line.description }],
+    lines: allocations,
     reference: line.reference ?? undefined,
-    description: input.description || line.description,
+    description: text,
     statementLineId: line.id,
-    partyName: undefined,
+    partyName: input.partyName,
   };
   const txn =
     amount > 0

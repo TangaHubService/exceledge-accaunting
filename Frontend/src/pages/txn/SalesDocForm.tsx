@@ -45,6 +45,7 @@ import { amount, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
 import { useSession } from "../../lib/session";
 import {
+  daysBetween,
   addDays,
   customerOptions,
   emailListValid,
@@ -805,7 +806,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
           }}
         />
       ) : null}
-      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} partyName={partyName || undefined} amount={total} template={isInvoice ? { customerId: form.customerId, lines: pricedLines(), description: form.memo.trim() || form.note.trim() || undefined, dueInDays: daysBetween(form.docDate, form.dueDate) } : undefined} onClose={() => setRecurring(false)} /> : null}
       {feedback ? <FeedbackModal onClose={() => setFeedback(false)} /> : null}
       {tour !== null ? <TourPopover step={tour} onStep={setTour} title={title} /> : null}
       {review ? (
