@@ -1,7 +1,7 @@
 import { Check, Filter, Maximize2, MoreVertical, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { INBOX_INTRO_KEY, INBOX_SAMPLE } from "../../lib/ribbon-dummy";
+import { INBOX_INTRO_KEY, type InboxMessage } from "../../lib/ribbon-dummy";
 import { navigate } from "../../lib/router";
 
 const SW = 1.5;
@@ -51,7 +51,7 @@ export function InboxDrawer({ open, onClose }: Props) {
 
   if (!open) return null;
 
-  const messages = INBOX_SAMPLE.filter((m) => {
+  const messages = ([] as InboxMessage[]).filter((m) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (

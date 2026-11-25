@@ -64,10 +64,10 @@ export async function planFor(companyId: string, amount: number, forceApproval =
  * The approval a new document of `entityType` needs before it posts, or null when it posts at once:
  * the workflow is on, setup lists the type, and the levels/tiers ask for at least one approval.
  */
-export async function documentApprovalPlan(companyId: string, entityType: GatedEntityType, amount: number): Promise<ApprovalPlan | null> {
+export async function documentApprovalPlan(companyId: string, entityType: GatedEntityType, amount: number, requested = false): Promise<ApprovalPlan | null> {
   const controls = await approvalControls(companyId);
-  if (!controls.enabled || !controls.requiredFor.includes(entityType)) return null;
-  const plan = approvalPlan({ amount, enabled: true, approvalLevels: controls.approvalLevels, tiers: controls.tiers });
+  if (!requested && (!controls.enabled || !controls.requiredFor.includes(entityType))) return null;
+  const plan = approvalPlan({ amount, enabled: true, approvalLevels: controls.approvalLevels, tiers: controls.tiers, forceApproval: requested });
   return plan.levels >= 1 ? plan : null;
 }
 

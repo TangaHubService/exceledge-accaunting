@@ -493,7 +493,8 @@ export async function reversalCurrency(companyId: string, journalId: string | nu
   return journal ? { currencyCode: journal.currencyCode, exchangeRate: Number(journal.exchangeRate) } : {};
 }
 
-async function reversalDate(companyId: string, originalDate: Date) {
+/** The original date while its period is open, else today. */
+export async function reversalDate(companyId: string, originalDate: Date) {
   try {
     await assertOpenPeriod(companyId, originalDate);
     return originalDate;

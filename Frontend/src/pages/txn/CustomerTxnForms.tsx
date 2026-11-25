@@ -56,7 +56,7 @@ import {
   useLineTaxCodes,
   useProductOptions,
 } from "../../lib/txn";
-import type { ArInvoiceList, Customer } from "../../lib/types";
+import type { ArInvoiceList, Customer, CustomerCredits } from "../../lib/types";
 import { yup } from "../../lib/validation";
 
 /* ── Shared bits ───────────────────────────────────────── */
@@ -302,7 +302,7 @@ export function ReceivePaymentForm() {
             error={v.errors.customerId}
             onPick={(c) => {
               setCustomer(c);
-              setForm((f) => ({ ...f, customerId: c?.id ?? "", email: c?.email ?? f.email }));
+              setForm((f) => ({ ...f, credit: "", invoiceId: "", customerId: c?.id ?? "", email: c?.email ?? f.email }));
               v.clear("customerId");
             }}
           />
@@ -526,6 +526,12 @@ type LineForm = EmailState & {
   message: string;
   statementMessage: string;
   memo: string;
+  /** Refund: "TYPE:id" of a credit the customer holds */
+  credit: string;
+  /** Credit note: the open invoice it goes against */
+  invoiceId: string;
+  /** Amounts on the lines include tax */
+  inclusive: boolean;
   lines: ProductLine[];
 };
 
@@ -550,6 +556,9 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
     message: "",
     statementMessage: "",
     memo: "",
+    credit: "",
+    invoiceId: "",
+    inclusive: false,
     lines: [emptyProductLine(), emptyProductLine()],
   });
   const [form, setForm] = useState<LineForm>(blank);
@@ -562,14 +571,19 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
   const [customise, setCustomise] = useState(false);
   const [showDate, setShowDate] = useState(true);
 
-  // Only a sales receipt sends its lines to the server to be priced, so only it carries tax codes.
-  const taxable = kind === "sales-receipt";
+  const taxable = kind === "sales-receipt" || kind === "credit-note" || kind === "refund-receipt";
+  const usesCredits = (kind === "credit-note" || kind === "refund-receipt") && Boolean(form.customerId);
+  const credits = useResource<CustomerCredits>(usesCredits ? `/api/v1/ar/customers/${form.customerId}/credits` : null);
+  // Credit the customer already holds can be paid out as it is; otherwise the refund credits what is on the lines.
+  const refundable = kind === "refund-receipt" ? (credits.data?.credits ?? []).filter((c) => c.type !== "DEPOSIT") : [];
+  const credit = refundable.find((c) => `${c.type}:${c.id}` === form.credit);
+  const openInvoices = kind === "credit-note" ? (credits.data?.invoices ?? []).filter((i) => !i.isOpening) : [];
   const lineTax = useLineTaxCodes("sales", form.date);
   const taxExempt = Boolean(customer?.taxExempt);
   const subtotal = productTotal(form.lines);
   const taxed = taxable && form.lines.some((l) => l.tax);
-  const tax = taxable && !taxExempt ? productTax(form.lines, lineTax.rates) : 0;
-  const total = Math.round((subtotal + tax) * 100) / 100;
+  const tax = taxable && !taxExempt ? productTax(form.lines, lineTax.rates, 0, form.inclusive) : 0;
+  const total = credit ? credit.available : Math.round((form.inclusive ? subtotal : subtotal + tax) * 100) / 100;
   const set = <K extends keyof LineForm>(k: K, val: LineForm[K]) => (setForm((f) => ({ ...f, [k]: val })), v.clear(k));
 
   const schema = yup.object({
@@ -584,61 +598,49 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
     message: yup.string().max(1000, "Use 1,000 characters or fewer"),
     statementMessage: yup.string().max(1000, "Use 1,000 characters or fewer"),
     memo: yup.string().max(1000, "Use 1,000 characters or fewer"),
-    lines: productLinesSchema({ requireAccount: kind === "refund-receipt", items }),
+    ...(credit ? {} : { lines: productLinesSchema({ items }) }),
   });
 
   async function post(): Promise<{ id: string; number: string; posted: boolean }> {
-    const lines = productLinesPayload(form.lines, productOptions, items).map((l) => (taxable && !taxExempt ? l : { ...l, taxCode: null }));
+    const lines = productLinesPayload(form.lines, productOptions, items).map((l) => (taxable && !taxExempt ? { ...l, taxInclusive: form.inclusive && l.taxCode ? true : undefined } : { ...l, taxCode: null }));
     const description = form.statementMessage.trim() || form.memo.trim() || undefined;
     if (kind === "credit-note") {
       const note = await api<{ id: string; creditNoteNumber: string }>("/api/v1/ar/credit-notes", {
         method: "POST",
-        body: JSON.stringify({ customerId: form.customerId, noteDate: form.date, reason: form.message.trim() || "Customer credit", net: Math.round(total * 100) / 100, description: description ?? lines.map((l) => l.description).join("; ").slice(0, 500) }),
+        body: JSON.stringify({ customerId: form.customerId, noteDate: form.date, reason: form.message.trim() || "Customer credit", invoiceId: form.invoiceId || undefined, lines, description: description ?? lines.map((l) => l.description).join("; ").slice(0, 500) }),
       });
       return { id: note.id, number: note.creditNoteNumber, posted: true };
     }
     if (kind === "sales-receipt") {
-      const inv = await api<{ id: string; invoiceNumber: string; gross: number | string }>("/api/v1/ar/invoices", {
+      const { invoice: inv } = await api<{ invoice: { id: string; invoiceNumber: string } }>("/api/v1/ar/sales-receipts", {
         method: "POST",
-        body: JSON.stringify({ customerId: form.customerId, invoiceDate: form.date, dueDate: form.date, lines, description: form.message.trim() || description }),
+        body: JSON.stringify({
+          customerId: form.customerId,
+          date: form.date,
+          lines,
+          method: form.method,
+          financialAccountId: form.account || undefined,
+          reference: form.reference.trim() || undefined,
+          description: form.message.trim() || description,
+        }),
       });
       if (files.length) await uploadAttachments(api, "ArInvoice", inv.id, files);
-      // Collect exactly what the server billed, so a rounding difference never leaves the sale part-paid.
-      const received = Math.round(Number(inv.gross ?? total) * 100) / 100;
-      try {
-        await api("/api/v1/ar/receipts", {
-          method: "POST",
-          body: JSON.stringify({
-            customerId: form.customerId,
-            receiptDate: form.date,
-            method: form.method,
-            amount: received,
-            reference: form.reference.trim() || undefined,
-            financialAccountId: form.account || undefined,
-            allocations: [{ invoiceId: inv.id, amount: received }],
-          }),
-        });
-      } catch (e) {
-        throw new Error(`Sale ${inv.invoiceNumber} was posted, but the payment couldn't be recorded: ${(e as Error).message}. Record it with Receive payment.`);
-      }
       return { id: inv.id, number: inv.invoiceNumber, posted: true };
     }
     if (kind === "refund-receipt") {
-      const t = await api<{ id: string; number?: string; reference?: string }>("/api/v1/banking/payments", {
+      const t = await api<{ id: string; refundNumber: string }>("/api/v1/ar/refunds", {
         method: "POST",
         body: JSON.stringify({
+          customerId: form.customerId,
           financialAccountId: form.account,
-          transactionDate: form.date,
+          refundDate: form.date,
           method: toBankMethod(form.method),
-          reference: form.reference.trim() || `Refund ${form.number}`,
-          partyType: "CUSTOMER",
-          partyName: customer?.name,
-          relatedCustomerId: form.customerId || undefined,
+          reference: form.reference.trim() || undefined,
           description: form.message.trim() || `Refund to ${customer?.name ?? "customer"}`,
-          lines: lines.map((l) => ({ accountId: l.accountId!, amount: Math.round(l.quantity * l.unitPrice * 100) / 100, description: l.description.slice(0, 300) })),
+          ...(credit ? { sources: [{ source: credit.type, sourceId: credit.id, amount: credit.available }] } : { lines }),
         }),
       });
-      return { id: t.id, number: t.number ?? form.number, posted: true };
+      return { id: t.id, number: t.refundNumber, posted: true };
     }
     const doc = await api<{ id: string; number: string }>(`/api/v1/commercial/${kind}`, {
       method: "POST",
@@ -755,7 +757,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
             error={v.errors.customerId}
             onPick={(c) => {
               setCustomer(c);
-              setForm((f) => ({ ...f, customerId: c?.id ?? "", email: c?.email ?? f.email, billing: c ? [c.name, c.physicalAddress].filter(Boolean).join("\n") : f.billing }));
+              setForm((f) => ({ ...f, credit: "", invoiceId: "", customerId: c?.id ?? "", email: c?.email ?? f.email, billing: c ? [c.name, c.physicalAddress].filter(Boolean).join("\n") : f.billing }));
               v.clear("customerId");
             }}
           />
@@ -799,16 +801,39 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
         ) : null}
       </HeaderBand>
 
-      <LineGrid
-        columns={columns}
-        rows={form.lines}
-        onChange={(rows) => set("lines", rows)}
-        newRow={emptyProductLine}
-        errors={v.errors}
-        copy={false}
-        minRows={1}
-      />
-      {kind === "refund-receipt" ? <p className="muted" style={{ marginTop: -12 }}>Refund lines post against the chosen income account, or the chosen item's income account.</p> : null}
+      {openInvoices.length ? (
+        <div className="txn-row">
+          <TField label="Apply to invoice" className="w-lg" hint="Leave empty to keep the credit on the customer's account">
+            <Select value={form.invoiceId} onChange={(i) => set("invoiceId", i)} options={[{ value: "", label: "Keep on account" }, ...openInvoices.map((i) => ({ value: i.id, label: `${i.number} · ${i.currency} ${i.open.toLocaleString("en-US")} open` }))]} />
+          </TField>
+        </div>
+      ) : null}
+      {refundable.length ? (
+        <div className="txn-row">
+          <TField label="What are you refunding?" className="w-lg" hint="Refunding a credit the customer already holds doesn't reduce sales again">
+            <Select value={form.credit} onChange={(c) => set("credit", c)} options={[{ value: "", label: "The products or services below" }, ...refundable.map((c) => ({ value: `${c.type}:${c.id}`, label: `${c.type === "PAYMENT" ? "Payment" : "Credit note"} ${c.number} · ${c.currency} ${c.available.toLocaleString("en-US")}` }))]} />
+          </TField>
+        </div>
+      ) : null}
+      {taxable && !credit && lineTax.options ? (
+        <div className="txn-row">
+          <TField label="Amounts are" className="w-md">
+            <Select value={form.inclusive ? "in" : "ex"} onChange={(x) => set("inclusive", x === "in")} options={[{ value: "ex", label: "Exclusive of tax" }, { value: "in", label: "Inclusive of tax" }]} searchable={false} />
+          </TField>
+        </div>
+      ) : null}
+      {credit ? null : (
+        <LineGrid
+          columns={columns}
+          rows={form.lines}
+          onChange={(rows) => set("lines", rows)}
+          newRow={emptyProductLine}
+          errors={v.errors}
+          copy={false}
+          minRows={1}
+        />
+      )}
+      {kind === "refund-receipt" && !credit ? <p className="muted" style={{ marginTop: -12 }}>The refund posts to sales returns and takes the VAT back off what you owe.</p> : null}
 
       <div className="txn-lower">
         <div className="txn-lower-left" style={{ width: "min(620px, 100%)" }}>
@@ -829,21 +854,23 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
             rows={
               kind === "credit-note"
                 ? [
-                    { label: "Subtotal", value: rwf(total, currency) },
+                    { label: "Subtotal", value: rwf(credit ? total : subtotal, currency) },
+                    ...(taxed ? [{ label: taxExempt ? "Tax (customer is tax-exempt)" : form.inclusive ? "Tax included" : "Tax", value: rwf(tax, currency) }] : []),
                     { label: "Total", value: rwf(total, currency), strong: true },
                     { label: "Total Credit", value: rwf(total, currency) },
                   ]
                 : kind === "sales-receipt"
                   ? [
                       { label: "Subtotal", value: rwf(subtotal, currency) },
-                      ...(taxed ? [{ label: taxExempt ? "Tax (customer is tax-exempt)" : "Tax", value: rwf(tax, currency) }] : []),
+                      ...(taxed ? [{ label: taxExempt ? "Tax (customer is tax-exempt)" : form.inclusive ? "Tax included" : "Tax", value: rwf(tax, currency) }] : []),
                       { label: "Total", value: rwf(total, currency), strong: true },
                       { label: "Amount received", value: rwf(total, currency) },
                       { label: "Balance due", value: rwf(0, currency), strong: true, rule: true },
                     ]
                   : kind === "refund-receipt"
                     ? [
-                        { label: "Subtotal", value: rwf(total, currency) },
+                        { label: "Subtotal", value: rwf(credit ? total : subtotal, currency) },
+                        ...(taxed && !credit ? [{ label: taxExempt ? "Tax (customer is tax-exempt)" : form.inclusive ? "Tax included" : "Tax", value: rwf(tax, currency) }] : []),
                         { label: "Total", value: rwf(total, currency), strong: true },
                         { label: "Total Amount Refunded", value: rwf(total, currency) },
                       ]

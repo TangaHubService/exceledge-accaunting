@@ -8,6 +8,8 @@ export interface DocumentLineInput {
   discount?: number;
   taxCode?: string | null;
   accountId?: string | null;
+  /** The unit price and discount already include tax. */
+  taxInclusive?: boolean;
 }
 
 export interface TaxCodeRate {
@@ -57,7 +59,6 @@ export function computeDocumentLines(lines: DocumentLineInput[], taxCodes: TaxCo
     if (discount < 0) throw new Error(`${label}: discount cannot be negative`);
     const gross = round(quantity * unitPrice);
     if (discount - gross > 0.0001) throw new Error(`${label}: discount is more than the line amount`);
-    const net = cents(gross - discount);
     let taxRate = 0;
     let taxCode: string | null = null;
     let taxAccountId: string | null = null;
@@ -72,16 +73,22 @@ export function computeDocumentLines(lines: DocumentLineInput[], taxCodes: TaxCo
       taxCode = code.code;
       taxAccountId = code.glAccountId ?? null;
     }
+    // A price with tax inside is kept as its price before tax, so documents always read the same way.
+    const total = cents(gross - discount);
+    const inside = Boolean(line.taxInclusive) && taxRate > 0;
+    const tax = inside ? cents((total * taxRate) / (100 + taxRate)) : cents((total * taxRate) / 100);
+    const net = inside ? cents(total - tax) : total;
+    const discountNet = inside ? cents((discount * 100) / (100 + taxRate)) : discount;
     return {
       lineNumber: index + 1,
       description,
       quantity,
-      unitPrice,
-      discount,
+      unitPrice: inside ? round((net + discountNet) / quantity) : unitPrice,
+      discount: discountNet,
       net,
       taxCode,
       taxRate,
-      tax: cents((net * taxRate) / 100),
+      tax,
       accountId: line.accountId || null,
       taxAccountId,
     };

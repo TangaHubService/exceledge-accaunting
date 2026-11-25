@@ -740,6 +740,8 @@ export async function mergeAccounts(companyId: string, sourceId: string, targetI
   if (linked > 1) throw new Error("Both accounts are linked to bank or cash accounts in Banking; close one there first");
 
   const merged = await inTransaction(async () => {
+    // Lets the ledger trigger accept moving posted entries to the surviving account, for this transaction only.
+    await prisma.$executeRawUnsafe(`SET LOCAL app.ledger_merge = 'on'`);
     for (const c of idColumns()) {
       try {
         await prisma.$executeRawUnsafe(`UPDATE "${c.table}" SET "${c.column}" = $1 WHERE "${c.column}" = $2`, targetId, sourceId);

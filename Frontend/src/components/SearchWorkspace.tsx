@@ -15,11 +15,21 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SEARCH_EXPLORE, SEARCH_QUICK, SEARCH_RECENT, SEARCH_RECENT_QUERIES } from "../lib/dashboard-dummy";
+import { SEARCH_EXPLORE, SEARCH_QUICK } from "../lib/dashboard-dummy";
+import { amount } from "../lib/format";
 import { navigate } from "../lib/router";
+import { useResource, useSession } from "../lib/session";
+import { TXN_LABELS, type TxnKind } from "../lib/txn";
 
 const SW = 1.5;
 const FILTERS = ["All", "Transactions", "Contacts", "Reports", "Pages", "Help"] as const;
+
+/** The list each kind of transaction is found in. */
+const LIST_PATHS: Record<string, string> = {
+  invoice: "/invoices", payment: "/invoices", "credit-note": "/invoices", estimate: "/invoices", "sales-order": "/invoices", proposal: "/invoices",
+  bill: "/bills", "bill-payment": "/supplier-payments", "supplier-credit": "/suppliers", "purchase-order": "/suppliers", expense: "/expenses/list",
+  journal: "/journals", "bank-deposit": "/banking/transactions", cheque: "/banking/transactions", transfer: "/banking/transactions", "item-receipt": "/inventory/movements", "inventory-adjustment": "/inventory/movements", time: "/time/weekly",
+};
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -46,23 +56,22 @@ export function SearchWorkspace({ open, onClose }: Props) {
     };
   }, [open, onClose]);
 
+  const { can } = useSession();
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const t = window.setTimeout(() => setTerm(query.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [query]);
+  const found = useResource<{ rows: Array<{ id: string; kind: TxnKind; number: string; party: string; amount: number }> }>(
+    open && can("report:view") ? `/api/v1/workspace/transactions?pageSize=8${term ? `&q=${encodeURIComponent(term)}` : ""}` : null,
+  );
   const recent = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = [...SEARCH_RECENT];
-    if (filter !== "All") {
-      const toneMap: Record<string, string[]> = {
-        Transactions: ["invoice", "expense", "page"],
-        Contacts: ["page"],
-        Reports: ["report", "invoice"],
-        Pages: ["page"],
-        Help: ["report", "page"],
-      };
-      const allowed = new Set(toneMap[filter] ?? []);
-      list = list.filter((r) => allowed.has(r.tone));
-    }
-    if (!q) return list;
-    return list.filter((r) => r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q));
-  }, [query, filter]);
+    if (filter !== "All" && filter !== "Transactions") return [];
+    return (found.data?.rows ?? []).map((r) => {
+      const tag = TXN_LABELS[r.kind] ?? r.kind;
+      return { id: r.id, title: `${tag} ${r.number}`.trim(), subtitle: [r.party, amount(r.amount)].filter(Boolean).join(" · "), tag, tone: "invoice" as string, to: LIST_PATHS[r.kind] ?? "/reports/standard" };
+    });
+  }, [found.data, filter]);
 
   if (!open) return null;
 
@@ -124,7 +133,7 @@ export function SearchWorkspace({ open, onClose }: Props) {
 
         <div className="ee-search-ws-body">
           <div className="ee-search-ws-main">
-            <h3>Recently opened</h3>
+            <h3>{term ? "Matching transactions" : "Latest transactions"}</h3>
             <ul className="ee-search-ws-recent">
               {recent.map((item) => (
                 <li key={item.id}>
@@ -197,15 +206,6 @@ export function SearchWorkspace({ open, onClose }: Props) {
               ))}
             </ul>
 
-            <h3>Recent searches</h3>
-            <div className="ee-search-ws-chips">
-              {SEARCH_RECENT_QUERIES.map((q) => (
-                <button key={q} type="button" className="ee-search-ws-chip" onClick={() => setQuery(q)}>
-                  <Search size={13} strokeWidth={SW} />
-                  {q}
-                </button>
-              ))}
-            </div>
           </aside>
         </div>
 

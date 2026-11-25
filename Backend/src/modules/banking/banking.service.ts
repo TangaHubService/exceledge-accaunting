@@ -13,6 +13,7 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { FinancialAccount, Prisma } from "@prisma/client";
+import { reverseRefund } from "../ar/ar.service";
 import { assertFunctionalDocument, controlAccounts, defaultsFor, explicitCurrency, money, nextNumber } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { createPayment, reversePayment } from "../ap/ap.service";
@@ -397,13 +398,16 @@ const AR_METHODS: Record<string, "CASH" | "BANK" | "MOBILE_MONEY" | "CARD" | "CH
 const AP_METHODS: Record<string, "CASH" | "BANK" | "MOBILE_MONEY" | "CHEQUE" | "EFT"> = { CASH: "CASH", BANK_TRANSFER: "BANK", CARD: "BANK", EFT: "EFT", MOBILE_MONEY: "MOBILE_MONEY", CHEQUE: "CHEQUE" };
 const KIND_METHOD: Record<FinancialAccountKind, "CASH" | "BANK" | "MOBILE_MONEY"> = { CASH: "CASH", PETTY_CASH: "CASH", BANK: "BANK", MOBILE_MONEY: "MOBILE_MONEY" };
 
-/** Receivables and payables control accounts carry a subledger, so money reaches them only through a customer or supplier. */
+/** Control accounts carry a subledger, so money reaches them only through a customer, a supplier or Inventory. */
 async function assertNoControlAccounts(companyId: string, lines: AllocationLine[]) {
   const controls = await controlAccounts(companyId);
-  const hit = lines.find((l) => ["receivables", "payables"].includes(controls.get(l.accountId) ?? ""));
+  const hit = lines.find((l) => controls.has(l.accountId));
   if (!hit) return;
   const receivables = controls.get(hit.accountId) === "receivables";
   const gl = await prisma.account.findFirst({ where: { id: hit.accountId, companyId }, select: { code: true, name: true } });
+  if (controls.get(hit.accountId) === "inventory") {
+    throw new Error(`${gl ? `${gl.code} ${gl.name}` : "This account"} is an inventory control account; record the stock in Inventory so quantities and value stay in step`);
+  }
   throw new Error(
     `${gl ? `${gl.code} ${gl.name}` : "This account"} is a ${receivables ? "receivables" : "payables"} control account; choose the ${receivables ? "customer" : "supplier"} so their ledger is updated, or record it in ${receivables ? "Receivables" : "Payables"}`,
   );
@@ -669,6 +673,8 @@ async function reverseOnce(companyId: string, id: string, input: ReversalInput, 
     reversalJournalId = (await reverseReceipt(companyId, txn.arReceiptId, actor, { reason: input.reason, reversalDate })).journalId;
   } else if (txn.apPaymentId) {
     reversalJournalId = (await reversePayment(companyId, txn.apPaymentId, { reason: input.reason, reversalDate }, actor)).journalId;
+  } else if (txn.arRefundId) {
+    reversalJournalId = (await reverseRefund(companyId, txn.arRefundId, actor, { reason: input.reason, reversalDate })).journalId;
   } else {
     const original = await prisma.journal.findFirstOrThrow({ where: { id: txn.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
     const lines = reverseJournalLines(linesInJournalCurrency(original.lines));

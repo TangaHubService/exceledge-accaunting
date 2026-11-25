@@ -1,0 +1,230 @@
+PASS    S01 Register business and configure accounting :: activated; 91 accounts; 12 periods
+PASS    S02a Create a chart of accounts entry (with parent) :: 201 6155
+PASS    S01b Default tax codes available :: ["VAT18","VATIN","VAT0","VATEX","WHT15","WHT3"]
+PASS    S02b Opening balances batch incl. customer balance :: create 201 approve 200  post 200 (ok); re-post 400; AR control 1200=200000; in ageing=true; open invoices for customer={"rows":[{"id":"cmwv69o8f00kmp02y8jllcvuy","invoiceNumber":"INV-2026-000001","invoiceDate":"2026-01-01T00:00:00.000Z","d
+          JOU-2026-000001 2026-01-01 POSTED: Dr 1110 Bank Account 1000000; Dr 1200 Accounts Receivable 200000; Cr 3020 Opening Balance Equity 1200000
+PASS    S02c Customer created with opening balance :: 201  in ageing=true
+          JOU-2026-000002 2026-01-01 POSTED: Dr 1200 Accounts Receivable 50000; Cr 3020 Opening Balance Equity 50000
+bank 201 undefined cash 201 undefined
+ids cmwv69ol300olp02yv1qlbi57 cmwv69on900p6p02yqfip3k25 undefined
+PASS    S03 Owner capital into bank 5,000,000 :: 201  3000=-5000000 1110=6000000
+          JOU-2026-000003 2026-01-02 POSTED: Dr 1110 Bank Account 5000000; Cr 3000 Share capital 5000000
+PASS    S03b Owner cash into till 1,000,000 :: 201  1100=1000000
+          JOU-2026-000004 2026-01-02 POSTED: Dr 1100 Cash on Hand 1000000; Cr 3000 Share capital 1000000
+PASS    S04 Buy inventory for cash (ERP stock in + cash bill + payment) 50 x 20,000 :: 201 | 201 | 201 | 201 1300=1000000 GRNI=0 AP=0 inputVAT=180000
+          JOU-2026-000005 2026-01-05 POSTED: Dr 1300 Inventory Asset 1000000; Cr 2130 Goods Received Not Invoiced 1000000
+          JOU-2026-000006 2026-01-05 POSTED: Dr 2130 Goods Received Not Invoiced 1000000; Dr 1400 Input Tax Receivable 180000; Cr 2100 Accounts Payable 1180000
+          JOU-2026-000007 2026-01-05 POSTED: Dr 2100 Accounts Payable 1180000; Cr 1110 Bank Account 1180000
+PASS    S05 Buy inventory on credit in the app (item receipt then bill) 20 x 22,000 + VAT :: receipt 201  bill 200  gross=519200 1300=1440000 GRNI=0 AP=-519200
+          JOU-2026-000008 2026-01-06 POSTED: Dr 1300 Inventory Asset 440000; Cr 2130 Goods Received Not Invoiced 440000
+          JOU-2026-000009 2026-01-06 POSTED: Dr 2130 Goods Received Not Invoiced 440000; Dr 1400 Input Tax Receivable 79200; Cr 2100 Accounts Payable 519200
+PASS    S06 Partial supplier payment 200,000 :: 201  paid=200000/519200 AP=-319200
+          JOU-2026-000010 2026-01-10 POSTED: Dr 2100 Accounts Payable 200000; Cr 1110 Bank Account 200000
+PASS    S07 Cash POS sale 10 bags @30,000 + VAT with COGS :: sale 201  replay duplicate=true; stock 201  replay duplicate=true; COGS=205714.2857 Sales=-300000 VAT=-54000
+          JOU-2026-000011 2026-01-12 POSTED: Dr 1100 Cash on Hand 354000; Cr 4100 Sales Revenue 300000; Cr 2200 Output Tax Payable 54000
+          JOU-2026-000012 2026-01-12 POSTED: Dr 5100 Cost of Sales 205714.2857; Cr 1300 Inventory Asset 205714.2857
+PASS    S08 Credit sale invoice in the app with lines 500,000 + VAT18 :: 201  gross=590000 inventory after=1234285.7143 (app invoices do not move stock: by design, ERP owns stock)
+          JOU-2026-000013 2026-01-15 POSTED: Dr 1200 Accounts Receivable 590000; Cr 4100 Sales Revenue 500000; Cr 2200 Output Tax Payable 90000
+PASS    S08b Credit POS sale from ERP :: 201  invoice=S2 gross=118000 AR=958000
+          JOU-2026-000014 2026-01-16 POSTED: Dr 1200 Accounts Receivable 118000; Cr 4100 Sales Revenue 100000; Cr 2200 Output Tax Payable 18000
+PASS    S09 Partial customer payment 300,000 :: 201  paid=300000
+          JOU-2026-000015 2026-01-20 POSTED: Dr 1110 Bank Account 300000; Cr 1200 Accounts Receivable 300000
+PASS    S09b Customer advance (deposit) 100,000, allocated 60,000 :: 201  alloc 200  deposits=-40000
+          JOU-2026-000016 2026-01-20 POSTED: Dr 1100 Cash on Hand 100000; Cr 2120 Customer Deposits 100000
+          JOU-2026-000017 2026-01-20 POSTED: Dr 2120 Customer Deposits 60000; Cr 1200 Accounts Receivable 60000
+PASS    S10 Operating expense: rent 250,000 from bank :: 201  status=POSTED 6150=250000
+          JOU-2026-000018 2026-01-21 POSTED: Dr 6150 Rent or Lease of Buildings 250000; Cr 1110 Bank Account 250000
+PASS    S11 Other income: interest 15,000 :: 201 
+          JOU-2026-000019 2026-01-22 POSTED: Dr 1110 Bank Account 15000; Cr 4200 Interest Income 15000
+PASS    S12a POS sales return 1 bag for cash :: 201 ; stock 201 ; COGS 205714.2857 -> 185142.8571
+          JOU-2026-000020 2026-01-23 POSTED: Dr 4410 Sales Returns 30000; Dr 2200 Output Tax Payable 5400; Cr 1100 Cash on Hand 35400
+          JOU-2026-000021 2026-01-23 POSTED: Dr 1300 Inventory Asset 20571.4286; Cr 5100 Cost of Sales 20571.4286
+PASS    S12b Purchase return 2 bags via supplier credit note :: 201  inventory 1254857.1429 -> 1213714.2858 AP=-267280
+          JOU-2026-000022 2026-01-24 POSTED: Dr 2100 Accounts Payable 51920; Cr 1300 Inventory Asset 41142.8571; Cr 5200 Purchases 2857.1429; Cr 1400 Input Tax Receivable 7920
+PASS    S13a Customer credit note 50,000 + VAT on the invoice :: 201  AR=539000 VAT=-147600
+          JOU-2026-000023 2026-01-25 POSTED: Dr 4410 Sales Returns 50000; Dr 2200 Output Tax Payable 9000; Cr 1200 Accounts Receivable 59000
+PASS    S13b Refund unused customer deposit 40,000 :: 200  deposits=0
+          JOU-2026-000024 2026-11-24 POSTED: Dr 2120 Customer Deposits 40000; Cr 1100 Cash on Hand 40000
+PASS    S13c Cash refund of an open customer credit note :: 201  customer balance after=0
+          JOU-2026-000025 2026-01-25 POSTED: Dr 4410 Sales Returns 10000; Cr 1200 Accounts Receivable 10000
+          JOU-2026-000026 2026-01-26 POSTED: Dr 1200 Accounts Receivable 10000; Cr 1100 Cash on Hand 10000
+PASS    S13d Refund receipt as the screen posts it :: 201  customer balance still 0
+          JOU-2026-000027 2026-01-26 POSTED: Cr 1200 Accounts Receivable 11800; Dr 4410 Sales Returns 10000; Dr 2200 Output Tax Payable 1800
+          JOU-2026-000028 2026-01-26 POSTED: Dr 1200 Accounts Receivable 11800; Cr 1100 Cash on Hand 11800
+PASS    S14 Transfer 100,000 bank to cash with 1,000 fee :: 201  charges=1000
+          JOU-2026-000029 2026-01-26 POSTED: Dr 1100 Cash on Hand 100000; Cr 1110 Bank Account 100000; Dr 6430 Bank Charges 1000; Cr 1110 Bank Account 1000
+PASS    S15 Inventory write-off 2 bags :: 201  inventory 1213714.2858 -> 1172571.4287 writeoff=41142.8571
+          JOU-2026-000030 2026-01-27 POSTED: Dr 6410 Inventory Write-Off 41142.8571; Cr 1300 Inventory Asset 41142.8571
+PASS    S16 Fixed asset 1,200,000 over 60 months; depreciate January :: asset 201  dep 201  repeat 400 Depreciation for 2026-01 is already posted expense=20000
+          JOU-2026-000031 2026-01-03 POSTED: Dr 1500 Fixed Asset Cost 1200000; Cr 1110 Bank Account 1200000
+          JOU-2026-000032 2026-01-31 POSTED: Dr 6300 Depreciation Expense 20000; Cr 1510 Accumulated Depreciation 20000
+PASS    S17 Import bank statement and reconcile January :: import 201 ; re-import 400 Every line in this file is already imported or falls in a reconciled period; start 201  review 200  approve 200  complete 200  unmatched=0
+PASS    A01 Every posted journal balances in the GL :: 0 unbalanced of 32
+PASS    A02 Trial balance :: debit 8640937.1429 credit 8640937.1429 diff 0
+PASS    A03 Assets = liabilities + equity :: 8023651.4287 = 453080 + 7570571.4287
+PASS    A04 Net profit reflected in equity :: profit 320571.4287; CYE 320571.4287
+PASS    A05 Cash flow reconciles with cash accounts :: {"operating":-1169200,"investing":-1200000,"financing":7250000,"netChange":4880800,"cashChange":4880800,"depreciation":20000,"disposalResult":0,"profit":320571.4287}
+INFO    A06 Inventory subledger = GL 1300 :: GL 1300=1172571.4287; sub={"value":"1172571.4287"}; report={"accounts":[{"id":"cmwv69nse0059p02ykrhxc44b","code":"1300","name":"Inventory Asset"}],"accountsDiffer":false,"glValue":1172571.4287,"subledgerValue":1172571.4287,"difference":0,"explained":{"unpostedMovements":{"count":0,"value":0},"saleCostDifference":0},"c
+PASS    A07 AR control = customer balances :: GL 539000 vs customers 539000
+PASS    A08 AP control = supplier balances :: GL 267280 vs suppliers 267280
+PASS    A09 AR ageing total = AR control :: ageing 539000 control 539000
+PASS    A10 AP ageing total = AP control :: ageing 267280 control 267280
+INFO    A11 VAT report = VAT ledger (output 2200, input 1400) :: GL output 145800 input 251280; report {"from":"2026-01-01T00:00:00.000Z","to":"2026-01-31T23:59:59.999Z","outputAccount":{"id":"cmwv69nsg0061p02yjlc990pl","code":"2200","name":"Output Tax Payable"},"inputAccount":{"id":"cmwv69nse005ap02yvwgl8756","code":"1400","name":"Input Tax Receivable"},"totals":{"output":145800,"input":251280,"adjustments":0,"paid":0,"net":-105480,"outstanding":-105480,"zeroRatedSales":0,"zeroRatedPurchases":0,"exemptSales":0,"exemptPurchases":0},"outputLines":[{"id":"cmwv69pmt0104p02y7mn6ntm7","date":"2026-01-12T11:00:00.000Z","journalId":"cmwv69pma00zsp02y03o5rltt","journalNumber":"JOU-2026-000011","description":"Output VAT","sourceModule":"POS","sourceDocumentNumber":"S1","debit":0,"credit":54000,"amount
+INFO    A11b Tax reconciliation report :: {"from":"2026-01-01T00:00:00.000Z","to":"2026-01-31T23:59:59.999Z","vat":{"ledger":-105480,"gl":-105480,"ledgerVsGl":0,"filed":null,"ledgerVsFiled":null,"ebm":null,"ledgerVsEbm":null},"withholding":{"ledger":0,"gl":0,"difference":0},"fiscalDocuments":0}
+INFO    A12 Built-in integrity scan after scenarios :: 200 {"id":"cmwv69rz9023op02yrb3esvga","trigger":"MANUAL","runByErpUserId":441,"ranAt":"2026-11-24T20:53:50.181Z","findingCount":0,"errors":0,"checks":[{"check":"AR_SUBLEDGER","label":"Receivables ledger vs GL","count":0},{"check":"AP_SUBLEDGER","label":"Payables ledger vs GL","count":0},{"check":"INVENTORY_SUBLEDGER","label":"Inventory valuation vs GL","count":0},{"check":"DOCUMENT_WITHOUT_GL","label":"Documents without a posted journal","count":0},{"check":"UNBALANCED_JOURNAL","label":"Unbalanced or mismatched journals","count":0},{"check":"JOURNAL_NUMBER_GAP","label":"Journal number gaps","count":0},{"check":"NEGATIVE_CASH","label":"Negative cash and bank balances","count":0},{"check":"NEGATIV
+PASS    A13 Audit events written :: ["Account.CREATE=1","AccountingActivation.ACTIVATE=1","AccountingPolicy.CREATE=1","ApBill.POST=1","ApCreditNote.POST=1","ApPayment.POST=1","ApprovalPostingControls.CREATE=1","ArCreditNote.POST=3","ArDeposit.APPLY=1","ArDeposit.POST=1","ArDeposit.REFUND=1","ArInvoice.POST=1","ArReceipt.POST=1","ArRefund.POST=2","BankingPaymentSettings.CREATE=1","BankReconciliation.APPROVE=1","BankReconciliation.COMPLETE=1","BankReconciliation.CREATE=1","BankReconciliation.REVIEW=1","BankStatement.IMPORT=1","BankTransaction.POST=4","BusinessAccountingInfo.CREATE=1","CompanyProfile.CREATE=1","CurrencySettings.CREATE=1","Customer.CREATE=4","DefaultPostingAccounts.UPDATE=1","Expense.CREATE=1","Expense.POST=1","FinancialAccount.AUTO_MATCH=1","FinancialAccount.CREATE=2","FinancialYear.CREATE=1","FixedAsset.CAPITALIZE=1","FixedAsset.CREATE=1","FixedAssetDepreciationRun.DEPRECIATE=1","IntegrityScan.RUN=1","InventoryAccountingSettings.CREATE=1","InventoryAdjustment.CREATE=1","ItemReceipt.BILL=1","ItemReceipt.CREATE=1","Journal.CREATE=32","Journal.POST=32","LocalizationSettings.CREATE=1","NumberSequence.UPDATE=1","OpeningBalanceBatch.APPROVE=1","OpeningBalanceBatch.CREATE=1","OpeningBalanceBatch.POST=1","PartyDefaults.CREATE=1","SetupSectionStatus.APPROVE=3","Supplier.CREATE=1","TaxSettings.CREATE=1"]
+PASS    A14 Own audit event for receipts/payments/deposits/credit notes :: ArReceipt=true ApPayment=true ArDeposit=true ArCreditNote=true
+PASS    S18 Generate reports/exports :: 17 endpoints 200
+PASS    S19 Close January :: first attempt 400 VAT return prepared: No VAT return prepared for the period ending 2026-01-31; blockers=["VAT return prepared: No VAT return prepared for the period ending 2026-01-31"] override TAX_FILING 201;[] then 200  status=CLOSED
+PASS    S20 Modify transactions in the closed period :: journal 400 "Accounting period P1 is closed"; invoice 400 "Accounting period P1 is closed"; receipt 400 "Accounting period P1 is closed"; bill 400 "Accounting period P1 is closed"; bank payment 400 "Accounting period P1 is closed"; adjustment 400 "Accounting period P1 is closed"; expense 400 "Accounting period P1 is closed"; bank reversal dated in period 400 "A reversal can't be dated before the transaction"; ERP event 201 error="Accounting period P1 is closed" open exceptions=1; GL rows in period 75->75
+PASS    S20b Reverse a closed-period manual journal / void closed-period invoice :: void 200; reversal dated 2026-02-02
+          JOU-2026-000033 2026-02-02 POSTED: Dr 1200 Accounts Receivable 1000; Cr 4100 Sales Revenue 1000
+          JOU-2026-000034 2026-02-02 POSTED: Cr 1200 Accounts Receivable 1000; Dr 4100 Sales Revenue 1000
+PASS    E01 Same invoice submitted twice (double click, key sent as the web app does) :: 201,201 -> 1 invoices posted
+          JOU-2026-000035 2026-02-03 POSTED: Dr 1200 Accounts Receivable 7777; Cr 4100 Sales Revenue 7777
+PASS    E01b Same request with an Idempotency-Key header :: 1 receipts
+          JOU-2026-000036 2026-02-03 POSTED: Dr 1100 Cash on Hand 3333; Cr 1200 Accounts Receivable 3333
+PASS    E01c Same supplier invoice number entered twice :: 201 then 400 Supplier invoice DUP-1 is already recorded as BILL-2026-000003
+          JOU-2026-000037 2026-02-03 POSTED: Dr 5200 Purchases 500; Cr 2100 Accounts Payable 500
+[278cec16-b0ab-4029-ab0b-caf973dc3f3f] Invalid `prisma.arInvoice.create()` invocation in
+/Users/apple/Desktop/exceledge-accaunting/.claude/worktrees/quickbooks-integration-approach-c6580c/Backend/src/modules/ar/ar.service.ts:528:40
+
+  525   ? new Date(input.dueDate)
+  526   : new Date(invoiceDate.getTime() + customer.creditPeriodDays * 86_400_000);
+  527 const invoiceNumber = await nextNumber(companyId, "AR_INVOICE", "INV");
+→ 528 const draft = await prisma.arInvoice.create({
+        data: {
+          companyId: "cmwv69nmv0000p02yiwr61895",
+          customerId: "cmwv69o3a00gop02ydmitp4qw",
+          invoiceNumber: "INV-2026-000006",
+          invoiceDate: new Date("Invalid Date"),
+                       ~~~~~~~~~~~~~~~~~~~~~~~~
+          dueDate: new Date("Invalid Date"),
+          currency: "RWF",
+          exchangeRate: 1,
+          net: 5,
+          tax: 0,
+          discount: 0,
+          gross: 5,
+          description: undefined,
+          sourceModule: "AR",
+          sourceDocumentType: "ArInvoice",
+          createdByErpUserId: 441
+        }
+      })
+
+Invalid value for argument `invoiceDate`: Provided Date object is invalid. Expected Date.
+PASS    E02 Invalid amounts :: 400 net: Too small: expected number to be >0 | 400 net: Too small: expected number to be >0 | 400 amount: Too small: expected number to be >0 | 400 A date or amount isn't valid | 400 lines.0.quantity: Too small: expected number to be >0 | 400 Unbalanced journal: debit=10 credit=9 | 400 Invoice total must be positive | 400 Credit limit exceeded
+PASS    E02b Typed VAT that does not match any rate (net 100, tax 5,000) :: 400 Tax of 5000 is more than 18% of 100; check the amount or use lines with a tax code
+PASS    E03 Missing account mapping :: 400 Accounts receivable account is not configured; invoices 7->7
+PASS    E04 Insufficient stock adjustment -10,000 :: 400 Only 57 of Rice 25kg is in stock at that location qty=57
+INFO    E04b ERP oversell (POS sale beyond stock) :: 201 posted qty=-3 value=-61714.2857
+          JOU-2026-000038 2026-02-04 POSTED: Dr 5100 Cost of Sales 1234285.7144; Cr 1300 Inventory Asset 1234285.7144
+PASS    E05 Overpayment of invoice allocation :: over-allocate 400 Allocation exceeds invoice outstanding balance; unallocated receipt 201 unallocated=5000; outstanding 171000
+          JOU-2026-000039 2026-02-04 POSTED: Dr 1100 Cash on Hand 5000; Cr 1200 Accounts Receivable 5000
+PASS    E06 20 concurrent full payments of one invoice :: 1 succeeded, rows=1; errors=400 Invoice INV-2026-000006 was settled by another transaction at the same time; refresh and try again | 400 Allocation exceeds invoice outstanding balance
+          JOU-2026-000040 2026-02-05 POSTED: Dr 1200 Accounts Receivable 10000; Cr 4100 Sales Revenue 10000
+          JOU-2026-000041 2026-02-05 POSTED: Dr 1100 Cash on Hand 10000; Cr 1200 Accounts Receivable 10000
+PASS    E07 30 concurrent different journals; numbering and balances :: 30/30 posted, 30 unique; errors=
+          JOU-2026-000042 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000043 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000044 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000045 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000046 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000047 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000048 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000049 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000050 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000051 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000052 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000053 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000054 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000055 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000056 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000057 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000058 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000059 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000060 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000061 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000062 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000063 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000064 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000065 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000066 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000067 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000068 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000069 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000070 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+          JOU-2026-000071 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100
+PASS    E07b Cached account balance = GL after all :: 0 differ
+PASS    E08 Month-end and local-midnight ERP sale (UTC vs Kigali) :: 201; journalDate 2026-03-01T00:30:00.000Z; Feb revenue 17777; March revenue 100
+          JOU-2026-000072 2026-03-01 POSTED: Dr 1100 Cash on Hand 100; Cr 4100 Sales Revenue 100
+PASS    E09 Future-dated invoice beyond the financial year :: 400 No accounting period covers the journal date
+PASS    E10 Failure mid-posting leaves nothing (inactive account) :: 400 Account 4100 is inactive; [invoices,journals] 9,72 -> 9,72
+PASS    E11 Unauthorised access :: 401,403,403,401
+PASS    E12 Cross-business access to every id type :: 13 reads and 5 writes refused
+PASS    E12b Integration key scope :: shared key on a business with its own key: 401
+INFO    E13 Token for a new organisation auto-creates a company :: companies 2->3 (requires a valid ERP-signed token)
+PASS    E14 Void / reverse restores balances :: 200, again 400; AR 538444->538444; Sales -917877->-917877
+          JOU-2026-000073 2026-02-10 POSTED: Dr 1200 Accounts Receivable 4321; Cr 4100 Sales Revenue 4321
+          JOU-2026-000074 2026-02-10 POSTED: Cr 1200 Accounts Receivable 4321; Dr 4100 Sales Revenue 4321
+PARTIAL E15 Edit a posted invoice :: PUT 404 PATCH 404: no edit endpoint; void and re-enter only
+PASS    E16 Delete of posted journal through API / database :: API 404; direct UPDATE gl_entries blocked; direct UPDATE audit_events blocked
+PASS    E17 Cash-basis policy :: note says "Accrual basis, IFRS SME framework. Amounts are in RWF." but profit cash=-899437.2857 accrual=-899437.2857
+INFO    E17b Setting cash basis via setup API :: 400 accountingBasis: Only the accrual basis is supported; cash-basis reports are not available yet
+PASS    E18 Disposal gain in cash flow :: 200  cashflow {"operating":0,"investing":1300000,"financing":0,"netChange":1300000,"cashChange":1300000,"depreciation":0,"disposalResult":120000,"profit":120000} (expected investing 1,300,000, operating 0)
+          JOU-2026-000075 2026-04-15 POSTED: Dr 1510 Accumulated Depreciation 20000; Cr 1500 Fixed Asset Cost 1200000; Dr 1110 Bank Account 1300000; Cr 7300 Gain on Disposal 120000
+PASS    E19 Rounding: 3 lines of 33.33 x VAT18 and RWF amounts :: net 99.99 tax 18 gross 117.99 (RWF has no minor unit; fractional RWF accepted)
+          JOU-2026-000076 2026-02-12 POSTED: Dr 1200 Accounts Receivable 117.99; Cr 4100 Sales Revenue 99.99; Cr 2200 Output Tax Payable 18
+PASS    E20 VAT-inclusive pricing :: net 1000 tax 180 gross 1180
+          JOU-2026-000077 2026-02-12 POSTED: Dr 1200 Accounts Receivable 1180; Cr 4100 Sales Revenue 1000; Cr 2200 Output Tax Payable 180
+PASS    E21 Bad debt write-off of an invoice :: 201  bad debt=10
+          JOU-2026-000078 2026-02-19 POSTED: Dr 1200 Accounts Receivable 10; Cr 4100 Sales Revenue 10
+          JOU-2026-000079 2026-02-20 POSTED: Dr 6200 Bad Debt Expense 10; Cr 1200 Accounts Receivable 10
+PASS    E22 Reports with 100,000 GL rows :: 100,000 rows: statements 359ms, TB 110ms, ledger page 186ms (synthetic rows, local database)
+PASS    E23 Draft journal in AR account / inventory manual posting blocked :: 400 Account 1300 is the inventory control account; post through the inventory module so its subledger stays in step
+PASS    E23b Bank receipt/payment coded straight to AR, AP or inventory control :: 1200:400 1200 Accounts Receivable is a receivables control account; choose the customer s | 2100:400 2100 Accounts Payable is a payables control account; choose the supplier so thei | 1300:400 1300 Inventory Asset is an inventory control account; record the stock in Invent | 2200:201 ACCEPTED
+          JOU-2026-000080 2026-02-20 POSTED: Dr 2200 Output Tax Payable 10; Cr 1110 Bank Account 10
+PASS    E23c Expense coded to AR/AP/inventory control :: 1200:400 1200 Accounts Receivable is the receivables control account; choose an expense a | 2100:400 2100 Accounts Payable is the payables control account; choose an expense account | 1300:400 1300 Inventory Asset is the inventory control account; choose an expense account
+PASS    E23d Invoice/bill line coded to control accounts :: 1200: invoice 400 Account 1200 is the receivables control account and can't be, bill 400 Account 1200 is the receivables control account and can't be | 2100: invoice 400 Account 2100 is the payables control account and can't be us, bill 400 Account 2100 is the payables control account and can't be us | 1300: invoice 400 Account 1300 is the inventory control account and can't be u, bill 400 Account 1300 is the inventory control account and can't be u
+PASS    E24 Approvals default: creator posts own large journal :: 400 Journal JOU-2026-000081 needs approval before posting (1 approval level(s) for 10); submit it for approval
+PASS    E25 Reverse and unlock: reopen closed period then audit :: 200 ; audit events on period=3
+PASS    E26 Ageing as of a past date (31 Jan) ignores later invoices and payments :: ageing at 31 Jan 539000; control at 31 Jan 539000; 6 invoices dated after 31 Jan exist
+PASS    E27 Ageing with a USD customer :: rate 201 cust 201 inv 201 ; GL AR rose 1400000 RWF; ageing total rose 1400000; dashboard {"totalCustomers":7,"activeCustomers":7,"cashCustomers":1,"creditCustomers":6,"totalOutstanding":1948074.99,"totalDeposits":0,"overdueInvoices":8,"creditUtilization":0.0077,"ageing":[{"key":"CURRENT","label":"Current","a
+          JOU-2026-000081 2026-02-10 POSTED: Dr 1200 Accounts Receivable 1400000; Cr 4100 Sales Revenue 1400000
+INFO    E28 Year-end: profit to retained earnings; P&L unaffected :: covered by tests/wave-c-closing.test.ts (passed)
+INFO    E29 Post to a FUTURE period (2026-12-15) :: 400 Accounting period P12 is future
+[f9bd551b-76a4-46e2-b4eb-d2fc21bb6a2d] Invalid `prisma.arInvoice.create()` invocation in
+/Users/apple/Desktop/exceledge-accaunting/.claude/worktrees/quickbooks-integration-approach-c6580c/Backend/src/modules/ar/ar.service.ts:528:40
+
+  525   ? new Date(input.dueDate)
+  526   : new Date(invoiceDate.getTime() + customer.creditPeriodDays * 86_400_000);
+  527 const invoiceNumber = await nextNumber(companyId, "AR_INVOICE", "INV");
+→ 528 const draft = await prisma.arInvoice.create({
+        data: {
+          companyId: "cmwv69nmv0000p02yiwr61895",
+          customerId: "cmwv69o3a00gop02ydmitp4qw",
+          invoiceNumber: "INV-2026-000012",
+          invoiceDate: new Date("Invalid Date"),
+                       ~~~~~~~~~~~~~~~~~~~~~~~~
+          dueDate: new Date("Invalid Date"),
+          currency: "RWF",
+          exchangeRate: 1,
+          net: 5,
+          tax: 0,
+          discount: 0,
+          gross: 5,
+          description: undefined,
+          sourceModule: "AR",
+          sourceDocumentType: "ArInvoice",
+          createdByErpUserId: 441
+        }
+      })
+
+Invalid value for argument `invoiceDate`: Provided Date object is invalid. Expected Date.
+PASS    E30 Error messages do not leak internals :: A date or amount isn't valid
+PASS    E31 Formula/script text in names :: 06,'=HYPERLINK(1),
+INFO    A15 Integrity scan after edge cases :: {"id":"cmwv6aab62b0hp02y7q3xyvr5","trigger":"MANUAL","runByErpUserId":441,"ranAt":"2026-11-24T20:54:13.939Z","findingCount":1,"errors":0,"checks":[{"check":"AR_SUBLEDGER","label":"Receivables ledger vs GL","count":0},{"check":"AP_SUBLEDGER","label":"Payables ledger vs GL","count":0},{"check":"INVENTORY_SUBLEDGER","label":"Inventory valuation vs GL","count":0},{"check":"DOCUMENT_WITHOUT_GL","label":"Documents without a posted journal","count":0},{"check":"UNBALANCED_JOURNAL","label":"Unbalanced or mismatched journals","count":0},{"check":"JOURNAL_NUMBER_GAP","label":"Journal number gaps","count":0},{"check":"NEGATIVE_CASH","label":"Negative cash and bank balances","count":0},{"check":"NEGATIVE_STOCK","label":"Stock below zero","count":1}],"findings":[{"check":"NEGATIVE_STOCK","details":{"sku":"R25","value":-61714.2857,"itemId":"cmwv69oyy00rvp02y3juyx2bt","quantity":-3,"locationId":"cmwv69oz200rxp02yxsb2zwno"},"message":"Rice 25kg at Main is -3 in stock (value -61714.29); check receipts and counts.","severity":"WARNING"}]}
+PASS    A16 Final: balance sheet and cash flow :: A 8288530.7043 L 413768 E 7874762.7043; CF 6159223 vs 6159223
+PASS    A17 Final: ageing = control and integrity clean, including USD :: ageing AR 1939741.99 AP 267780; AR 1939741.99 vs 540741.99; AP 267780 vs 267780
+PASS 79 FAIL 0 PARTIAL 1 INFO 10

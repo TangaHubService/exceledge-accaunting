@@ -16,6 +16,7 @@ export const documentLines = z
       discount: z.number().min(0).optional(),
       taxCode: z.string().trim().max(40).nullable().optional(),
       accountId: z.string().nullable().optional(),
+      taxInclusive: z.boolean().optional(),
     }),
   )
   .min(1)

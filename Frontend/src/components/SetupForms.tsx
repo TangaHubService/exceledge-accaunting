@@ -278,7 +278,7 @@ export function ProfileForm({ snap, sectionKey, status, onSaved }: SectionProps)
   );
 }
 
-const BASES = options(["ACCRUAL", "CASH", "MODIFIED_CASH"]);
+const BASES = options(["ACCRUAL"]);
 const FRAMEWORKS = options(["IFRS", "IFRS_SME", "IPSAS", "LOCAL_GAAP", "INTERNAL"], { IFRS: "IFRS", IFRS_SME: "IFRS for SMEs", IPSAS: "IPSAS", LOCAL_GAAP: "Local GAAP", INTERNAL: "Internal" });
 const VALUATION = options(["WEIGHTED_AVERAGE", "FIFO", "SPECIFIC_IDENTIFICATION"], { FIFO: "FIFO (first in, first out)" });
 
@@ -293,7 +293,7 @@ export function BusinessInfoForm({ snap, sectionKey, status, onSaved }: SectionP
     numberOfBranches: str(b, "numberOfBranches"),
     headOffice: str(b, "headOffice"),
     reportingStructure: str(b, "reportingStructure"),
-    accountingBasis: str(b, "accountingBasis", "ACCRUAL"),
+    accountingBasis: "ACCRUAL",
     reportingFramework: str(b, "reportingFramework", "IFRS_SME"),
     defaultLanguage: str(b, "defaultLanguage", "en"),
     dateFormat: str(b, "dateFormat", "YYYY-MM-DD"),
@@ -554,7 +554,7 @@ export function PoliciesForm({ snap, sectionKey, status, activated, onSaved }: S
   const { api } = useSession();
   const p = snap.policies;
   const [f, set] = useFields({
-    accountingBasis: str(p, "accountingBasis", "ACCRUAL"),
+    accountingBasis: "ACCRUAL",
     inventoryValuationMethod: str(p, "inventoryValuationMethod", "WEIGHTED_AVERAGE"),
     depreciationPolicy: str(p, "depreciationPolicy"),
     revenueRecognitionMethod: str(p, "revenueRecognitionMethod"),

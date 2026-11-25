@@ -1,0 +1,819 @@
+[
+ {
+  "id": "S01",
+  "name": "Register business and configure accounting",
+  "expected": "Company activates with periods, currency, default accounts",
+  "actual": "activated; 91 accounts; 12 periods",
+  "result": "PASS"
+ },
+ {
+  "id": "S02a",
+  "name": "Create a chart of accounts entry (with parent)",
+  "expected": "201 and account saved",
+  "actual": "201 6155",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "S01b",
+  "name": "Default tax codes available",
+  "expected": "VAT18, VAT0, VATEX, VATIN",
+  "actual": "[\"VAT18\",\"VATIN\",\"VAT0\",\"VATEX\",\"WHT15\",\"WHT3\"]",
+  "result": "PASS"
+ },
+ {
+  "id": "S02b",
+  "name": "Opening balances batch incl. customer balance",
+  "expected": "Posted once; equity balances; customer balance appears in AR ageing",
+  "actual": "create 201 approve 200  post 200 (ok); re-post 400; AR control 1200=200000; in ageing=true; open invoices for customer={\"rows\":[{\"id\":\"cmwv56wx000kmg0ueg83jy7vz\",\"invoiceNumber\":\"INV-2026-000001\",\"invoiceDate\":\"2026-01-01T00:00:00.000Z\",\"d",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000001 2026-01-01 POSTED: Dr 1110 Bank Account 1000000; Dr 1200 Accounts Receivable 200000; Cr 3020 Opening Balance Equity 1200000"
+  ]
+ },
+ {
+  "id": "S02c",
+  "name": "Customer created with opening balance",
+  "expected": "Appears in GL, customer balance and ageing",
+  "actual": "201  in ageing=true",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000002 2026-01-01 POSTED: Dr 1200 Accounts Receivable 50000; Cr 3020 Opening Balance Equity 50000"
+  ]
+ },
+ {
+  "id": "S03",
+  "name": "Owner capital into bank 5,000,000",
+  "expected": "Dr Bank, Cr Equity",
+  "actual": "201  3000=-5000000 1110=6000000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000003 2026-01-02 POSTED: Dr 1110 Bank Account 5000000; Cr 3000 Share capital 5000000"
+  ]
+ },
+ {
+  "id": "S03b",
+  "name": "Owner cash into till 1,000,000",
+  "expected": "Dr Cash, Cr Equity",
+  "actual": "201  1100=1000000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000004 2026-01-02 POSTED: Dr 1100 Cash on Hand 1000000; Cr 3000 Share capital 1000000"
+  ]
+ },
+ {
+  "id": "S04",
+  "name": "Buy inventory for cash (ERP stock in + cash bill + payment) 50 x 20,000",
+  "expected": "Inventory +1,000,000, cash out, AP nil",
+  "actual": "201 | 201 | 201 | 201 1300=1000000 GRNI=0 AP=0 inputVAT=180000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000005 2026-01-05 POSTED: Dr 1300 Inventory Asset 1000000; Cr 2130 Goods Received Not Invoiced 1000000",
+   "JOU-2026-000006 2026-01-05 POSTED: Dr 2130 Goods Received Not Invoiced 1000000; Dr 1400 Input Tax Receivable 180000; Cr 2100 Accounts Payable 1180000",
+   "JOU-2026-000007 2026-01-05 POSTED: Dr 2100 Accounts Payable 1180000; Cr 1110 Bank Account 1180000"
+  ]
+ },
+ {
+  "id": "S05",
+  "name": "Buy inventory on credit in the app (item receipt then bill) 20 x 22,000 + VAT",
+  "expected": "Dr Inventory / Cr GRNI, then Dr GRNI + VAT / Cr AP",
+  "actual": "receipt 201  bill 200  gross=519200 1300=1440000 GRNI=0 AP=-519200",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000008 2026-01-06 POSTED: Dr 1300 Inventory Asset 440000; Cr 2130 Goods Received Not Invoiced 440000",
+   "JOU-2026-000009 2026-01-06 POSTED: Dr 2130 Goods Received Not Invoiced 440000; Dr 1400 Input Tax Receivable 79200; Cr 2100 Accounts Payable 519200"
+  ]
+ },
+ {
+  "id": "S06",
+  "name": "Partial supplier payment 200,000",
+  "expected": "Dr AP, Cr Bank; bill outstanding falls",
+  "actual": "201  paid=200000/519200 AP=-319200",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000010 2026-01-10 POSTED: Dr 2100 Accounts Payable 200000; Cr 1110 Bank Account 200000"
+  ]
+ },
+ {
+  "id": "S07",
+  "name": "Cash POS sale 10 bags @30,000 + VAT with COGS",
+  "expected": "Dr Cash 354,000; Cr Sales 300,000; Cr VAT 54,000; COGS at weighted average 205,714.29",
+  "actual": "sale 201  replay duplicate=true; stock 201  replay duplicate=true; COGS=205714.2857 Sales=-300000 VAT=-54000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000011 2026-01-12 POSTED: Dr 1100 Cash on Hand 354000; Cr 4100 Sales Revenue 300000; Cr 2200 Output Tax Payable 54000",
+   "JOU-2026-000012 2026-01-12 POSTED: Dr 5100 Cost of Sales 205714.2857; Cr 1300 Inventory Asset 205714.2857"
+  ]
+ },
+ {
+  "id": "S08",
+  "name": "Credit sale invoice in the app with lines 500,000 + VAT18",
+  "expected": "Dr AR 590,000; Cr Sales 500,000; Cr VAT 90,000",
+  "actual": "201  gross=590000 inventory after=1234285.7143 (app invoices do not move stock: by design, ERP owns stock)",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000013 2026-01-15 POSTED: Dr 1200 Accounts Receivable 590000; Cr 4100 Sales Revenue 500000; Cr 2200 Output Tax Payable 90000"
+  ]
+ },
+ {
+  "id": "S08b",
+  "name": "Credit POS sale from ERP",
+  "expected": "Creates AR invoice and AR ledger",
+  "actual": "201  invoice=S2 gross=118000 AR=958000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000014 2026-01-16 POSTED: Dr 1200 Accounts Receivable 118000; Cr 4100 Sales Revenue 100000; Cr 2200 Output Tax Payable 18000"
+  ]
+ },
+ {
+  "id": "S09",
+  "name": "Partial customer payment 300,000",
+  "expected": "Dr Bank, Cr AR; invoice outstanding 290,000",
+  "actual": "201  paid=300000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000015 2026-01-20 POSTED: Dr 1110 Bank Account 300000; Cr 1200 Accounts Receivable 300000"
+  ]
+ },
+ {
+  "id": "S09b",
+  "name": "Customer advance (deposit) 100,000, allocated 60,000",
+  "expected": "Dr Cash Cr Customer Deposits; allocation Dr Deposits Cr AR",
+  "actual": "201  alloc 200  deposits=-40000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000016 2026-01-20 POSTED: Dr 1100 Cash on Hand 100000; Cr 2120 Customer Deposits 100000",
+   "JOU-2026-000017 2026-11-24 POSTED: Dr 2120 Customer Deposits 60000; Cr 1200 Accounts Receivable 60000"
+  ]
+ },
+ {
+  "id": "S10",
+  "name": "Operating expense: rent 250,000 from bank",
+  "expected": "Dr Rent Cr Bank",
+  "actual": "201  status=POSTED 6150=250000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000018 2026-01-21 POSTED: Dr 6150 Rent or Lease of Buildings 250000; Cr 1110 Bank Account 250000"
+  ]
+ },
+ {
+  "id": "S11",
+  "name": "Other income: interest 15,000",
+  "expected": "Dr Bank Cr Interest Income",
+  "actual": "201 ",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000019 2026-01-22 POSTED: Dr 1110 Bank Account 15000; Cr 4200 Interest Income 15000"
+  ]
+ },
+ {
+  "id": "S12a",
+  "name": "POS sales return 1 bag for cash",
+  "expected": "Reverses revenue, VAT, cash; stock back and COGS reduced",
+  "actual": "201 ; stock 201 ; COGS 205714.2857 -> 185142.8571",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000020 2026-01-23 POSTED: Dr 4410 Sales Returns 30000; Dr 2200 Output Tax Payable 5400; Cr 1100 Cash on Hand 35400",
+   "JOU-2026-000021 2026-01-23 POSTED: Dr 1300 Inventory Asset 20571.4286; Cr 5100 Cost of Sales 20571.4286"
+  ]
+ },
+ {
+  "id": "S12b",
+  "name": "Purchase return 2 bags via supplier credit note",
+  "expected": "Dr AP; Cr inventory and VAT; stock down",
+  "actual": "201  inventory 1254857.1429 -> 1213714.2858 AP=-267280",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000022 2026-01-24 POSTED: Dr 2100 Accounts Payable 51920; Cr 1300 Inventory Asset 41142.8571; Cr 5200 Purchases 2857.1429; Cr 1400 Input Tax Receivable 7920"
+  ]
+ },
+ {
+  "id": "S13a",
+  "name": "Customer credit note 50,000 + VAT on the invoice",
+  "expected": "Dr Sales returns/Sales + VAT, Cr AR",
+  "actual": "201  AR=539000 VAT=-147600",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000023 2026-01-25 POSTED: Dr 4410 Sales Returns 50000; Dr 2200 Output Tax Payable 9000; Cr 1200 Accounts Receivable 59000"
+  ]
+ },
+ {
+  "id": "S13b",
+  "name": "Refund unused customer deposit 40,000",
+  "expected": "Dr Deposits Cr Cash",
+  "actual": "200  deposits=0",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000024 2026-11-24 POSTED: Dr 2120 Customer Deposits 40000; Cr 1100 Cash on Hand 40000"
+  ]
+ },
+ {
+  "id": "S13c",
+  "name": "Cash refund of an open customer credit note",
+  "expected": "A refund clears the customer's credit (Dr AR Cr Cash)",
+  "actual": "201  customer balance after=0",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000025 2026-01-25 POSTED: Dr 4410 Sales Returns 10000; Cr 1200 Accounts Receivable 10000",
+   "JOU-2026-000026 2026-01-26 POSTED: Dr 1200 Accounts Receivable 10000; Cr 1100 Cash on Hand 10000"
+  ]
+ },
+ {
+  "id": "S13d",
+  "name": "Refund receipt as the screen posts it",
+  "expected": "Reverses revenue and VAT, or clears the customer's credit",
+  "actual": "201  customer balance still 0",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000027 2026-01-26 POSTED: Cr 1200 Accounts Receivable 11800; Dr 4410 Sales Returns 10000; Dr 2200 Output Tax Payable 1800",
+   "JOU-2026-000028 2026-01-26 POSTED: Dr 1200 Accounts Receivable 11800; Cr 1100 Cash on Hand 11800"
+  ]
+ },
+ {
+  "id": "S14",
+  "name": "Transfer 100,000 bank to cash with 1,000 fee",
+  "expected": "Dr Cash Cr Bank Dr Bank charges",
+  "actual": "201  charges=1000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000029 2026-01-26 POSTED: Dr 1100 Cash on Hand 100000; Cr 1110 Bank Account 100000; Dr 6430 Bank Charges 1000; Cr 1110 Bank Account 1000"
+  ]
+ },
+ {
+  "id": "S15",
+  "name": "Inventory write-off 2 bags",
+  "expected": "Dr adjustment, Cr inventory at average cost; stock down",
+  "actual": "201  inventory 1213714.2858 -> 1172571.4287 writeoff=41142.8571",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000030 2026-01-27 POSTED: Dr 6410 Inventory Write-Off 41142.8571; Cr 1300 Inventory Asset 41142.8571"
+  ]
+ },
+ {
+  "id": "S16",
+  "name": "Fixed asset 1,200,000 over 60 months; depreciate January",
+  "expected": "Capitalise, then Dr depreciation",
+  "actual": "asset 201  dep 201  repeat 400 Depreciation for 2026-01 is already posted expense=20000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000031 2026-01-03 POSTED: Dr 1500 Fixed Asset Cost 1200000; Cr 1110 Bank Account 1200000",
+   "JOU-2026-000032 2026-01-31 POSTED: Dr 6300 Depreciation Expense 20000; Cr 1510 Accumulated Depreciation 20000"
+  ]
+ },
+ {
+  "id": "S17",
+  "name": "Import bank statement and reconcile January",
+  "expected": "Difference reaches 0 and completes; GL untouched",
+  "actual": "import 201 ; re-import 400 Every line in this file is already imported or falls in a reconciled period; start 201  review 200  approve 200  complete 200  unmatched=0",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "A01",
+  "name": "Every posted journal balances in the GL",
+  "expected": "0 unbalanced",
+  "actual": "0 unbalanced of 32",
+  "result": "PASS"
+ },
+ {
+  "id": "A02",
+  "name": "Trial balance",
+  "expected": "difference 0",
+  "actual": "debit 8700937.1429 credit 8700937.1429 diff 0",
+  "result": "PASS"
+ },
+ {
+  "id": "A03",
+  "name": "Assets = liabilities + equity",
+  "expected": "equal",
+  "actual": "8083651.4287 = 513080 + 7570571.4287",
+  "result": "PASS"
+ },
+ {
+  "id": "A04",
+  "name": "Net profit reflected in equity",
+  "expected": "current year earnings = profit",
+  "actual": "profit 320571.4287; CYE 320571.4287",
+  "result": "PASS"
+ },
+ {
+  "id": "A05",
+  "name": "Cash flow reconciles with cash accounts",
+  "expected": "net change = cash movement",
+  "actual": "{\"operating\":-1169200,\"investing\":-1200000,\"financing\":7250000,\"netChange\":4880800,\"cashChange\":4880800,\"depreciation\":20000,\"profit\":320571.4287}",
+  "result": "PASS"
+ },
+ {
+  "id": "A06",
+  "name": "Inventory subledger = GL 1300",
+  "expected": "equal",
+  "actual": "GL 1300=1172571.4287; sub={\"value\":\"1172571.4287\"}; report={\"accounts\":[{\"id\":\"cmwv56wee0059g0uetv5oxfzh\",\"code\":\"1300\",\"name\":\"Inventory Asset\"}],\"accountsDiffer\":false,\"glValue\":1172571.4287,\"subledgerValue\":1172571.4287,\"difference\":0,\"explained\":{\"unpostedMovements\":{\"count\":0,\"value\":0},\"saleCostDifference\":0},\"c",
+  "result": "INFO"
+ },
+ {
+  "id": "A07",
+  "name": "AR control = customer balances",
+  "expected": "equal",
+  "actual": "GL 539000 vs customers 539000",
+  "result": "PASS"
+ },
+ {
+  "id": "A08",
+  "name": "AP control = supplier balances",
+  "expected": "equal",
+  "actual": "GL 267280 vs suppliers 267280",
+  "result": "PASS"
+ },
+ {
+  "id": "A09",
+  "name": "AR ageing total = AR control",
+  "expected": "equal",
+  "actual": "ageing 539000 control 539000",
+  "result": "PASS"
+ },
+ {
+  "id": "A10",
+  "name": "AP ageing total = AP control",
+  "expected": "equal",
+  "actual": "ageing 267280 control 267280",
+  "result": "PASS"
+ },
+ {
+  "id": "A11",
+  "name": "VAT report = VAT ledger (output 2200, input 1400)",
+  "expected": "equal",
+  "actual": "GL output 145800 input 251280; report {\"from\":\"2026-01-01T00:00:00.000Z\",\"to\":\"2026-01-31T23:59:59.999Z\",\"outputAccount\":{\"id\":\"cmwv56wef0061g0uegbokwkmw\",\"code\":\"2200\",\"name\":\"Output Tax Payable\"},\"inputAccount\":{\"id\":\"cmwv56wee005ag0uel3rlp4de\",\"code\":\"1400\",\"name\":\"Input Tax Receivable\"},\"totals\":{\"output\":145800,\"input\":251280,\"adjustments\":0,\"paid\":0,\"net\":-105480,\"outstanding\":-105480,\"zeroRatedSales\":0,\"zeroRatedPurchases\":0,\"exemptSales\":0,\"exemptPurchases\":0},\"outputLines\":[{\"id\":\"cmwv56xyu0104g0uej1bvl5f0\",\"date\":\"2026-01-12T09:00:00.000Z\",\"journalId\":\"cmwv56xyb00zsg0ueeyff37kk\",\"journalNumber\":\"JOU-2026-000011\",\"description\":\"Output VAT\",\"sourceModule\":\"POS\",\"sourceDocumentNumber\":\"S1\",\"debit\":0,\"credit\":54000,\"amount",
+  "result": "INFO"
+ },
+ {
+  "id": "A11b",
+  "name": "Tax reconciliation report",
+  "expected": "explains differences",
+  "actual": "{\"from\":\"2026-01-01T00:00:00.000Z\",\"to\":\"2026-01-31T23:59:59.999Z\",\"vat\":{\"ledger\":-105480,\"gl\":-105480,\"ledgerVsGl\":0,\"filed\":null,\"ledgerVsFiled\":null,\"ebm\":null,\"ledgerVsEbm\":null},\"withholding\":{\"ledger\":0,\"gl\":0,\"difference\":0},\"fiscalDocuments\":0}",
+  "result": "INFO"
+ },
+ {
+  "id": "A12",
+  "name": "Built-in integrity scan after scenarios",
+  "expected": "no findings",
+  "actual": "200 {\"id\":\"cmwv57089023gg0ueox9gurs8\",\"trigger\":\"MANUAL\",\"runByErpUserId\":441,\"ranAt\":\"2026-11-24T20:23:41.289Z\",\"findingCount\":0,\"errors\":0,\"checks\":[{\"check\":\"AR_SUBLEDGER\",\"label\":\"Receivables ledger vs GL\",\"count\":0},{\"check\":\"AP_SUBLEDGER\",\"label\":\"Payables ledger vs GL\",\"count\":0},{\"check\":\"INVENTORY_SUBLEDGER\",\"label\":\"Inventory valuation vs GL\",\"count\":0},{\"check\":\"DOCUMENT_WITHOUT_GL\",\"label\":\"Documents without a posted journal\",\"count\":0},{\"check\":\"UNBALANCED_JOURNAL\",\"label\":\"Unbalanced or mismatched journals\",\"count\":0},{\"check\":\"JOURNAL_NUMBER_GAP\",\"label\":\"Journal number gaps\",\"count\":0},{\"check\":\"NEGATIVE_CASH\",\"label\":\"Negative cash and bank balances\",\"count\":0}],\"findings\":[]}",
+  "result": "INFO"
+ },
+ {
+  "id": "A13",
+  "name": "Audit events written",
+  "expected": ">0 for each posting",
+  "actual": "[\"Account.CREATE=1\",\"AccountingActivation.ACTIVATE=1\",\"AccountingPolicy.CREATE=1\",\"ApBill.POST=1\",\"ApCreditNote.POST=1\",\"ApPayment.POST=1\",\"ApprovalPostingControls.CREATE=1\",\"ArCreditNote.POST=3\",\"ArInvoice.POST=1\",\"ArRefund.POST=2\",\"BankingPaymentSettings.CREATE=1\",\"BankReconciliation.APPROVE=1\",\"BankReconciliation.COMPLETE=1\",\"BankReconciliation.CREATE=1\",\"BankReconciliation.REVIEW=1\",\"BankStatement.IMPORT=1\",\"BankTransaction.POST=4\",\"BusinessAccountingInfo.CREATE=1\",\"CompanyProfile.CREATE=1\",\"CurrencySettings.CREATE=1\",\"Customer.CREATE=4\",\"DefaultPostingAccounts.UPDATE=1\",\"Expense.CREATE=1\",\"Expense.POST=1\",\"FinancialAccount.AUTO_MATCH=1\",\"FinancialAccount.CREATE=2\",\"FinancialYear.CREATE=1\",\"FixedAsset.CAPITALIZE=1\",\"FixedAsset.CREATE=1\",\"FixedAssetDepreciationRun.DEPRECIATE=1\",\"IntegrityScan.RUN=1\",\"InventoryAccountingSettings.CREATE=1\",\"InventoryAdjustment.CREATE=1\",\"ItemReceipt.BILL=1\",\"ItemReceipt.CREATE=1\",\"Journal.CREATE=32\",\"Journal.POST=32\",\"LocalizationSettings.CREATE=1\",\"NumberSequence.UPDATE=1\",\"OpeningBalanceBatch.APPROVE=1\",\"OpeningBalanceBatch.CREATE=1\",\"OpeningBalanceBatch.POST=1\",\"PartyDefaults.CREATE=1\",\"SetupSectionStatus.APPROVE=3\",\"Supplier.CREATE=1\",\"TaxSettings.CREATE=1\"]",
+  "result": "PASS"
+ },
+ {
+  "id": "A14",
+  "name": "Own audit event for receipts/payments/deposits/credit notes",
+  "expected": "present",
+  "actual": "ArReceipt=false ApPayment=true ArDeposit=false ArCreditNote=true",
+  "result": "FAIL"
+ },
+ {
+  "id": "S18",
+  "name": "Generate reports/exports",
+  "expected": "200 for each",
+  "actual": "17 endpoints 200",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "S19",
+  "name": "Close January",
+  "expected": "Checklist enforced then CLOSED",
+  "actual": "first attempt 400 VAT return prepared: No VAT return prepared for the period ending 2026-01-31; blockers=[\"VAT return prepared: No VAT return prepared for the period ending 2026-01-31\"] override TAX_FILING 201;[] then 200  status=CLOSED",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "S20",
+  "name": "Modify transactions in the closed period",
+  "expected": "All refused",
+  "actual": "journal 400 \"Accounting period P1 is closed\"; invoice 400 \"Accounting period P1 is closed\"; receipt 400 \"Accounting period P1 is closed\"; bill 400 \"Accounting period P1 is closed\"; bank payment 400 \"Accounting period P1 is closed\"; adjustment 400 \"Accounting period P1 is closed\"; expense 400 \"Accounting period P1 is closed\"; bank reversal dated in period 400 \"A reversal can't be dated before the transaction\"; ERP event 201 error=\"Accounting period P1 is closed\" open exceptions=1; GL rows in period 73->73",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "S20b",
+  "name": "Reverse a closed-period manual journal / void closed-period invoice",
+  "expected": "Original untouched; reversal dated in an open period",
+  "actual": "invoice dated 2026-02-02 (open period), void 200; reversal dated 2026-11-24 (today, no choice of date) so February still shows the sale",
+  "result": "PARTIAL",
+  "journals": [
+   "JOU-2026-000033 2026-02-02 POSTED: Dr 1200 Accounts Receivable 1000; Cr 4100 Sales Revenue 1000",
+   "JOU-2026-000034 2026-11-24 POSTED: Cr 1200 Accounts Receivable 1000; Dr 4100 Sales Revenue 1000"
+  ]
+ },
+ {
+  "id": "E01",
+  "name": "Same invoice submitted twice (double click, key sent as the web app does)",
+  "expected": "One invoice",
+  "actual": "201,201 -> 1 invoices posted",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000035 2026-02-03 POSTED: Dr 1200 Accounts Receivable 7777; Cr 4100 Sales Revenue 7777"
+  ]
+ },
+ {
+  "id": "E01b",
+  "name": "Same request with an Idempotency-Key header",
+  "expected": "One record",
+  "actual": "1 receipts",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000036 2026-02-03 POSTED: Dr 1100 Cash on Hand 3333; Cr 1200 Accounts Receivable 3333"
+  ]
+ },
+ {
+  "id": "E01c",
+  "name": "Same supplier invoice number entered twice",
+  "expected": "Second refused",
+  "actual": "201 then 400 Supplier invoice DUP-1 is already recorded as BILL-2026-000003",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000037 2026-02-03 POSTED: Dr 5200 Purchases 500; Cr 2100 Accounts Payable 500"
+  ]
+ },
+ {
+  "id": "E02",
+  "name": "Invalid amounts",
+  "expected": "All 400",
+  "actual": "400 [\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": fa | 400 [\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": fa | 400 [\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": fa | 400 \nInvalid `prisma.arInvoice.create()` invocation in\n/Users/apple/Desktop/exceledge-accaunti | 400 [\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": fa | 400 Unbalanced journal: debit=10 credit=9 | 400 Invoice total must be positive | 400 Credit limit exceeded",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E02b",
+  "name": "Typed VAT that does not match any rate (net 100, tax 5,000)",
+  "expected": "Refused or warned",
+  "actual": "201 accepted",
+  "result": "FAIL",
+  "journals": [
+   "JOU-2026-000038 2026-02-03 POSTED: Dr 1200 Accounts Receivable 5100; Cr 4100 Sales Revenue 100; Cr 2200 Output Tax Payable 5000"
+  ]
+ },
+ {
+  "id": "E03",
+  "name": "Missing account mapping",
+  "expected": "Refused with clear message, nothing left",
+  "actual": "400 Accounts receivable account is not configured; invoices 8->8",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E04",
+  "name": "Insufficient stock adjustment -10,000",
+  "expected": "Refused under default policy",
+  "actual": "400 Only 57 of Rice 25kg is in stock at that location qty=57",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E04b",
+  "name": "ERP oversell (POS sale beyond stock)",
+  "expected": "Posted with flag, or exception",
+  "actual": "201 posted qty=-3 value=-61714.2857",
+  "result": "INFO",
+  "journals": [
+   "JOU-2026-000039 2026-02-04 POSTED: Dr 5100 Cost of Sales 1234285.7144; Cr 1300 Inventory Asset 1234285.7144"
+  ]
+ },
+ {
+  "id": "E05",
+  "name": "Overpayment of invoice allocation",
+  "expected": "Refused",
+  "actual": "over-allocate 400 Allocation exceeds invoice outstanding balance; unallocated receipt 201 unallocated=5000; outstanding 171000",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000040 2026-02-04 POSTED: Dr 1100 Cash on Hand 5000; Cr 1200 Accounts Receivable 5000"
+  ]
+ },
+ {
+  "id": "E06",
+  "name": "20 concurrent full payments of one invoice",
+  "expected": "Exactly one succeeds",
+  "actual": "1 succeeded, rows=1; errors=400 Invoice INV-2026-000007 was settled by another transaction at the same time; refresh and try again | 400 Allocation exceeds invoice outstanding balance",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000041 2026-02-05 POSTED: Dr 1200 Accounts Receivable 10000; Cr 4100 Sales Revenue 10000",
+   "JOU-2026-000042 2026-02-05 POSTED: Dr 1100 Cash on Hand 10000; Cr 1200 Accounts Receivable 10000"
+  ]
+ },
+ {
+  "id": "E07",
+  "name": "30 concurrent different journals; numbering and balances",
+  "expected": "30 unique numbers, TB balanced",
+  "actual": "30/30 posted, 30 unique; errors=",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000043 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000044 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000045 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000046 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000047 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000048 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000049 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000050 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000051 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000052 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000053 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000054 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000055 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000056 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000057 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000058 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000059 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000060 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000061 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000062 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000063 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000064 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000065 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000066 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000067 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000068 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000069 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000070 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000071 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100",
+   "JOU-2026-000072 2026-02-06 POSTED: Dr 6140 Office/General Administrative Expenses 100; Cr 3030 Owner's Equity 100"
+  ]
+ },
+ {
+  "id": "E07b",
+  "name": "Cached account balance = GL after all",
+  "expected": "equal for every account",
+  "actual": "0 differ",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E08",
+  "name": "Month-end and local-midnight ERP sale (UTC vs Kigali)",
+  "expected": "Sale at 1 Mar 00:30 Kigali books in March",
+  "actual": "201; journalDate 2026-02-28T22:30:00.000Z; Feb revenue 18977; March revenue 0",
+  "result": "FAIL",
+  "journals": [
+   "JOU-2026-000073 2026-02-28 POSTED: Dr 1100 Cash on Hand 100; Cr 4100 Sales Revenue 100"
+  ]
+ },
+ {
+  "id": "E09",
+  "name": "Future-dated invoice beyond the financial year",
+  "expected": "Refused with message",
+  "actual": "400 No accounting period covers the journal date",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E10",
+  "name": "Failure mid-posting leaves nothing (inactive account)",
+  "expected": "Rollback",
+  "actual": "400 Account 4100 is inactive; [invoices,journals] 10,73 -> 10,73",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E11",
+  "name": "Unauthorised access",
+  "expected": "401/403",
+  "actual": "401,403,403,401",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E12",
+  "name": "Cross-business access to every id type",
+  "expected": "404/400, no data",
+  "actual": "13 reads and 5 writes refused",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E12b",
+  "name": "Integration key scope",
+  "expected": "Key bound to one business",
+  "actual": "the one shared key posted into a second business: 201 status=POSTED",
+  "result": "FAIL",
+  "journals": []
+ },
+ {
+  "id": "E13",
+  "name": "Token for a new organisation auto-creates a company",
+  "expected": "Only provisioned businesses",
+  "actual": "companies 2->3 (requires a valid ERP-signed token)",
+  "result": "INFO",
+  "journals": []
+ },
+ {
+  "id": "E14",
+  "name": "Void / reverse restores balances",
+  "expected": "Net effect zero",
+  "actual": "200, again 400; AR 543544->543544; Sales -917977->-917977",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000074 2026-02-10 POSTED: Dr 1200 Accounts Receivable 4321; Cr 4100 Sales Revenue 4321",
+   "JOU-2026-000075 2026-11-24 POSTED: Cr 1200 Accounts Receivable 4321; Dr 4100 Sales Revenue 4321"
+  ]
+ },
+ {
+  "id": "E15",
+  "name": "Edit a posted invoice",
+  "expected": "Controlled edit (QBO allows edit with audit)",
+  "actual": "PUT 404 PATCH 404: no edit endpoint; void and re-enter only",
+  "result": "PARTIAL",
+  "journals": []
+ },
+ {
+  "id": "E16",
+  "name": "Delete of posted journal through API / database",
+  "expected": "No API; DB should also prevent",
+  "actual": "API 404; direct UPDATE gl_entries ALLOWED; direct UPDATE audit_events blocked",
+  "result": "PARTIAL",
+  "journals": []
+ },
+ {
+  "id": "E17",
+  "name": "Cash-basis policy",
+  "expected": "Never labelled cash while figures are accrual",
+  "actual": "note says \"Accrual basis, IFRS SME framework. Amounts are in RWF.\" but profit cash=-893916.2857 accrual=-893916.2857",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E17b",
+  "name": "Setting cash basis via setup API",
+  "expected": "Refused or applied",
+  "actual": "400 [\n  {\n    \"received\": \"CASH\",\n    \"code\": \"invalid_literal\",\n    \"expected\": \"ACCRUAL\",\n    \"path\": [\n      \"accountingBasis\"\n    ],\n    \"message\": \"Only the accrual basis is supported; cash-basis reports are not available yet\"\n  }\n]",
+  "result": "INFO",
+  "journals": []
+ },
+ {
+  "id": "E18",
+  "name": "Disposal gain in cash flow",
+  "expected": "Proceeds 900,000 under investing; gain not in operating",
+  "actual": "200  cashflow {\"operating\":120000,\"investing\":1180000,\"financing\":0,\"netChange\":1300000,\"cashChange\":1300000,\"depreciation\":0,\"profit\":120000} (expected investing 1,300,000, operating 0)",
+  "result": "FAIL",
+  "journals": [
+   "JOU-2026-000076 2026-04-15 POSTED: Dr 1510 Accumulated Depreciation 20000; Cr 1500 Fixed Asset Cost 1200000; Dr 1110 Bank Account 1300000; Cr 7300 Gain on Disposal 120000"
+  ]
+ },
+ {
+  "id": "E19",
+  "name": "Rounding: 3 lines of 33.33 x VAT18 and RWF amounts",
+  "expected": "Header equals sum of lines, GL balances",
+  "actual": "net 99.99 tax 18 gross 117.99 (RWF has no minor unit; fractional RWF accepted)",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000077 2026-02-12 POSTED: Dr 1200 Accounts Receivable 117.99; Cr 4100 Sales Revenue 99.99; Cr 2200 Output Tax Payable 18"
+  ]
+ },
+ {
+  "id": "E20",
+  "name": "VAT-inclusive pricing",
+  "expected": "Supported",
+  "actual": "line fields: id,invoiceId,lineNumber,description,quantity,unitPrice,discount,net,taxCode,taxRate,tax,accountId; no inclusive flag in the API or schema",
+  "result": "FAIL",
+  "journals": []
+ },
+ {
+  "id": "E21",
+  "name": "Bad debt write-off of an invoice",
+  "expected": "Dr bad debt, Cr AR",
+  "actual": "write-off endpoint 404; manual journal to AR 400 \"Account 1200 is the receivables control account; post through the receivables module so its subledger stays in step\"; only workaround is a credit note (posts to sales returns, not bad debt)",
+  "result": "FAIL",
+  "journals": []
+ },
+ {
+  "id": "E22",
+  "name": "Reports with 100,000 GL rows",
+  "expected": "Statements and TB < 2s",
+  "actual": "100,000 rows: statements 292ms, TB 18476ms, ledger page 129ms (synthetic rows, local database)",
+  "result": "FAIL",
+  "journals": []
+ },
+ {
+  "id": "E23",
+  "name": "Draft journal in AR account / inventory manual posting blocked",
+  "expected": "400",
+  "actual": "400 Account 1300 is the inventory control account; post through the inventory module so its subledger stays in step",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E23b",
+  "name": "Bank receipt/payment coded straight to AR, AP or inventory control",
+  "expected": "Refused",
+  "actual": "1200:400 1200 Accounts Receivable is a receivables control account; choose the customer s | 2100:400 2100 Accounts Payable is a payables control account; choose the supplier so thei | 1300:400 1300 Inventory Asset is an inventory control account; record the stock in Invent | 2200:201 ACCEPTED",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000078 2026-02-20 POSTED: Dr 2200 Output Tax Payable 10; Cr 1110 Bank Account 10"
+  ]
+ },
+ {
+  "id": "E23c",
+  "name": "Expense coded to AR/AP/inventory control",
+  "expected": "Refused",
+  "actual": "1200:400 1200 Accounts Receivable is the receivables control account; choose an expense a | 2100:400 2100 Accounts Payable is the payables control account; choose an expense account | 1300:400 1300 Inventory Asset is the inventory control account; choose an expense account",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E23d",
+  "name": "Invoice/bill line coded to control accounts",
+  "expected": "Refused",
+  "actual": "1200: invoice 400 Account 1200 is the receivables control account and can't be, bill 400 Account 1200 is the receivables control account and can't be | 2100: invoice 400 Account 2100 is the payables control account and can't be us, bill 400 Account 2100 is the payables control account and can't be us | 1300: invoice 400 Account 1300 is the inventory control account and can't be u, bill 400 Account 1300 is the inventory control account and can't be u",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E24",
+  "name": "Approvals default: creator posts own large journal",
+  "expected": "Default controls require another person",
+  "actual": "400 Journal JOU-2026-000079 needs approval before posting (1 approval level(s) for 10); submit it for approval",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E25",
+  "name": "Reverse and unlock: reopen closed period then audit",
+  "expected": "Reason needed; logged",
+  "actual": "200 ; audit events on period=3",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E26",
+  "name": "Ageing as of a past date (31 Jan) ignores later invoices and payments",
+  "expected": "As-of total equals AR control at 31 Jan",
+  "actual": "ageing at 31 Jan 599000; control at 31 Jan 599000; 5 invoices dated after 31 Jan exist",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "E27",
+  "name": "Ageing with a USD customer",
+  "expected": "Converted to RWF (or kept apart by currency)",
+  "actual": "rate 201 cust 201 inv 201 ; GL AR rose 1400000 RWF; ageing total rose 1400000; dashboard {\"totalCustomers\":7,\"activeCustomers\":7,\"cashCustomers\":1,\"creditCustomers\":6,\"totalOutstanding\":1951994.99,\"totalDeposits\":0,\"overdueInvoices\":8,\"creditUtilization\":0.0078,\"ageing\":[{\"key\":\"CURRENT\",\"label\":\"Current\",\"a",
+  "result": "PASS",
+  "journals": [
+   "JOU-2026-000079 2026-02-10 POSTED: Dr 1200 Accounts Receivable 1400000; Cr 4100 Sales Revenue 1400000"
+  ]
+ },
+ {
+  "id": "E28",
+  "name": "Year-end: profit to retained earnings; P&L unaffected",
+  "expected": "covered",
+  "actual": "covered by tests/wave-c-closing.test.ts (passed)",
+  "result": "INFO",
+  "journals": []
+ },
+ {
+  "id": "E29",
+  "name": "Post to a FUTURE period (2026-12-15)",
+  "expected": "Follows future-date policy",
+  "actual": "400 Accounting period P12 is future",
+  "result": "INFO",
+  "journals": []
+ },
+ {
+  "id": "E30",
+  "name": "Error messages do not leak internals",
+  "expected": "Friendly text",
+  "actual": " Invalid `prisma.arInvoice.create()` invocation in /Users/apple/Desktop/exceledge-accaunting/.claude/worktrees/quickbooks-integration-approach-c6580c/Backend/sr",
+  "result": "FAIL",
+  "journals": []
+ },
+ {
+  "id": "E31",
+  "name": "Formula/script text in names",
+  "expected": "Stored as text; CSV export neutralised",
+  "actual": "06,'=HYPERLINK(1),",
+  "result": "PASS",
+  "journals": []
+ },
+ {
+  "id": "A15",
+  "name": "Integrity scan after edge cases",
+  "expected": "only deliberate findings",
+  "actual": "{\"id\":\"cmwv57wrq2ay4g0uemxali5ys\",\"trigger\":\"MANUAL\",\"runByErpUserId\":441,\"ranAt\":\"2026-11-24T20:24:23.462Z\",\"findingCount\":0,\"errors\":0,\"checks\":[{\"check\":\"AR_SUBLEDGER\",\"label\":\"Receivables ledger vs GL\",\"count\":0},{\"check\":\"AP_SUBLEDGER\",\"label\":\"Payables ledger vs GL\",\"count\":0},{\"check\":\"INVENTORY_SUBLEDGER\",\"label\":\"Inventory valuation vs GL\",\"count\":0},{\"check\":\"DOCUMENT_WITHOUT_GL\",\"label\":\"Documents without a posted journal\",\"count\":0},{\"check\":\"UNBALANCED_JOURNAL\",\"label\":\"Unbalanced or mismatched journals\",\"count\":0},{\"check\":\"JOURNAL_NUMBER_GAP\",\"label\":\"Journal number gaps\",\"count\":0},{\"check\":\"NEGATIVE_CASH\",\"label\":\"Negative cash and bank balances\",\"count\":0}],\"findings\":[]}",
+  "result": "INFO"
+ },
+ {
+  "id": "A16",
+  "name": "Final: balance sheet and cash flow",
+  "expected": "balanced",
+  "actual": "A 8292450.7043 L 418588 E 7873862.7043; CF 6159223 vs 6159223",
+  "result": "PASS"
+ },
+ {
+  "id": "A17",
+  "name": "Final: ageing = control and integrity clean, including USD",
+  "expected": "equal",
+  "actual": "ageing AR 1943661.99 AP 267780; AR 1943661.99 vs 544661.99; AP 267780 vs 267780",
+  "result": "PASS"
+ }
+]

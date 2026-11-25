@@ -382,11 +382,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     }));
   };
 
-  async function post(): Promise<{ id: string; number: string; posted: boolean }> {
+  async function post(forApproval: boolean): Promise<{ id: string; number: string; posted: boolean }> {
     const description = form.memo.trim() || undefined;
     switch (kind) {
       case "bill": {
-        const bill = await api<{ id: string; billNumber: string }>("/api/v1/ap/bills", {
+        const bill = await api<{ id: string; billNumber: string; status: string }>("/api/v1/ap/bills", {
           method: "POST",
           body: JSON.stringify({
             supplierId: form.party,
@@ -395,13 +395,14 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             dueDate: form.dueDate || undefined,
             description,
             lines: billLines(),
+            requireApproval: forApproval || undefined,
           }),
         });
         if (files.length) {
           const failed = await uploadAttachments(api, "ApBill", bill.id, files);
           if (failed) toast(`${failed} attachment${failed > 1 ? "s" : ""} couldn't be uploaded`, { error: true });
         }
-        return { id: bill.id, number: bill.billNumber, posted: true };
+        return { id: bill.id, number: bill.billNumber, posted: bill.status === "POSTED" };
       }
       case "supplier-credit": {
         const note = await api<{ id: string; creditNoteNumber?: string; noteNumber?: string }>("/api/v1/ap/credit-notes", {
@@ -470,15 +471,8 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     if (!(await v.validate(schema, form))) return;
     setBusy(true);
     try {
-      const result = await post();
-      if (after === "approval") {
-        try {
-          await api("/api/v1/books/approvals", { method: "POST", body: JSON.stringify({ entityType: "ApBill", entityId: result.id, amount: Math.round(total * 100) / 100, reason: form.memo || undefined }) });
-          toast(`Bill ${result.number} submitted for approval`);
-        } catch (e) {
-          toast(`Bill saved, but the approval request failed: ${(e as Error).message}`, { error: true });
-        }
-      }
+      const result = await post(after === "approval");
+      if (after === "approval") toast(`Bill ${result.number} is waiting for approval; it posts when approved`);
       indexTxn({
         id: result.id,
         kind: kind as TxnKind,

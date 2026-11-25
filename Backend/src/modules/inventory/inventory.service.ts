@@ -16,6 +16,7 @@ import type { InventoryMovement, Prisma } from "@prisma/client";
 import { env } from "../../config/env";
 import { defaultsFor, money } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
+import { notify } from "../notifications/notification.service";
 import { writeAudit } from "../audit/audit.service";
 import { assertAccountsPostable, assertOpenPeriod, createAndPostJournal } from "../journals/journal.service";
 
@@ -451,6 +452,15 @@ export async function processInventoryEvent(eventId: string) {
       }
     }
   });
+
+  const short = await prisma.inventoryBalance.findMany({
+    where: { companyId, quantity: { lt: 0 }, item: { movements: { some: { integrationEventId: event.id } } } },
+    include: { item: { select: { id: true, name: true } } },
+  });
+  for (const b of short) {
+    const open = await prisma.notification.count({ where: { companyId, entityType: "InventoryItem", entityId: b.item.id, title: "Stock below zero", createdAt: { gte: new Date(Date.now() - 86_400_000) } } });
+    if (!open) await notify({ companyId, title: "Stock below zero", body: `${b.item.name} is now ${Number(b.quantity)}. Its cost of sales is an estimate until the stock is corrected.`, severity: "WARNING", entityType: "InventoryItem", entityId: b.item.id });
+  }
 
   // The journal and the movements' link to it commit together, so a retry never journals the same value twice.
   return inTransaction(async () => {

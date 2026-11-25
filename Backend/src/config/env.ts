@@ -27,6 +27,9 @@ export const env = {
   integrationApiKey: process.env.INTEGRATION_API_KEY ?? "dev-integration-key",
   erpApiUrl: (process.env.ERP_API_URL ?? "http://localhost:4500/api").replace(/\/$/, ""),
   nodeEnv,
+  /** Requests a minute allowed to one caller; 0 for no limit. Events from the ERP arrive in bursts. */
+  rateLimitPerMinute: Number(process.env.RATE_LIMIT_PER_MINUTE ?? (nodeEnv === "test" ? 0 : 900)),
+  integrationRateLimitPerMinute: Number(process.env.INTEGRATION_RATE_LIMIT_PER_MINUTE ?? (nodeEnv === "test" ? 0 : 6000)),
   /** Proxies in front of the API, so `req.ip` in the audit trail is the real client. */
   trustProxy: Number(process.env.TRUST_PROXY ?? 0),
   /** Base URL of the accounting web app, for links in emailed notifications */

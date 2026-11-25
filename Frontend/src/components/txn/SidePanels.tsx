@@ -7,7 +7,7 @@ import { navigate } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import { newId, saveLocal, TXN_LABELS, useLocalCollection, useTxnIndex } from "../../lib/txn";
 import type { ArInvoiceList } from "../../lib/types";
-import { MANAGE_USERS } from "../../lib/users-dummy";
+import type { UsersPayload } from "../../lib/users";
 import { yup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { Select } from "../Select";
@@ -66,6 +66,9 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
       .test("past", "Due date can't be in the past", (val) => !val || val >= isoDay()),
   });
 
+  const team = useResource<UsersPayload>("/api/v1/users");
+  const people = (team.data?.users ?? []).filter((u) => u.status === "ACTIVE");
+
   async function save() {
     if (!(await v.validate(schema, form))) return;
     saveTask({ id: newId(), ...form, name: form.name.trim(), links, files, done: false, createdAt: new Date().toISOString() });
@@ -93,7 +96,7 @@ export function AddTaskDrawer({ onClose }: { onClose: () => void }) {
             <textarea className="txn-textarea" rows={4} value={form.description} onChange={(e) => set("description", e.target.value)} />
           </TField>
           <TField label="Assign to" className="w-md">
-            <Select value={form.assignee} onChange={(a) => set("assignee", a)} options={MANAGE_USERS.map((u) => ({ value: u.email, label: u.name }))} placeholder="Select one" />
+            <Select value={form.assignee} onChange={(a) => set("assignee", a)} options={people.map((u) => ({ value: u.email, label: u.name }))} placeholder="Select one" />
           </TField>
           <TField label="Due date" required error={v.errors.dueDate} className="w-md">
             <input className="txn-input" type="date" min={isoDay()} value={form.dueDate} onChange={(e) => set("dueDate", e.target.value)} />

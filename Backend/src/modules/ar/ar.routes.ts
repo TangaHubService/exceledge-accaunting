@@ -44,6 +44,7 @@ const customerType = z.enum([
   "EXPORT",
   "FOREIGN",
 ]);
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Use a yyyy-mm-dd date");
 const payMethod = z.enum(["CASH", "BANK", "MOBILE_MONEY", "CARD", "CHEQUE", "ONLINE"]);
 
 arRouter.get("/dashboard", async (req: AuthedRequest, res) => {
@@ -467,8 +468,8 @@ arRouter.get("/invoices/:id/applications", async (req: AuthedRequest, res) => {
 
 arRouter.post("/invoices/:id/void", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
-    const body = z.object({ reason: z.string().trim().max(300).optional() }).parse(req.body ?? {});
-    res.json({ success: true, data: await inTransaction(() => ar.voidInvoice(req.companyId!, req.params.id, body.reason || undefined, actor(req))) });
+    const body = z.object({ reason: z.string().trim().max(300).optional(), voidDate: isoDay.optional() }).parse(req.body ?? {});
+    res.json({ success: true, data: await inTransaction(() => ar.voidInvoice(req.companyId!, req.params.id, body.reason || undefined, actor(req), body.voidDate)) });
   } catch (e) {
     res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
   }
@@ -552,14 +553,80 @@ arRouter.post("/credit-notes", requireCapability("ar:manage"), async (req: Authe
         invoiceId: z.string().optional(),
         noteDate: z.string(),
         reason: z.string().min(1),
-        net: z.number().positive(),
+        net: z.number().positive().optional(),
         tax: z.number().min(0).optional(),
         description: z.string().optional(),
+        currency: z.string().length(3).optional(),
+        exchangeRate: z.number().positive().optional(),
+        lines: documentLines.optional(),
       })
       .parse(req.body);
     res.status(201).json({ success: true, data: await inTransaction(() => ar.createCreditNote(req.companyId!, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
+  }
+});
+
+arRouter.post("/invoices/:id/write-off", requireCapability("ar:credit-override"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ date: isoDay.optional(), amount: z.number().positive().optional(), reason: z.string().trim().min(3, "Say why it is written off").max(300) }).parse(req.body);
+    res.status(201).json({ success: true, data: await inTransaction(() => ar.writeOffInvoice(req.companyId!, req.params.id, body, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/write-offs/:id/reverse", requireCapability("ar:credit-override"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z.object({ date: isoDay.optional(), reason: z.string().trim().max(300).optional() }).parse(req.body ?? {});
+    res.json({ success: true, data: await inTransaction(() => ar.reverseWriteOff(req.companyId!, req.params.id, body, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/sales-receipts", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({
+        customerId: z.string().min(1),
+        date: isoDay,
+        lines: documentLines,
+        method: payMethod.optional(),
+        financialAccountId: z.string().optional(),
+        reference: z.string().trim().max(120).optional(),
+        description: z.string().trim().max(500).optional(),
+      })
+      .parse(req.body);
+    res.status(201).json({ success: true, data: await inTransaction(() => ar.createSalesReceipt(req.companyId!, body, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
+arRouter.post("/refunds", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({
+        customerId: z.string().min(1),
+        refundDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Use a yyyy-mm-dd date"),
+        financialAccountId: z.string().min(1),
+        method: z.string().max(40).optional(),
+        reference: z.string().trim().max(120).optional(),
+        description: z.string().trim().max(500).optional(),
+        reason: z.string().trim().max(300).optional(),
+        lines: documentLines.optional(),
+        sources: z
+          .array(z.object({ source: z.enum(["CREDIT_NOTE", "PAYMENT"]), sourceId: z.string().min(1), amount: z.number().positive() }))
+          .max(100)
+          .optional(),
+      })
+      .parse(req.body);
+    // A refund pays money out, so it needs banking rights as well.
+    if (!can(req, "bank:manage")) return res.status(403).json({ success: false, error: "Missing capability: bank:manage" });
+    res.status(201).json({ success: true, data: await inTransaction(() => ar.createRefund(req.companyId!, body, actor(req))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
   }
 });
 
@@ -606,7 +673,7 @@ arRouter.post("/deposits", requireCapability("ar:manage"), async (req: AuthedReq
 
 arRouter.post("/deposits/:id/allocate", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
-    const body = z.object({ invoiceId: z.string(), amount: z.number().positive() }).parse(req.body);
+    const body = z.object({ invoiceId: z.string(), amount: z.number().positive(), date: isoDay.optional() }).parse(req.body);
     res.json({ success: true, data: await inTransaction(() => ar.allocateDeposit(req.companyId!, req.params.id, body, actor(req))) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
@@ -615,7 +682,7 @@ arRouter.post("/deposits/:id/allocate", requireCapability("ar:manage"), async (r
 
 arRouter.post("/deposits/:id/refund", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
   try {
-    res.json({ success: true, data: await inTransaction(() => ar.refundDeposit(req.companyId!, req.params.id, actor(req))) });
+    res.json({ success: true, data: await inTransaction(() => ar.refundDeposit(req.companyId!, req.params.id, actor(req), z.object({ date: isoDay.optional() }).parse(req.body ?? {}).date)) });
   } catch (e) {
     res.status(400).json({ success: false, error: (e as Error).message });
   }

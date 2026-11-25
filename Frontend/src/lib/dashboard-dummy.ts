@@ -1,78 +1,4 @@
-/** Design-time dummy data for the Accounting home dashboard. Replace with API later. */
-
-export const DUMMY = {
-  greetingName: "Enock",
-  companyName: "Excel Edge CPA",
-  currency: "RWF",
-  periodLabel: "This month",
-  notificationCount: 3,
-  cashTotal: 9_720_000,
-  cashDelta: 6,
-  kpis: [
-    {
-      key: "income",
-      label: "Total income",
-      value: 12_850_000,
-      delta: 12,
-      tone: "up" as const,
-      color: "#16a34a",
-      spark: [42, 48, 45, 52, 58, 55, 62, 68, 64, 72, 78, 84],
-    },
-    {
-      key: "expenses",
-      label: "Total expenses",
-      value: 8_240_000,
-      delta: 8,
-      tone: "down" as const,
-      color: "#e11d48",
-      spark: [70, 68, 72, 65, 60, 58, 55, 52, 48, 50, 46, 44],
-    },
-    {
-      key: "profit",
-      label: "Net profit",
-      value: 4_610_000,
-      delta: 18,
-      tone: "up" as const,
-      color: "#2f6fed",
-      spark: [30, 34, 38, 36, 42, 48, 46, 52, 58, 55, 62, 70],
-    },
-    {
-      key: "cash",
-      label: "Cash & bank",
-      value: 9_720_000,
-      delta: 6,
-      tone: "up" as const,
-      color: "#7c3aed",
-      spark: [50, 52, 55, 54, 58, 60, 62, 61, 64, 66, 68, 72],
-    },
-  ],
-  weekly: [
-    { week: "W1", label: "Oct 1–7", income: 2.8, expenses: 1.9 },
-    { week: "W2", label: "Oct 8–14", income: 3.1, expenses: 2.2 },
-    { week: "W3", label: "Oct 15–21", income: 3.6, expenses: 2.0 },
-    { week: "W4", label: "Oct 22–28", income: 3.35, expenses: 2.14 },
-  ],
-  banks: [
-    { name: "Bank of Kigali", balance: 7_420_000, updated: "Updated 2 hours ago", tone: "main" as const },
-    { name: "Mobile money", balance: 1_800_000, updated: "Updated 1 hour ago", tone: "mobile" as const },
-    { name: "Cash on hand", balance: 500_000, updated: "Updated today", tone: "cashhand" as const },
-  ],
-  invoices: {
-    outstanding: { amount: 3_250_000, count: 5 },
-    overdue: { amount: 1_100_000, count: 2 },
-  },
-  bills: {
-    unpaid: { amount: 2_180_000, count: 4 },
-    dueThisWeek: { amount: 740_000, count: 2 },
-  },
-  activity: [
-    { date: "Oct 28, 2024", type: "Invoice", number: "INV-1005", contact: "Alpha Ltd", amount: 1_250_000, status: "Paid" as const },
-    { date: "Oct 27, 2024", type: "Bill", number: "BILL-0034", contact: "MTN Rwanda", amount: 420_000, status: "Unpaid" as const },
-    { date: "Oct 26, 2024", type: "Payment", number: "PMT-0042", contact: "Beta Trading Co.", amount: 850_000, status: "Completed" as const },
-    { date: "Oct 25, 2024", type: "Expense", number: "EXP-0112", contact: "Office supplies", amount: 85_000, status: "Paid" as const },
-    { date: "Oct 24, 2024", type: "Invoice", number: "INV-1004", contact: "Kigali Foods Ltd", amount: 2_100_000, status: "Unpaid" as const },
-  ],
-};
+/** Menus and layout options for the Accounting home. No business figures belong here. */
 
 export type CreateColumn = {
   title: string;
@@ -277,52 +203,11 @@ export const DASHBOARD_WIDGETS = [
   { key: "modules", label: "App carousel", group: "operational" as const, defaultOn: true },
   { key: "quick", label: "Create actions", group: "operational" as const, defaultOn: true },
   { key: "glance", label: "Business at a glance", group: "all" as const, defaultOn: true },
-  { key: "chart", label: "Cash flow", group: "all" as const, defaultOn: true },
+  { key: "chart", label: "Income vs expenses", group: "all" as const, defaultOn: true },
   { key: "banks", label: "Bank accounts", group: "all" as const, defaultOn: true },
   { key: "invoices", label: "Invoices", group: "all" as const, defaultOn: true },
   { key: "bills", label: "Expenses", group: "all" as const, defaultOn: true },
-  { key: "activity", label: "Needs Attention", group: "all" as const, defaultOn: true },
-  { key: "ap", label: "Accounts payable", group: "all" as const, defaultOn: false },
-  { key: "ar", label: "Accounts receivable", group: "all" as const, defaultOn: false },
-  { key: "funnel", label: "Customers Funnel", group: "all" as const, defaultOn: false },
-  { key: "done", label: "Done For You", group: "all" as const, defaultOn: false },
-  { key: "inv-reports", label: "Inventory Reports", group: "all" as const, defaultOn: false },
-  { key: "low-stock", label: "Low on Stock", group: "all" as const, defaultOn: false },
-  { key: "estimates", label: "Open Estimates", group: "all" as const, defaultOn: false },
-  { key: "sales-orders", label: "Open Sales Orders", group: "all" as const, defaultOn: false },
-  { key: "profit-loss", label: "Profit & loss", group: "all" as const, defaultOn: false },
-  { key: "overdue", label: "Overdue Invoices", group: "all" as const, defaultOn: false },
-  { key: "referrals", label: "Referrals", group: "all" as const, defaultOn: false },
-  { key: "reviews", label: "Reviews & Testimonials", group: "all" as const, defaultOn: false },
-  { key: "top-selling", label: "Top Selling Products", group: "all" as const, defaultOn: false },
-  { key: "work-requests", label: "Work requests", group: "all" as const, defaultOn: false },
-] as const;
-
-export const SEARCH_RECENT = [
-  {
-    id: "inv-0042",
-    title: "Invoice INV-0042",
-    subtitle: "Demo Customer A · RWF 450,000",
-    tag: "Invoice" as const,
-    tone: "invoice" as const,
-    to: "/invoices",
-  },
-  {
-    id: "bank",
-    title: "Bank transactions",
-    subtitle: "Review and categorise your bank activity",
-    tag: "Page" as const,
-    tone: "page" as const,
-    to: "/banking/transactions",
-  },
-  {
-    id: "pnl",
-    title: "Profit and loss",
-    subtitle: "Financial performance for this month",
-    tag: "Report" as const,
-    tone: "report" as const,
-    to: "/reports/statements",
-  },
+  { key: "activity", label: "Recent activity", group: "all" as const, defaultOn: true },
 ] as const;
 
 export const SEARCH_EXPLORE = [
@@ -331,8 +216,6 @@ export const SEARCH_EXPLORE = [
   { label: "Reports", hint: "Financial statements and saved reports", to: "/reports/standard" },
   { label: "Help centre", hint: "Guides and product support", to: "/" },
 ] as const;
-
-export const SEARCH_RECENT_QUERIES = ["Unpaid invoices", "Bank of Kigali"] as const;
 
 export const SEARCH_QUICK = [
   { label: "Create invoice", to: "/invoices", icon: "invoice" as const },

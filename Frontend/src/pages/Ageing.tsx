@@ -8,7 +8,7 @@ import { Link } from "../lib/router";
 import { useResource } from "../lib/session";
 import type { AgeingBucket, AgeingReport, ApAgeingReport } from "../lib/types";
 
-type Line = { partyId: string; partyName: string; docNumber: string; dueDate: string; outstanding: number; bucket: string };
+type Line = { partyId: string; partyName: string; docNumber: string; dueDate: string; outstanding: number; bucket: string; kind?: string; foreign?: string };
 
 const KINDS = {
   ar: {
@@ -18,11 +18,11 @@ const KINDS = {
     description: "What customers owe, grouped by how long it's been outstanding past the due date.",
     party: "Customer",
     partyPath: "/customers",
-    detailLabel: "{cfg.detailLabel}",
+    detailLabel: "Show individual invoices",
     empty: "No customer owed money as at this date.",
-    foot: "Days are counted from each invoice's due date.",
+    foot: "Days are counted from each invoice's due date. Payments and credits not yet used show as negative amounts, so the total equals the receivables account.",
     lines: (r: AgeingReport | ApAgeingReport): Line[] =>
-      (r as AgeingReport).lines.map((l) => ({ partyId: l.customerId, partyName: l.customerName, docNumber: l.invoiceNumber, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket })),
+      (r as AgeingReport).lines.map((l) => ({ partyId: l.customerId, partyName: l.customerName, docNumber: l.invoiceNumber, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket, kind: l.kind, foreign: l.outstandingForeign ? `${l.currency} ${amount(l.outstandingForeign)}` : undefined })),
   },
   ap: {
     endpoint: "/api/v1/ap/ageing",
@@ -33,9 +33,9 @@ const KINDS = {
     partyPath: "/suppliers",
     detailLabel: "Show individual bills",
     empty: "Nothing was owed to suppliers as at this date.",
-    foot: "Days are counted from each bill's due date.",
+    foot: "Days are counted from each bill's due date. Payments and credits not yet used show as negative amounts, so the total equals the payables account.",
     lines: (r: AgeingReport | ApAgeingReport): Line[] =>
-      (r as ApAgeingReport).lines.map((l) => ({ partyId: l.supplierId, partyName: l.supplierName, docNumber: l.billNumber, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket })),
+      (r as ApAgeingReport).lines.map((l) => ({ partyId: l.supplierId, partyName: l.supplierName, docNumber: l.billNumber, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket, kind: l.kind, foreign: l.outstandingForeign ? `${l.currency} ${amount(l.outstandingForeign)}` : undefined })),
   },
 } as const;
 
@@ -119,9 +119,13 @@ export function AgeingReportPage({ kind = "ar" }: { kind?: keyof typeof KINDS })
                       <Fragment key={c.id}>
                         <tr>
                           <td className={detail ? "strong" : undefined}>
-                            <Link to={`${cfg.partyPath}/${c.id}`} style={{ color: "inherit" }}>
-                              {c.name}
-                            </Link>
+                            {c.id ? (
+                              <Link to={`${cfg.partyPath}/${c.id}`} style={{ color: "inherit" }}>
+                                {c.name}
+                              </Link>
+                            ) : (
+                              c.name
+                            )}
                           </td>
                           {buckets.map((b) => (
                             <td key={b.key} className={`num ${b.key !== "CURRENT" && c.buckets[b.key] ? "text-negative" : ""}`}>
@@ -132,9 +136,9 @@ export function AgeingReportPage({ kind = "ar" }: { kind?: keyof typeof KINDS })
                         </tr>
                         {detail &&
                           c.lines.map((l) => (
-                            <tr key={l.docNumber}>
+                            <tr key={`${l.docNumber}-${l.dueDate}`}>
                               <td className="indent-1 muted">
-                                {l.docNumber} · due {date(l.dueDate)}
+                                {l.kind === "ON_ACCOUNT" ? l.docNumber : `${l.docNumber} · due ${date(l.dueDate)}`}{l.foreign ? ` · ${l.foreign}` : ""}
                               </td>
                               {buckets.map((b) => (
                                 <td key={b.key} className="num muted">

@@ -28,7 +28,7 @@ function fail(res: Response, e: unknown) {
 }
 
 const idParam = z.coerce.number().int().positive();
-const role = z.enum(users.ASSIGNABLE_ROLES, { errorMap: () => ({ message: "Choose a role" }) });
+const role = z.enum(users.ASSIGNABLE_ROLES, { error: "Choose a role" });
 /** Either a built-in role or one of the company's custom roles, never both. */
 const roleChoice = z
   .object({ role: role.optional(), customRoleId: z.string().min(1).optional() })
@@ -58,7 +58,7 @@ const roleBody = z.object({
   name: z.string(),
   description: z.string().max(300).nullish(),
   capabilities: z.array(z.string()),
-  erpRole: z.enum(roles.CUSTOM_ROLE_ERP_ROLES, { errorMap: () => ({ message: "Choose the Excel Edge access" }) }),
+  erpRole: z.enum(roles.CUSTOM_ROLE_ERP_ROLES, { error: "Choose the Excel Edge access" }),
 });
 
 usersRouter.get("/roles", async (req: AuthedRequest, res) => {

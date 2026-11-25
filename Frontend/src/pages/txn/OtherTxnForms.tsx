@@ -126,22 +126,13 @@ export function BankDepositForm() {
           partyType: firstParty ? firstParty.kind.toUpperCase() : undefined,
           partyName: firstParty?.name,
           description: form.memo.trim() || "Bank deposit",
+          cashBack: cashBack > 0 ? { toAccountId: form.cashBackTo, amount: Math.round(cashBack * 100) / 100, description: form.cashBackMemo.trim() || "Cash back from deposit" } : undefined,
           lines: filled.map((l) => {
             const from = payees.lookup(l.from)?.name;
             return { accountId: l.account, amount: Math.round(num(l.amount) * 100) / 100, description: [from, l.description.trim(), l.ref && `Ref ${l.ref}`].filter(Boolean).join(" · ").slice(0, 300) || undefined };
           }),
         }),
       });
-      if (cashBack > 0) {
-        try {
-          await api("/api/v1/banking/transfers", {
-            method: "POST",
-            body: JSON.stringify({ fromAccountId: form.account, toAccountId: form.cashBackTo, transactionDate: form.date, amount: Math.round(cashBack * 100) / 100, description: form.cashBackMemo.trim() || `Cash back from deposit ${t.number}` }),
-          });
-        } catch (e) {
-          throw new Error(`Deposit ${t.number} was saved, but the cash back couldn't be recorded: ${(e as Error).message}. Record it as a transfer.`);
-        }
-      }
       indexTxn({ id: t.id, kind: "bank-deposit", number: t.number, date: form.date, party: firstParty?.name ?? "", amount: total, memo: form.memo, status: "Posted", posted: true });
       toast(`Deposit ${t.number} of ${rwf(total, currency)} recorded`);
       if (after === "close") return navigate("/banking");

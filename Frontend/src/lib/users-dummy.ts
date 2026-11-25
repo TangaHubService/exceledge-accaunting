@@ -1,30 +1,5 @@
 /** Dummy data for mocks not yet wired to the server (form styles, shortcuts, side panels). */
 
-export const MANAGE_USERS = [
-  {
-    id: "u1",
-    initials: "EI",
-    color: "#2f6fed",
-    name: "Enock Iradukunda",
-    email: "enockiradukunda4@gmail.com",
-    status: "Active" as const,
-    role: "Company admin",
-    billable: "Yes",
-    action: "Transfer primary admin" as const,
-  },
-  {
-    id: "u2",
-    initials: "BN",
-    color: "#7c3aed",
-    name: "Bernard Niyonsenga",
-    email: "bernard@exceledgecpa.com",
-    status: "Active" as const,
-    role: "Standard all access",
-    billable: "Yes",
-    action: "Edit" as const,
-  },
-];
-
 export const FORM_STYLES = [
   {
     id: "s1",
@@ -69,4 +44,3 @@ export const KEYBOARD_SHORTCUTS = [
   { action: "Help", keys: ["Ctrl", "Alt", "H"] },
 ] as const;
 
-export const COMPANY_ID = "9341 4585 0665 7455";

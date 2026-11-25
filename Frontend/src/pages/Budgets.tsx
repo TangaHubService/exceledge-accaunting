@@ -1,6 +1,5 @@
 import { CheckCircle2, Plus } from "lucide-react";
 import { type FormEvent, Fragment, useMemo, useRef, useState } from "react";
-import { BudgetEditor as MatrixBudgetEditor } from "../components/budgets/BudgetEditor";
 import { BudgetSetupModal } from "../components/budgets/BudgetSetupModal";
 import { SpreadsheetSyncModal } from "../components/budgets/SpreadsheetSyncModal";
 import { useFeedback } from "../components/feedback";
@@ -67,22 +66,12 @@ export function Budgets() {
   const [editing, setEditing] = useState<Budget | "new" | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Tools Ribbons Modes: "workspace" (Mockup 78) | "editor" (Mockup 81) | "list"
-  const [budgetMode, setBudgetMode] = useState<"workspace" | "editor" | "list">("workspace");
+  // Tools Ribbons Modes: "workspace" (Mockup 78) | "list"
+  const [budgetMode, setBudgetMode] = useState<"workspace" | "list">("workspace");
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
 
   const yearName = (id: string | null) => years.data?.find((y) => y.id === id)?.name ?? "—";
-
-  // If in FY26 Matrix Editor mode (Mockup 81)
-  if (budgetMode === "editor") {
-    return (
-      <MatrixBudgetEditor
-        onClose={() => setBudgetMode("workspace")}
-        onOpenSpreadsheetSync={() => setSyncModalOpen(true)}
-      />
-    );
-  }
 
   return (
     <div className="ee-budget-workspace">
@@ -255,7 +244,7 @@ export function Budgets() {
       <BudgetSetupModal
         open={setupModalOpen}
         onClose={() => setSetupModalOpen(false)}
-        onNext={() => { setSetupModalOpen(false); setBudgetMode("editor"); }}
+        onNext={() => { setSetupModalOpen(false); setBudgetMode("list"); setEditing("new"); }}
         onOpenSpreadsheetSync={() => { setSetupModalOpen(false); setSyncModalOpen(true); }}
       />
 

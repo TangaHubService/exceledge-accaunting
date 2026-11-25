@@ -200,9 +200,12 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
   const subtotal = productTotal(form.lines);
   const discount = Math.min(subtotal, (subtotal * (num(form.discountPct) || 0)) / 100);
   const taxed = form.lines.some((l) => l.tax);
-  const tax = taxExempt ? 0 : productTax(form.lines, lineTax.rates, num(form.discountPct) || 0);
-  const total = Math.round((subtotal - discount + tax) * 100) / 100;
-  const taxRow: Array<[string, string]> = taxed ? [[taxExempt ? "Tax (customer is tax-exempt)" : "Tax", rwf(tax, currency)]] : [];
+  // Estimates and orders keep prices before tax; only an invoice can be entered with tax inside.
+  const [taxInside, setTaxInside] = useState(false);
+  const inclusive = isInvoice && taxInside;
+  const tax = taxExempt ? 0 : productTax(form.lines, lineTax.rates, num(form.discountPct) || 0, inclusive);
+  const total = Math.round((subtotal - discount + (inclusive ? 0 : tax)) * 100) / 100;
+  const taxRow: Array<[string, string]> = taxed ? [[taxExempt ? "Tax (customer is tax-exempt)" : inclusive ? "Tax included" : "Tax", rwf(tax, currency)]] : [];
   const deposit = form.depositMode === "%" ? (total * (num(form.deposit) || 0)) / 100 : num(form.deposit) || 0;
 
   function set<K extends keyof Form>(key: K, value: Form[K]) {
@@ -275,7 +278,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
 
   /** Lines with the "Edit totals" discount spread across them (the server prices per line). */
   function pricedLines() {
-    const payload = productLinesPayload(form.lines, productOptions, items).map((l) => (taxExempt ? { ...l, taxCode: null } : l));
+    const payload = productLinesPayload(form.lines, productOptions, items).map((l) => (taxExempt ? { ...l, taxCode: null } : { ...l, taxInclusive: inclusive && l.taxCode ? true : undefined }));
     if (!discount) return payload;
     let left = Math.round(discount * 100) / 100;
     return payload.map((l, i) => {
@@ -685,6 +688,11 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
             </DocBand>
           </div>
 
+          {isInvoice && lineTax.options ? (
+            <TField label="Amounts are" className="w-md">
+              <Select value={taxInside ? "in" : "ex"} onChange={(x) => setTaxInside(x === "in")} options={[{ value: "ex", label: "Exclusive of tax" }, { value: "in", label: "Inclusive of tax" }]} searchable={false} />
+            </TField>
+          ) : null}
           <LineGrid
             columns={columns}
             rows={form.lines}

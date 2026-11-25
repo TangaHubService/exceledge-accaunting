@@ -132,7 +132,14 @@ bankingRouter.get(
 );
 bankingRouter.get("/transactions/:id", handle((req) => banking.getTransaction(req.companyId!, req.params.id)));
 
-bankingRouter.post("/receipts", requireCapability("bank:manage"), handle((req) => banking.receiveMoney(req.companyId!, moneyBody.parse(req.body), actor(req)), 201));
+bankingRouter.post("/receipts", requireCapability("bank:manage"), handle(async (req) => {
+    const body = moneyBody.extend({ cashBack: z.object({ toAccountId: z.string().min(1), amount: money, description: text() }).optional() }).parse(req.body);
+    const { cashBack, ...receipt } = body;
+    const saved = await banking.receiveMoney(req.companyId!, receipt, actor(req));
+    // Same transaction: a deposit is never left without the cash taken back from it.
+    if (cashBack) await banking.transferFunds(req.companyId!, { fromAccountId: body.financialAccountId, transactionDate: body.transactionDate, ...cashBack }, actor(req));
+    return saved;
+  }, 201));
 bankingRouter.post("/payments", requireCapability("bank:manage"), handle((req) => banking.makePayment(req.companyId!, moneyBody.parse(req.body), actor(req)), 201));
 
 bankingRouter.post(

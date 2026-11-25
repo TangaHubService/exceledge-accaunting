@@ -234,7 +234,7 @@ coaRouter.delete("/:id", requireCapability("coa:deactivate"), async (req: Authed
 
 coaRouter.post("/import", requireCapability("coa:import"), async (req: AuthedRequest, res) => {
   try {
-    const body = z.object({ rows: z.array(z.record(z.any())).min(1) }).parse(req.body);
+    const body = z.object({ rows: z.array(z.record(z.string(), z.any())).min(1) }).parse(req.body);
     const data = await coa.importAccounts(req.companyId!, body.rows, actor(req));
     res.status(201).json({ success: true, data });
   } catch (e) {

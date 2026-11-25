@@ -291,17 +291,6 @@ export type InboxMessage = {
   preview: string;
 };
 
-export const INBOX_SAMPLE: InboxMessage[] = [
-  {
-    id: "welcome",
-    initials: "EE",
-    sender: "Excel Edge Team",
-    badge: "Preview",
-    date: "14 Oct",
-    subject: "Welcome to your Inbox",
-    preview: "Keep your business conversations together.",
-  },
-];
 
 export const HELP_SUGGESTIONS = [
   { id: "invoice", label: "How do I create an invoice?", icon: "file" as const },

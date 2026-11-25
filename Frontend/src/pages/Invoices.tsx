@@ -227,6 +227,19 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
   }
 
   async function remove(row: InvoiceApplications["rows"][number]) {
+    const writtenOff = row.kind === "CREDIT_ON_ISSUE" && row.sourceNumber.startsWith("WO-");
+    if (writtenOff) {
+      const yes = await confirm({ title: `Reverse write-off ${row.sourceNumber}?`, body: `${currency} ${amount(row.amount, 2)} is owed on this invoice again, and the bad debt expense is reversed today.`, confirmLabel: "Reverse write-off" });
+      if (!yes) return;
+      try {
+        await api(`/api/v1/ar/write-offs/${row.id}/reverse`, { method: "POST", body: "{}" });
+        toast(`Write-off ${row.sourceNumber} reversed`);
+        changed();
+      } catch (e) {
+        toast((e as Error).message, { error: true });
+      }
+      return;
+    }
     const what = row.kind === "PAYMENT" ? "payment" : row.kind === "DEPOSIT" ? "deposit" : "credit note";
     const ok = await confirm({
       title: `Remove ${what} ${row.sourceNumber} from this invoice?`,
@@ -243,6 +256,25 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
       changed();
     } catch (e) {
       toast((e as Error).message, { error: true });
+    }
+  }
+
+  const [writeOff, setWriteOff] = useState<{ date: string; reason: string } | null>(null);
+  const [writing, setWriting] = useState(false);
+  const canWriteOff = can("ar:credit-override") && invoice.data && !voided && invoice.data.outstanding > 0.005;
+  async function writeItOff() {
+    const inv = invoice.data!;
+    if (!writeOff || writeOff.reason.trim().length < 3) return toast("Say why the debt is written off", { error: true });
+    setWriting(true);
+    try {
+      await api(`/api/v1/ar/invoices/${inv.id}/write-off`, { method: "POST", body: JSON.stringify({ date: writeOff.date, reason: writeOff.reason.trim() }) });
+      toast(`${currency} ${amount(inv.outstanding, 2)} written off`);
+      setWriteOff(null);
+      changed();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -274,7 +306,7 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
     const inv = invoice.data!;
     const ok = await confirm({
       title: `Void invoice ${inv.invoiceNumber}?`,
-      body: `The invoice keeps its number but its ${currency} ${amount(inv.gross, 2)} comes off the customer's balance, and a reversing journal is posted. This can't be undone.`,
+      body: `The invoice keeps its number but its ${currency} ${amount(inv.gross, 2)} comes off the customer's balance. A reversing journal is posted on the invoice date, or today if that period is closed. This can't be undone.`,
       confirmLabel: "Void invoice",
       danger: true,
     });
@@ -303,6 +335,11 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
               Email
             </button>
           )}
+          {canWriteOff && !writeOff && (
+            <button type="button" className="btn btn-quiet" onClick={() => setWriteOff({ date: new Date().toISOString().slice(0, 10), reason: "" })}>
+              Write off
+            </button>
+          )}
           {canVoid && (
             <button type="button" className="btn btn-quiet" style={{ color: "var(--negative)" }} onClick={() => void voidIt()}>
               Void
@@ -316,6 +353,29 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
         {(inv) => (
           <>
             {inv.description && <p className="small">{inv.description}</p>}
+            {writeOff && (
+              <div className="form-grid" role="group" aria-label="Write off as bad debt">
+                <p className="small span-2">
+                  Writes off the {currency} {amount(inv.outstanding, 2)} still owed as bad debt expense. VAT already charged stays payable; ask your accountant about relief.
+                </p>
+                <label className="field">
+                  <span>Date</span>
+                  <input className="input" type="date" value={writeOff.date} min={inv.invoiceDate.slice(0, 10)} onChange={(e) => setWriteOff({ ...writeOff, date: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>Reason</span>
+                  <input className="input" value={writeOff.reason} maxLength={300} onChange={(e) => setWriteOff({ ...writeOff, reason: e.target.value })} />
+                </label>
+                <div className="span-2">
+                  <button type="button" className="btn btn-primary" disabled={writing} onClick={() => void writeItOff()}>
+                    Write off
+                  </button>{" "}
+                  <button type="button" className="btn" onClick={() => setWriteOff(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {inv.lines.length > 0 && (
               <div className="table-wrap">
                 <table className="table">
@@ -399,7 +459,7 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
                         <div className="inv-app">
                           <span className="cust-mini-main">
                             <span className="strong">
-                              {r.kind === "PAYMENT" ? "Payment" : r.kind === "DEPOSIT" ? "Deposit" : "Credit note"} {r.sourceNumber}
+                              {r.kind === "PAYMENT" ? "Payment" : r.kind === "DEPOSIT" ? "Deposit" : r.sourceNumber.startsWith("WO-") ? "Write-off" : "Credit note"} {r.sourceNumber}
                             </span>
                             <span className="sub">
                               {date(r.date)}

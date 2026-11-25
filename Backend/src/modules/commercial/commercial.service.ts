@@ -70,7 +70,7 @@ export const documentBody = z.object({
   discountPct: z.number().min(0).max(100).nullish(),
   deposit: z.number().min(0).nullish(),
   projectId: z.string().min(1).nullish(),
-  meta: z.record(z.unknown()).nullish(),
+  meta: z.record(z.string(), z.unknown()).nullish(),
   lines: z.array(lineBody).min(1, "Add at least one line").max(200),
 });
 export type DocumentBody = z.infer<typeof documentBody>;

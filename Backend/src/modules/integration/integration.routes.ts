@@ -1,7 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { env } from "../../config/env";
 import {
   AuthedRequest,
   authenticateErpJwt,
@@ -9,19 +7,15 @@ import {
   requireCapability,
   resolveCompany,
 } from "../../middleware/auth";
+import { currentIntegrationKey, integrationKeyAccepted, issueIntegrationKey, revokeIntegrationKey } from "./integration-keys";
 import * as integration from "./integration.service";
 
 export const integrationRouter = Router();
 
-function sameSecret(presented: string, expected: string) {
-  const a = createHash("sha256").update(presented).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-function requireIntegrationKey(req: AuthedRequest, res: import("express").Response, next: import("express").NextFunction) {
+async function requireIntegrationKey(req: AuthedRequest, res: import("express").Response, next: import("express").NextFunction) {
   const key = req.header("x-integration-key") || req.header("x-api-key");
-  if (!key || !env.integrationApiKey || !sameSecret(key, env.integrationApiKey)) {
+  const org = req.body?.externalOrganizationId ?? req.query.externalOrganizationId;
+  if (!(await integrationKeyAccepted(key, org == null ? undefined : String(org)))) {
     return res.status(401).json({ success: false, error: "Invalid integration API key" });
   }
   return next();
@@ -54,7 +48,7 @@ const envelopeSchema = z.object({
   lines: z.array(z.any()).optional(),
   paymentSplits: z.array(z.any()).optional(),
   taxSummary: z.array(z.any()).optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   correlationId: z.string().optional(),
 });
 
@@ -105,6 +99,21 @@ integrationRouter.get(
 integrationRouter.post("/process-pending", requireIntegrationKey, async (req, res) => {
   const data = await integration.processPendingEvents(Number(req.body?.limit ?? 20));
   res.json({ success: true, data });
+});
+
+const keyActor = (req: AuthedRequest) => ({ erpUserId: req.erpUser?.userId, erpRole: req.organizationRole, meta: getRequestMeta(req) });
+integrationRouter.get("/key", authenticateErpJwt, requireCapability("platform:manage"), resolveCompany, async (req: AuthedRequest, res) => {
+  res.json({ success: true, data: await currentIntegrationKey(req.companyId!) });
+});
+integrationRouter.post("/key", authenticateErpJwt, requireCapability("platform:manage"), resolveCompany, async (req: AuthedRequest, res) => {
+  res.status(201).json({ success: true, data: await issueIntegrationKey(req.companyId!, keyActor(req)) });
+});
+integrationRouter.delete("/key", authenticateErpJwt, requireCapability("platform:manage"), resolveCompany, async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await revokeIntegrationKey(req.companyId!, keyActor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: (e as Error).message });
+  }
 });
 
 /** Human-facing exception queue (ERP JWT) */

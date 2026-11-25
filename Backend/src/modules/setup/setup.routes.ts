@@ -124,7 +124,7 @@ setupRouter.put("/business-info", requireCapability("setup:prepare"), async (req
         numberOfBranches: z.number().int().optional(),
         headOffice: z.string().optional(),
         reportingStructure: z.string().optional(),
-        accountingBasis: z.enum(["ACCRUAL", "CASH", "MODIFIED_CASH"]).optional(),
+        accountingBasis: z.literal("ACCRUAL", { error: "Only the accrual basis is supported; cash-basis reports are not available yet" }).optional(),
         reportingFramework: z
           .enum(["IFRS", "IFRS_SME", "IPSAS", "LOCAL_GAAP", "INTERNAL"])
           .optional(),
@@ -195,7 +195,7 @@ setupRouter.put("/policies", requireCapability("setup:prepare"), async (req: Aut
   try {
     const body = z
       .object({
-        accountingBasis: z.enum(["ACCRUAL", "CASH", "MODIFIED_CASH"]).optional(),
+        accountingBasis: z.literal("ACCRUAL", { error: "Only the accrual basis is supported; cash-basis reports are not available yet" }).optional(),
         inventoryValuationMethod: z
           .enum(["FIFO", "WEIGHTED_AVERAGE", "SPECIFIC_IDENTIFICATION"])
           .optional(),
@@ -224,7 +224,7 @@ setupRouter.put("/localization", requireCapability("setup:prepare"), async (req:
         countryOfRegistration: z.string().min(2),
         localizationPackage: z.string().min(2),
         taxAuthority: z.string().optional(),
-        taxRegistrationNumbers: z.record(z.string()).optional(),
+        taxRegistrationNumbers: z.record(z.string(), z.string()).optional(),
         taxpayerCategory: z.string().optional(),
         taxFilingFrequency: z.string().optional(),
         electronicInvoicingRequired: z.boolean().optional(),
@@ -301,7 +301,7 @@ setupRouter.put("/banking", requireCapability("setup:prepare"), async (req: Auth
         defaultReceiptMethod: z.string().optional(),
         defaultPaymentMethod: z.string().optional(),
         bankReconciliationMethod: z.string().optional(),
-        paymentMethodAccountMap: z.record(z.string()).optional(),
+        paymentMethodAccountMap: z.record(z.string(), z.string()).optional(),
       })
       .parse(req.body);
     const data = await setup.upsertBankingSettings(req.companyId!, body, actor(req));
@@ -356,7 +356,7 @@ setupRouter.put("/numbering/:documentType", requireCapability("setup:prepare"), 
 
 setupRouter.put("/default-accounts", requireCapability("setup:prepare"), async (req: AuthedRequest, res) => {
   try {
-    const body = z.record(z.string().min(1).nullable()).parse(req.body);
+    const body = z.record(z.string(), z.string().min(1).nullable()).parse(req.body);
     const data = await setup.updateDefaultAccounts(req.companyId!, body, actor(req));
     res.json({ success: true, data });
   } catch (e) {

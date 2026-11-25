@@ -2,6 +2,7 @@ import { claimOnce, withJobLock } from "../../lib/job-lock";
 import { inTransaction, prisma } from "../../lib/prisma";
 import * as expenses from "../expense/expense.service";
 import { recordIntegrityScan } from "../integrity/integrity.service";
+import { purgeIdempotency } from "../../middleware/idempotency";
 import { openStartedPeriods } from "../journals/journal.service";
 import { deliverDueEmails } from "../notifications/email-outbox.service";
 import { notify } from "../notifications/notification.service";
@@ -155,6 +156,7 @@ export async function runScheduledWork(now = new Date()) {
     const today = now.toISOString().slice(0, 10);
     const daily = await claimOnce(`daily:${today}`, 26 * 3_600_000);
     if (daily) await prisma.jobLock.deleteMany({ where: { expiresAt: { lt: now } } });
+    if (daily) await purgeIdempotency(now).catch((e) => console.error("[scheduler] idempotency purge", e));
     if (daily) await purgeApiKeyUsage(now).catch((e) => console.error("[scheduler] API key usage purge", e));
     let automationRuns = 0;
     for (const { companyId } of activations) {

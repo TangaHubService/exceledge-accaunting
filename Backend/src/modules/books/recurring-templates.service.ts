@@ -34,7 +34,7 @@ export const templateBody = z
     daysInAdvance: z.number().int().min(0).max(60).default(0),
     partyName: z.string().trim().max(200).nullish(),
     amount: z.number().min(0).max(1e13).nullish(),
-    payload: z.record(z.unknown()).nullish(),
+    payload: z.record(z.string(), z.unknown()).nullish(),
     isActive: z.boolean().default(true),
   })
   .superRefine((t, ctx) => {
