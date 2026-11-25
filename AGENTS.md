@@ -27,10 +27,8 @@ Accounting app for Rwandan businesses, linked to the Excel Edge ERP. `Backend`: 
 - Backend (needs a throwaway `DATABASE_URL`): `npx tsc --noEmit`, `npx prisma migrate deploy`, `npx vitest run`
 - Domain: `npx vitest run` in `Backend/packages/domain`
 - Frontend: `npm run build`
-- Posting, VAT or report changes: `sh ../docs/accounting-audit/evidence/run.sh` from `Backend`, with `DATABASE_URL` on a throwaway server. It drops and recreates the local `exceledge_audit` database, and must end with 0 FAIL.
 
 ## Reviews
 - Report only defects with a concrete input and wrong result, ranked: money wrong, data lost or leaked, then the rest. Give file and line.
 - Each finding ends fixed with a test that failed before, or rejected with a reason. At most two rounds, then the user decides.
 
-Open work: `docs/accounting-audit/IMPLEMENTATION_ROADMAP.md`, `P0_STATUS.md`, `P1_STATUS.md`.
