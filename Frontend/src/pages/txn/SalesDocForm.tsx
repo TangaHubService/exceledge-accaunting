@@ -40,10 +40,10 @@ import {
   useValidation,
   ValidationSummary,
 } from "../../components/txn/TxnKit";
-import { useCompany } from "../../lib/company";
+import { useCompany, usePartyCurrency } from "../../lib/company";
 import { amount, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
-import { useSession } from "../../lib/session";
+import { useResource, useSession } from "../../lib/session";
 import {
   daysBetween,
   addDays,
@@ -62,7 +62,8 @@ import {
   useProductOptions,
 } from "../../lib/txn";
 import { yup } from "../../lib/validation";
-import type { Customer } from "../../lib/types";
+import type { ArInvoiceDetail, Customer } from "../../lib/types";
+import { usePreferences } from "../../lib/preferences";
 
 export type SalesDocKind = "invoice" | "estimate" | "proposal" | "sales-order";
 
@@ -133,7 +134,7 @@ type Form = {
 export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
   const { api } = useSession();
   const { toast } = useFeedback();
-  const { currency } = useCompany();
+  const { name: companyName } = useCompany();
   const { query } = useLocation();
   const { customers, reload: reloadCustomers } = useCustomers();
   const { options: productOptions, items } = useProductOptions();
@@ -141,6 +142,9 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
   const title = TITLES[kind];
   const isOrder = kind === "sales-order";
   const isInvoice = kind === "invoice";
+  // ?edit=<invoice id>: correct a posted invoice nothing has been applied to
+  const editId = isInvoice ? query.get("edit") : null;
+  const editing = useResource<ArInvoiceDetail>(editId ? `/api/v1/ar/invoices/${editId}` : null);
   const isQuote = kind === "estimate" || kind === "proposal";
   const sequence = kind === "proposal" ? "estimate" : kind;
 
@@ -170,6 +174,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
     };
   };
   const [form, setForm] = useState<Form>(blank);
+  const [dueTouched, setDueTouched] = useState(false);
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [tab, setTab] = useState("Edit");
   const [busy, setBusy] = useState(false);
@@ -193,6 +198,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
   }, [design, kind]);
 
   const customer = customers.find((c) => c.id === form.customerId);
+  const currency = usePartyCurrency(customer?.currency);
   const partyName = customer?.name ?? form.leadName;
   const lineTax = useLineTaxCodes("sales", form.docDate);
   // A tax-exempt customer is billed without tax, whatever codes the lines carry (the server does the same).
@@ -200,9 +206,8 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
   const subtotal = productTotal(form.lines);
   const discount = Math.min(subtotal, (subtotal * (num(form.discountPct) || 0)) / 100);
   const taxed = form.lines.some((l) => l.tax);
-  // Estimates and orders keep prices before tax; only an invoice can be entered with tax inside.
   const [taxInside, setTaxInside] = useState(false);
-  const inclusive = isInvoice && taxInside;
+  const inclusive = taxInside;
   const tax = taxExempt ? 0 : productTax(form.lines, lineTax.rates, num(form.discountPct) || 0, inclusive);
   const total = Math.round((subtotal - discount + (inclusive ? 0 : tax)) * 100) / 100;
   const taxRow: Array<[string, string]> = taxed ? [[taxExempt ? "Tax (customer is tax-exempt)" : inclusive ? "Tax included" : "Tax", rwf(tax, currency)]] : [];
@@ -229,8 +234,46 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
     v.clear("customerId");
   }
 
+  useEffect(() => {
+    const inv = editing.data;
+    if (!inv) return;
+    const before = (n: string | number) => Number(n);
+    setDueTouched(true);
+    setTaxInside(false);
+    setForm((f) => ({
+      ...f,
+      customerId: inv.customer.id,
+      contact: inv.customer.email ?? inv.customer.telephone ?? "",
+      billTo: [inv.customer.name, inv.customer.physicalAddress].filter(Boolean).join("\n"),
+      number: inv.invoiceNumber,
+      docDate: inv.invoiceDate.slice(0, 10),
+      dueDate: inv.dueDate.slice(0, 10),
+      memo: inv.description ?? "",
+      discountPct: "",
+      lines: inv.lines.length
+        ? inv.lines.map((l) => ({
+            ...emptyProductLine(),
+            product: l.itemId ? `item:${l.itemId}` : l.accountId ? `acct:${l.accountId}` : "",
+            description: l.description,
+            qty: String(before(l.quantity)),
+            // Any line discount is already in the amount, so the corrected invoice starts from the same totals.
+            rate: fmt(before(l.net) / before(l.quantity)),
+            amount: fmt(before(l.net)),
+            tax: l.taxCode ?? "",
+          }))
+        : [{ ...emptyProductLine(), description: inv.description ?? "Sale", qty: "1", rate: fmt(before(inv.net) - before(inv.discount)), amount: fmt(before(inv.net) - before(inv.discount)) }],
+    }));
+  }, [editing.data]);
+
   // Keep the due date following the terms until the user picks one by hand.
-  const [dueTouched, setDueTouched] = useState(false);
+  // The company's preferred terms apply until a customer with their own terms, or the user, changes them.
+  const formPrefs = usePreferences("sales-form", { terms: "Net 30", serviceDate: true });
+  const productPrefs = usePreferences("sales-products", { sku: false });
+  const preferredTerms = TERMS.find((t) => t.label === formPrefs.values.terms)?.value;
+  useEffect(() => {
+    if (formPrefs.loaded && preferredTerms && !editId) setForm((f) => (f.customerId || f.terms !== "NET_30" ? f : { ...f, terms: preferredTerms }));
+  }, [formPrefs.loaded, preferredTerms, editId]);
+
   useEffect(() => {
     if (!dueTouched) setForm((f) => ({ ...f, dueDate: addDays(f.docDate, termDays(f.terms)) }));
   }, [form.docDate, form.terms, dueTouched]);
@@ -300,10 +343,10 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
       let number = form.number;
       let id = newId();
       if (isInvoice) {
-        const inv = await api<{ id: string; invoiceNumber: string }>("/api/v1/ar/invoices", {
-          method: "POST",
+        const inv = await api<{ id: string; invoiceNumber: string }>(editId ? `/api/v1/ar/invoices/${editId}` : "/api/v1/ar/invoices", {
+          method: editId ? "PUT" : "POST",
           body: JSON.stringify({
-            customerId: form.customerId,
+            ...(editId ? { updatedAt: editing.data?.updatedAt } : { customerId: form.customerId }),
             invoiceDate: form.docDate,
             dueDate: form.dueDate,
             lines: pricedLines(),
@@ -341,7 +384,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
             meta: { paymentOptions: form.paymentOptions },
             lines: filledProductLines(form.lines).map((l) => ({
               ...productLinesPayload([l], productOptions, items)[0],
-              ...(taxExempt ? { taxCode: null } : {}),
+              ...(taxExempt ? { taxCode: null } : { taxInclusive: inclusive && l.tax ? true : undefined }),
               itemId: l.product.startsWith("item:") ? l.product.slice(5) : null,
               serviceDate: l.date,
             })),
@@ -363,9 +406,9 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
         projectId: query.get("project") ?? undefined,
         posted: isInvoice,
       });
-      toast(isInvoice ? `Invoice ${number} posted to ${partyName}'s account` : `${title} ${number} saved`);
+      toast(editId ? `Invoice ${number} corrected` : isInvoice ? `Invoice ${number} posted to ${partyName}'s account` : `${title} ${number} saved`);
       if (after === "whatsapp") {
-        const text = `${title} ${number} from Excel Edge — total ${rwf(total, currency)}${isInvoice ? `, due ${form.dueDate}` : ""}.`;
+        const text = `${title} ${number} from ${companyName} — total ${rwf(total, currency)}${isInvoice ? `, due ${form.dueDate}` : ""}.`;
         window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
       }
       if (after === "share") {
@@ -379,7 +422,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
       }
       if (after === "send") {
         const to = customer?.email || form.leadEmail;
-        const subject = `${title} ${number} from Excel Edge`;
+        const subject = `${title} ${number} from ${companyName}`;
         const body = `Dear ${partyName},\n\nPlease find ${title.toLowerCase()} ${number} for ${rwf(total, currency)}.\n\n${form.note}`;
         window.location.href = `mailto:${encodeURIComponent(to ?? "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       }
@@ -419,7 +462,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
 
   const locked = Boolean(saved) && isInvoice;
   const docTitle = saved ? `${title} ${saved.number}` : isInvoice ? `${title}` : `${title} ${isOrder ? "#" : ""}${form.number}`;
-  const columns = productColumns(productOptions, items, { date: !isOrder, sku: custom.sku, taxOptions: lineTax.options }).filter(
+  const columns = productColumns(productOptions, items, { date: !isOrder && Boolean(formPrefs.values.serviceDate), sku: custom.sku || Boolean(productPrefs.values.sku), taxOptions: lineTax.options }).filter(
     (c) => (c.key !== "description" || custom.description) && (c.key !== "qty" || custom.quantity) && (c.key !== "rate" || custom.rate),
   );
 
@@ -688,7 +731,7 @@ export function SalesDocForm({ kind }: { kind: SalesDocKind }) {
             </DocBand>
           </div>
 
-          {isInvoice && lineTax.options ? (
+          {lineTax.options ? (
             <TField label="Amounts are" className="w-md">
               <Select value={taxInside ? "in" : "ex"} onChange={(x) => setTaxInside(x === "in")} options={[{ value: "ex", label: "Exclusive of tax" }, { value: "in", label: "Inclusive of tax" }]} searchable={false} />
             </TField>

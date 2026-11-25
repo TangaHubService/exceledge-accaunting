@@ -17,7 +17,7 @@ import { useCompany } from "../../lib/company";
 import { amount, date } from "../../lib/format";
 import { navigate } from "../../lib/router";
 import { useSession } from "../../lib/session";
-import { type RecurringTemplate, TXN_LABELS, type TxnKind, useTxnIndex } from "../../lib/txn";
+import { newId, type RecurringTemplate, saveLocal, TXN_LABELS, type TxnKind, useTxnIndex } from "../../lib/txn";
 import { type FieldErrors, validateYup, yup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { parseAmount } from "../forms";
@@ -900,7 +900,8 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
             onClick={() => {
               if (!rating) return setError("Choose how this form worked for you.");
               if (text.trim().length < 5) return setError("Tell us a little more (at least 5 characters).");
-              toast("Thanks — your feedback was sent to the Excel Edge team");
+              saveLocal("report-feedback", { id: newId(), form: window.location.pathname, rating, text: text.trim(), at: new Date().toISOString() });
+              toast("Thanks. Your feedback is saved.");
               onClose();
             }}
           >
@@ -1074,21 +1075,27 @@ export function useCompanyLogo() {
   return [logo, update] as const;
 }
 
-export const COMPANY_PROFILE = {
-  address1: "Gisozi, Gasabo, Kigali",
-  address2: "ADARWA Building F 11",
-  email: "enockiradukunda4@gmail.com",
-  phone: "+250788701837",
-};
+/** What this company's own profile says, for documents. Anything not filled in is left out. */
+export function useCompanyContact() {
+  const { name, snapshot } = useCompany();
+  const p = (snapshot?.profile ?? {}) as Record<string, string | null | undefined>;
+  return {
+    name: name || "Your company",
+    address: [p.operatingAddress || p.registeredAddress, [p.city, p.district].filter(Boolean).join(", ")].filter((x): x is string => Boolean(x)),
+    email: p.businessEmail || "",
+    phone: p.telephone || "",
+  };
+}
 
 export function CompanyBlock({ showEmail = true, showEdit = true }: { showEmail?: boolean; showEdit?: boolean }) {
-  const { name } = useCompany();
+  const contact = useCompanyContact();
   return (
     <div className="txn-company">
       <div className="txn-company-addr">
-        <strong>{(name || "EXCEL EDGE CPA").toUpperCase()}</strong>
-        <span>{COMPANY_PROFILE.address1}</span>
-        <span>{COMPANY_PROFILE.address2}</span>
+        <strong>{contact.name.toUpperCase()}</strong>
+        {contact.address.map((a) => (
+          <span key={a}>{a}</span>
+        ))}
         {showEdit ? (
           <button type="button" className="txn-link" onClick={() => navigate("/settings/company")}>
             Edit company
@@ -1096,8 +1103,8 @@ export function CompanyBlock({ showEmail = true, showEdit = true }: { showEmail?
         ) : null}
       </div>
       <div className="txn-company-contact">
-        {showEmail ? <span>✉ {COMPANY_PROFILE.email}</span> : null}
-        <span>☏ {COMPANY_PROFILE.phone}</span>
+        {showEmail && contact.email ? <span>✉ {contact.email}</span> : null}
+        {contact.phone ? <span>☏ {contact.phone}</span> : null}
       </div>
     </div>
   );
@@ -1170,7 +1177,7 @@ export function DocPreview({
   font?: string;
   mode: "email" | "pdf";
 }) {
-  const { name } = useCompany();
+  const contact = useCompanyContact();
   const [logo] = useCompanyLogo();
   const total = totals[totals.length - 1]?.[1] ?? "";
   const doc = (
@@ -1178,11 +1185,12 @@ export function DocPreview({
       <header className="txn-doc-head">
         <div>
           <h2>{docTitle.toUpperCase()}</h2>
-          <strong>{(name || "EXCEL EDGE CPA").toUpperCase()}</strong>
-          <div>{COMPANY_PROFILE.address1}</div>
-          <div>{COMPANY_PROFILE.address2}</div>
-          <div>{COMPANY_PROFILE.email}</div>
-          <div>{COMPANY_PROFILE.phone}</div>
+          <strong>{contact.name.toUpperCase()}</strong>
+          {contact.address.map((a) => (
+            <div key={a}>{a}</div>
+          ))}
+          {contact.email ? <div>{contact.email}</div> : null}
+          {contact.phone ? <div>{contact.phone}</div> : null}
         </div>
         {logo ? <img src={logo} alt="" className="txn-doc-logo" /> : null}
       </header>
@@ -1250,9 +1258,9 @@ export function DocPreview({
   return (
     <div className="txn-doc-email">
       <div className="txn-doc-email-card">
-        <p className="muted">From: {(name || "Excel Edge CPA")}</p>
+        <p className="muted">From: {contact.name}</p>
         <h3>
-          {docTitle} {number} from {name || "Excel Edge CPA"}
+          {docTitle} {number} from {contact.name}
         </h3>
         <div className="txn-doc-email-due">
           <span>{docTitle === "Invoice" ? "Balance due" : "Total"}</span>

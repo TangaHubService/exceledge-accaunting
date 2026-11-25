@@ -38,6 +38,11 @@ export const env = {
   documentMaxBytes: Number(process.env.DOCUMENT_MAX_BYTES ?? 10 * 1024 * 1024),
   /** `local` (default) or `s3` for S3-compatible object storage */
   documentStorageDriver: (process.env.DOCUMENT_STORAGE ?? "local").toLowerCase() === "s3" ? ("s3" as const) : ("local" as const),
+  /** 32 random bytes in base64; employees' pay, bank and identity details are encrypted with it. Losing it loses them. */
+  fieldEncryptionKey: process.env.FIELD_ENCRYPTION_KEY ?? "",
+  /** Where `npm run backup` writes; the API also takes a daily backup when it is set. */
+  backupDir: process.env.BACKUP_DIR ?? "",
+  backupKeep: Number(process.env.BACKUP_KEEP ?? 14),
   s3Bucket: process.env.DOCUMENT_S3_BUCKET ?? "",
   s3Region: process.env.DOCUMENT_S3_REGION ?? process.env.AWS_REGION ?? "us-east-1",
   s3Endpoint: process.env.DOCUMENT_S3_ENDPOINT || undefined,

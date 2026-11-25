@@ -2,10 +2,13 @@ import { Router } from "express";
 import { z } from "zod";
 import { actorOf, handle, isoDay } from "../../lib/http";
 import { type AuthedRequest, authenticateErpJwt, can, requireCapability, resolveCompany } from "../../middleware/auth";
+import { backupStatus } from "../platform/backup.service";
 import { nextNumbers } from "../commercial/commercial.service";
+import * as fields from "./custom-fields.service";
 import * as projects from "./projects.service";
 import * as team from "./team.service";
 import { listTransactions } from "./transactions.service";
+import * as rules from "./workflow-rules.service";
 import * as workspace from "./workspace.service";
 
 const userOf = (req: AuthedRequest): workspace.WorkspaceUser => ({ userId: req.erpUser!.userId, can: (c) => can(req, c) });
@@ -92,3 +95,24 @@ const recordId = z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/, "Invalid record id"
 workspaceRouter.get("/records/:collection", handle((req) => workspace.listRecords(req.companyId!, req.params.collection, userOf(req))));
 workspaceRouter.put("/records/:collection/:id", handle((req) => workspace.saveRecord(req.companyId!, req.params.collection, recordId.parse(req.params.id), req.body, userOf(req))));
 workspaceRouter.delete("/records/:collection/:id", handle((req) => workspace.deleteRecord(req.companyId!, req.params.collection, recordId.parse(req.params.id), userOf(req))));
+
+/* ── Custom fields ────────────────────────────────────────────────────────────── */
+
+const fieldActor = (req: AuthedRequest) => ({ ...actorOf(req), capabilities: req.capabilities ? [...req.capabilities] : undefined });
+workspaceRouter.get("/custom-fields", handle((req) => fields.listFields(req.companyId!)));
+workspaceRouter.post("/custom-fields", requireCapability("setup:prepare"), handle((req) => fields.saveField(req.companyId!, null, fields.fieldBody.parse(req.body), fieldActor(req)), 201));
+workspaceRouter.put("/custom-fields/:id", requireCapability("setup:prepare"), handle((req) => fields.saveField(req.companyId!, req.params.id, fields.fieldBody.parse(req.body), fieldActor(req))));
+workspaceRouter.get("/custom-values/:entityType/:entityId", handle((req) => fields.recordValues(req.companyId!, req.params.entityType, req.params.entityId, fieldActor(req))));
+workspaceRouter.put("/custom-values/:entityType/:entityId", handle((req) => fields.saveValues(req.companyId!, req.params.entityType, req.params.entityId, z.record(z.string(), z.string().max(500)).parse(req.body), fieldActor(req))));
+
+/* ── Workflow rules ───────────────────────────────────────────────────────────── */
+
+const managePlatform = requireCapability("platform:manage");
+workspaceRouter.get("/rules", managePlatform, handle((req) => rules.listRules(req.companyId!)));
+workspaceRouter.post("/rules", managePlatform, handle((req) => rules.saveRule(req.companyId!, null, rules.ruleBody.parse(req.body), actorOf(req)), 201));
+workspaceRouter.put("/rules/:id", managePlatform, handle((req) => rules.saveRule(req.companyId!, req.params.id, rules.ruleBody.parse(req.body), actorOf(req))));
+workspaceRouter.delete("/rules/:id", managePlatform, handle((req) => rules.deleteRule(req.companyId!, req.params.id, actorOf(req))));
+
+/* ── Backups: the server's, so only for people who manage the platform ────────── */
+
+workspaceRouter.get("/backups", managePlatform, handle(() => backupStatus()));

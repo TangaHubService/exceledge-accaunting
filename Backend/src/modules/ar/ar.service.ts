@@ -22,11 +22,11 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { ArPaymentMethod, CustomerType, Prisma } from "@prisma/client";
-import { assertFunctionalDocument, assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { assertFunctionalDocument, assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, realizedFxLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { agedBalances } from "../books/ageing.service";
-import { createAndPostJournal, linesInJournalCurrency, reversalCurrency, reversalDate } from "../journals/journal.service";
+import { assertOpenPeriod, createAndPostJournal, linesInJournalCurrency, reversalCurrency, reversalDate } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -467,6 +467,22 @@ async function loadActiveCustomer(companyId: string, customerId: string, options
   return customer!;
 }
 
+function invoiceLineRows(lines: Awaited<ReturnType<typeof priceDocumentLines>>["lines"]) {
+  return lines.map((l) => ({
+    lineNumber: l.lineNumber,
+    description: l.description,
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    discount: l.discount,
+    net: l.net,
+    taxCode: l.taxCode,
+    taxRate: l.taxRate,
+    tax: l.tax,
+    accountId: l.accountId,
+    itemId: l.itemId ?? null,
+  }));
+}
+
 export async function createInvoice(
   companyId: string,
   input: {
@@ -545,18 +561,7 @@ export async function createInvoice(
       ...(priced
         ? {
             lines: {
-              create: priced.lines.map((l) => ({
-                lineNumber: l.lineNumber,
-                description: l.description,
-                quantity: l.quantity,
-                unitPrice: l.unitPrice,
-                discount: l.discount,
-                net: l.net,
-                taxCode: l.taxCode,
-                taxRate: l.taxRate,
-                tax: l.tax,
-                accountId: l.accountId,
-              })),
+              create: invoiceLineRows(priced.lines),
             },
           }
         : {}),
@@ -774,7 +779,11 @@ async function reverseReceiptOnce(companyId: string, receiptId: string, actor: A
     credit: line.debit,
     description: `Reversal: ${line.description ?? "receipt"}`,
   }));
-  const posted = await postBalanced(
+  // A foreign settlement posted cash at one rate and the documents at others; only its own journal says what to undo.
+  const posted =
+    receipt.journalId && receipt.currency.toUpperCase() !== (await functionalCurrencyOf(companyId))
+      ? await postSourceReversal(companyId, receipt.journalId, { date: reversalDate, description: `Reverse receipt ${receipt.receiptNumber}${options.reason ? ` — ${options.reason}` : ""}`, sourceDocumentType: "ArReceiptReversal", sourceDocumentId: receipt.id, sourceDocumentNumber: receipt.receiptNumber, customerRef: receipt.customerId }, actor)
+      : await postBalanced(
     companyId,
     {
       journalDate: reversalDate,
@@ -957,12 +966,15 @@ export async function createDebitNote(
     reason: string;
     net: number;
     tax?: number;
+    exchangeRate?: number;
     description?: string;
   },
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
-  await assertFunctionalDocument(companyId, null, customer.currency);
+  const noteDate = new Date(input.noteDate);
+  const fx = await resolveDocumentMoney(companyId, { partyCurrency: customer.currency, date: noteDate, rate: input.exchangeRate });
+  await assertPlausibleTax(companyId, "sales", input.net, input.tax ?? 0, noteDate);
   const net = roundMoney(input.net);
   const tax = roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
@@ -980,7 +992,6 @@ export async function createDebitNote(
     arAccountId: customer.arAccountId,
     salesAccountId: customer.defaultSalesAccountId,
   });
-  const noteDate = new Date(input.noteDate);
   const due = input.dueDate
     ? new Date(input.dueDate)
     : new Date(noteDate.getTime() + customer.creditPeriodDays * 86_400_000);
@@ -993,6 +1004,8 @@ export async function createDebitNote(
       noteDate,
       dueDate: due,
       reason: input.reason,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       gross,
@@ -1006,6 +1019,8 @@ export async function createDebitNote(
       journalDate: noteDate,
       description: input.description || `Debit note ${debitNoteNumber}`,
       referenceNumber: debitNoteNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ArDebitNote",
       sourceDocumentId: note.id,
       sourceDocumentNumber: debitNoteNumber,
@@ -1038,17 +1053,18 @@ export async function createDeposit(
     depositDate: Date | string;
     method?: "CASH" | "BANK" | "MOBILE_MONEY" | "CARD" | "CHEQUE" | "ONLINE";
     amount: number;
+    exchangeRate?: number;
     reference?: string;
     description?: string;
   },
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
-  await assertFunctionalDocument(companyId, null, customer.currency);
+  const depositDate = new Date(input.depositDate);
+  const fx = await resolveDocumentMoney(companyId, { partyCurrency: customer.currency, date: depositDate, rate: input.exchangeRate });
   const amount = roundMoney(input.amount);
   const defaults = await defaultsFor(companyId);
   const lines = buildCustomerDepositLines(defaults, amount, input.method ?? "CASH");
-  const depositDate = new Date(input.depositDate);
   const depositNumber = await nextNumber(companyId, "AR_DEPOSIT", "DEP");
   const deposit = await prisma.arDeposit.create({
     data: {
@@ -1059,6 +1075,8 @@ export async function createDeposit(
       method: input.method ?? "CASH",
       amount,
       remaining: amount,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       reference: input.reference,
       description: input.description,
       createdByErpUserId: actor.erpUserId,
@@ -1070,6 +1088,8 @@ export async function createDeposit(
       journalDate: depositDate,
       description: input.description || `Customer deposit ${depositNumber}`,
       referenceNumber: depositNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ArDeposit",
       sourceDocumentId: deposit.id,
       sourceDocumentNumber: depositNumber,
@@ -1102,12 +1122,20 @@ export async function allocateDeposit(
     where: { id: input.invoiceId, companyId, customerId: deposit.customerId, status: "POSTED" },
   });
   if (!invoice) throw new Error("Invoice does not exist");
+  const functional = await functionalCurrencyOf(companyId);
+  if (invoice.currency.toUpperCase() !== deposit.currency.toUpperCase()) throw new Error(`Deposit ${deposit.depositNumber} is in ${deposit.currency}; invoice ${invoice.invoiceNumber} is in ${invoice.currency}`);
   if (amount - invoiceOutstanding(invoice) > 0.0001) {
     throw new Error("Allocation exceeds invoice outstanding balance");
   }
   const when = await actionDate(companyId, input.date, deposit.depositDate > invoice.invoiceDate ? deposit.depositDate : invoice.invoiceDate, "Applying a deposit");
   const defaults = await defaultsFor(companyId);
-  const lines = buildDepositApplicationLines(defaults, amount, deposit.customer.arAccountId);
+  const ar = deposit.customer.arAccountId || defaults.accountsReceivableId;
+  if (!ar || !defaults.customerDepositsId) throw new Error("Receivables and customer deposits accounts are not configured");
+  // The deposit leaves at the rate it came in at and the invoice clears at its own.
+  const lines =
+    deposit.currency.toUpperCase() === functional
+      ? buildDepositApplicationLines(defaults, amount, deposit.customer.arAccountId)
+      : await realizedFxLines(companyId, amount, { accountId: defaults.customerDepositsId, rate: Number(deposit.exchangeRate), description: "Customer deposit applied" }, { accountId: ar, rate: Number(invoice.exchangeRate), description: `Deposit applied to ${invoice.invoiceNumber}` });
   const allocation = await prisma.arDepositAllocation.create({
     data: { depositId: deposit.id, invoiceId: invoice.id, amount },
   });
@@ -1117,6 +1145,8 @@ export async function allocateDeposit(
       journalDate: when,
       description: `Apply deposit ${deposit.depositNumber}`,
       referenceNumber: deposit.depositNumber,
+      currencyCode: functional,
+      exchangeRate: 1,
       sourceDocumentType: "ArDepositAllocation",
       sourceDocumentId: allocation.id,
       sourceDocumentNumber: deposit.depositNumber,
@@ -1169,6 +1199,8 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
   if (!cash || !defaults.customerDepositsId) {
     throw new Error("Cash and customer deposits accounts are not configured");
   }
+  const functional = await functionalCurrencyOf(companyId);
+  const fx = await resolveDocumentMoney(companyId, { documentCurrency: deposit.currency, date: when });
   // Claims exactly the balance read above, so a concurrent refund or allocation makes this one fail.
   const claimed = await prisma.arDeposit.updateMany({
     where: { id: deposit.id, status: "POSTED", remaining: deposit.remaining },
@@ -1181,14 +1213,14 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
       journalDate: when,
       description: `Refund deposit ${deposit.depositNumber}`,
       referenceNumber: deposit.depositNumber,
+      currencyCode: functional,
+      exchangeRate: 1,
       sourceDocumentType: "ArDepositRefund",
       sourceDocumentId: deposit.id,
       sourceDocumentNumber: deposit.depositNumber,
       customerRef: deposit.customerId,
-      lines: [
-        { accountId: defaults.customerDepositsId, description: "Refund customer deposit", debit: amount, credit: 0 },
-        { accountId: cash, description: "Deposit refund", debit: 0, credit: amount },
-      ],
+      // The deposit leaves at the rate it came in at; the money goes out at today's.
+      lines: await realizedFxLines(companyId, amount, { accountId: defaults.customerDepositsId, rate: Number(deposit.exchangeRate), description: "Refund customer deposit" }, { accountId: cash, rate: fx.rate, description: "Deposit refund" }),
     },
     actor,
   );
@@ -1425,7 +1457,7 @@ export async function arDashboard(companyId: string) {
     cashCustomers: customers.filter((customer) => customer.customerType === "CASH" || customer.customerType === "WALK_IN").length,
     creditCustomers: creditCustomers.length,
     totalOutstanding: outstanding,
-    totalDeposits: roundMoney(deposits.reduce((sum, deposit) => sum + money(deposit.remaining), 0)),
+    totalDeposits: roundMoney(deposits.reduce((sum, deposit) => sum + money(deposit.remaining) * Number(deposit.exchangeRate), 0)),
     overdueInvoices: overdue,
     creditUtilization: limitTotal > 0 ? roundMoney(utilized / limitTotal) : 0,
     ageing: ageing.buckets,
@@ -1886,6 +1918,87 @@ async function actionDate(companyId: string, requested: Date | string | undefine
   return date;
 }
 
+/**
+ * Corrects an invoice nothing has been applied to: the original journal is reversed on its own date and the
+ * corrected one posted, under the same number. Both dates must be in open periods; otherwise void and re-enter.
+ */
+export async function editInvoice(
+  companyId: string,
+  invoiceId: string,
+  input: { invoiceDate: Date | string; dueDate?: Date | string; description?: string; lines: DocumentLineInput[]; updatedAt?: string },
+  actor: Actor = {},
+) {
+  // Locks the row, so a payment or void at the same moment waits and then sees the corrected invoice.
+  await prisma.$queryRaw`SELECT id FROM "ar_invoices" WHERE id = ${invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+  const before = await prisma.arInvoice.findFirst({ where: { id: invoiceId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } }, customer: true } });
+  if (!before) throw new Error("Invoice does not exist");
+  if (before.status !== "POSTED") throw new Error(`Invoice ${before.invoiceNumber} is void`);
+  if (before.sourceModule !== "AR" || before.sourceDocumentType !== "ArInvoice") throw new Error(`Invoice ${before.invoiceNumber} can't be edited here; change it where it came from`);
+  if (money(before.amountPaid) > 0.005 || money(before.amountCredited) > 0.005) throw new Error(`Remove the payments and credits applied to ${before.invoiceNumber} before editing it`);
+  if (input.updatedAt && before.updatedAt.toISOString() !== input.updatedAt) throw new Error(`Invoice ${before.invoiceNumber} was changed by someone else; reload it first`);
+  if (!before.journalId) throw new Error(`Invoice ${before.invoiceNumber} has no journal to correct`);
+  if (await prisma.fiscalDocument.count({ where: { companyId, sourceDocumentId: before.id } })) throw new Error(`Invoice ${before.invoiceNumber} has a fiscal receipt; issue a credit note instead`);
+  await assertOpenPeriod(companyId, before.invoiceDate);
+  const customer = await loadActiveCustomer(companyId, before.customerId);
+  const invoiceDate = new Date(input.invoiceDate);
+  if (Number.isNaN(invoiceDate.getTime())) throw new Error("Invoice date must be yyyy-mm-dd");
+  const due = input.dueDate ? new Date(input.dueDate) : new Date(invoiceDate.getTime() + customer.creditPeriodDays * 86_400_000);
+  if (due < invoiceDate) throw new Error("Due date can't be before the invoice date");
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: before.currency,
+    partyCurrency: customer.currency,
+    date: invoiceDate,
+    rate: invoiceDate.getTime() === before.invoiceDate.getTime() ? Number(before.exchangeRate) : undefined,
+  });
+  const priced = await priceDocumentLines(companyId, customer.taxExempt ? input.lines.map((l) => ({ ...l, taxCode: null })) : input.lines, invoiceDate, "sales");
+  const gross = priced.gross;
+  assertCreditAvailable({
+    customerType: customer.customerType,
+    creditLimit: money(customer.creditLimit),
+    outstanding: roundMoney(money(customer.balance) - money(before.gross)),
+    additional: gross,
+    allowOverride: actor.allowCreditOverride,
+  });
+  await postSourceReversal(
+    companyId,
+    before.journalId,
+    { date: before.invoiceDate, description: `Correct invoice ${before.invoiceNumber}`, sourceDocumentType: "ArInvoiceEdit", sourceDocumentId: before.id, sourceDocumentNumber: before.invoiceNumber, customerRef: before.customerId },
+    actor,
+  );
+  const posted = await postBalanced(
+    companyId,
+    {
+      journalDate: invoiceDate,
+      description: input.description || `Invoice ${before.invoiceNumber}`,
+      referenceNumber: before.invoiceNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
+      sourceDocumentType: "ArInvoice",
+      sourceDocumentId: before.id,
+      sourceDocumentNumber: before.invoiceNumber,
+      customerRef: before.customerId,
+      lines: buildLinedInvoiceJournal(await defaultsFor(companyId), { lines: priced.lines, arAccountId: customer.arAccountId, salesAccountId: customer.defaultSalesAccountId }),
+    },
+    actor,
+  );
+  await prisma.$transaction(async (tx) => {
+    await tx.arInvoiceLine.deleteMany({ where: { invoiceId: before.id } });
+    await tx.arInvoice.update({
+      where: { id: before.id },
+      data: { invoiceDate, dueDate: due, exchangeRate: fx.rate, net: priced.net, tax: priced.tax, discount: 0, gross, description: input.description ?? null, journalId: posted.id, lines: { create: invoiceLineRows(priced.lines) } },
+    });
+    await appendLedger(tx, { companyId, customerId: before.customerId, entryDate: before.invoiceDate, docType: "INVOICE_EDIT", docId: before.id, docNumber: before.invoiceNumber, description: "Invoice corrected", debit: 0, credit: money(before.gross) });
+    await appendLedger(tx, { companyId, customerId: before.customerId, entryDate: invoiceDate, docType: "INVOICE", docId: before.id, docNumber: before.invoiceNumber, description: input.description || "Sales invoice", debit: gross, credit: 0 });
+  });
+  await writeAudit({
+    companyId, erpUserId: actor.erpUserId ?? 0, erpRole: actor.erpRole, action: "UPDATE", entityType: "ArInvoice", entityId: before.id,
+    beforeJson: { invoiceDate: before.invoiceDate, dueDate: before.dueDate, gross: money(before.gross), lines: before.lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxCode: l.taxCode })) },
+    afterJson: { invoiceDate, dueDate: due, gross, lines: priced.lines.map((l) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, taxCode: l.taxCode })) },
+    ...actor.meta,
+  });
+  return prisma.arInvoice.findUniqueOrThrow({ where: { id: before.id } });
+}
+
 /* ── Void and un-apply ──────────────────────────────────────────────────── */
 
 /** Posts the mirror image of a posted source journal (invoice, deposit application), in the original currency. */
@@ -1908,7 +2021,7 @@ async function postSourceReversal(
       sourceDocumentId: info.sourceDocumentId,
       sourceDocumentNumber: info.sourceDocumentNumber,
       customerRef: info.customerRef,
-      lines: reverseJournalLines(linesInJournalCurrency(original.lines)),
+      lines: reverseJournalLines(linesInJournalCurrency(original.lines, Number(original.exchangeRate))),
     },
     actor,
   );

@@ -1,3 +1,4 @@
+import { CustomFieldsPanel } from "../../components/CustomFieldsPanel";
 import {
   BarChart3,
   ChevronDown,
@@ -294,7 +295,7 @@ export function ProjectDetail({ id }: { id: string }) {
       {tab === "Transactions" ? <TransactionsTab project={p} type={txnFilter} setType={setTxnFilter} /> : null}
       {tab === "Time Activity" ? <TimeTab project={p} /> : null}
       {tab === "Project Reports" ? <ReportsTab project={p} /> : null}
-      {tab === "Project Details" ? <DetailsTab project={p} update={update} /> : null}
+      {tab === "Project Details" ? <><DetailsTab project={p} update={update} /><CustomFieldsPanel entityType="Project" entityId={p.id} /></> : null}
       {tab === "Attachments" ? <AttachmentsTab project={p} /> : null}
 
       {progressEdit ? <ProgressModal value={p.progress} onClose={() => setProgressEdit(false)} onSave={(n) => (update({ progress: n }), setProgressEdit(false), toast(`Progress set to ${n}%`))} /> : null}

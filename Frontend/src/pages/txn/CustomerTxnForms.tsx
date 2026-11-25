@@ -37,9 +37,10 @@ import {
   ValidationSummary,
 } from "../../components/txn/TxnKit";
 import { financialAccountOptions, useFinancialAccounts } from "../../lib/banking";
-import { useCompany } from "../../lib/company";
+import { usePartyCurrency } from "../../lib/company";
 import { amount, date, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
+import { usePreferences } from "../../lib/preferences";
 import { useResource, useSession } from "../../lib/session";
 import {
   AR_METHODS,
@@ -175,12 +176,12 @@ function Privacy() {
 export function ReceivePaymentForm() {
   const { api } = useSession();
   const { toast } = useFeedback();
-  const { currency } = useCompany();
   const banks = useFinancialAccounts();
   const v = useValidation();
   const blank = () => ({ customerId: "", ...emptyEmail(), paymentDate: isoDay(), method: "", reference: "", depositTo: "", amountReceived: "", memo: "" });
   const [form, setForm] = useState(blank);
   const [customer, setCustomer] = useState<Customer>();
+  const currency = usePartyCurrency(customer?.currency);
   const [applied, setApplied] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [busy, setBusy] = useState(false);
@@ -539,7 +540,6 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
   const cfg = CONFIG[kind];
   const { api } = useSession();
   const { toast } = useFeedback();
-  const { currency } = useCompany();
   const { query } = useLocation();
   const banks = useFinancialAccounts();
   const { options: productOptions, items } = useProductOptions();
@@ -563,6 +563,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
   });
   const [form, setForm] = useState<LineForm>(blank);
   const [customer, setCustomer] = useState<Customer>();
+  const currency = usePartyCurrency(customer?.currency);
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -571,6 +572,8 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
   const [customise, setCustomise] = useState(false);
   const [showDate, setShowDate] = useState(true);
 
+  const formPrefs = usePreferences("sales-form", { serviceDate: true });
+  const productPrefs = usePreferences("sales-products", { sku: false });
   const taxable = kind === "sales-receipt" || kind === "credit-note" || kind === "refund-receipt";
   const usesCredits = (kind === "credit-note" || kind === "refund-receipt") && Boolean(form.customerId);
   const credits = useResource<CustomerCredits>(usesCredits ? `/api/v1/ar/customers/${form.customerId}/credits` : null);
@@ -685,7 +688,7 @@ export function CustomerLineForm({ kind }: { kind: LineKind }) {
     }
   }
 
-  const columns = productColumns(productOptions, items, { date: showDate, taxOptions: taxable ? lineTax.options : undefined });
+  const columns = productColumns(productOptions, items, { date: showDate && Boolean(formPrefs.values.serviceDate), sku: Boolean(productPrefs.values.sku), taxOptions: taxable ? lineTax.options : undefined });
   const saveDisabled = kind === "refund-receipt" && !form.customerId;
 
   const footerRight = (() => {

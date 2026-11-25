@@ -32,7 +32,7 @@ export const REPORT_SECTIONS: ReportSection[] = [
   {
     title: "Business overview",
     left: [R("Audit Log", "/audit"), R("Balance Sheet", POSITION), ...BS, R("Business Snapshot", "/reports/performance"), R("Statement of Changes in equity", "/reports/statements?tab=equity"), R("Profit and Loss", INCOME)],
-    right: [R("Profit and Loss by Customer"), R("Profit and Loss by Month"), R("Profit and Loss By Tag Group", "/dimensions"), R("Profit and Loss Comparison", INCOME), R("Profit and Loss Detail", INCOME), ...PL_MORE],
+    right: [R("Profit and Loss by Customer"), R("Profit and Loss Cash Basis"), R("Profit and Loss by Month"), R("Profit and Loss By Tag Group", "/dimensions"), R("Profit and Loss Comparison", INCOME), R("Profit and Loss Detail", INCOME), ...PL_MORE],
   },
   {
     title: "Who owes you",

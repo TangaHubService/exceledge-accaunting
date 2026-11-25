@@ -46,6 +46,7 @@ export const ACCOUNTING_HUB_ITEMS: readonly HubItem[] = [
 
 export const EXPENSES_HUB_ITEMS: readonly HubItem[] = [
   { id: "expense-transactions", label: "Expense transactions", to: "/expenses", match: ["/expenses"] },
+  { id: "receipts", label: "Receipts", to: "/expenses/receipts", match: ["/expenses/receipts"] },
   { id: "suppliers", label: "Suppliers", to: "/suppliers", match: ["/suppliers"] },
   { id: "bills", label: "Bills", to: "/bills", match: ["/bills"] },
   { id: "supplier-payments", label: "Supplier payments", to: "/supplier-payments", match: ["/supplier-payments"] },

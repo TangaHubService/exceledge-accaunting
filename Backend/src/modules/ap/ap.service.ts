@@ -24,7 +24,7 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import { Prisma, type SupplierType } from "@prisma/client";
-import { assertFunctionalDocument, assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, realizedFxLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { agedBalances } from "../books/ageing.service";
@@ -599,6 +599,7 @@ export async function listBills(companyId: string, filter: { status?: "OPEN" | "
       dueDate: bill.dueDate,
       poReference: bill.poReference,
       grnReference: bill.grnReference,
+      currency: bill.currency,
       net: money(bill.net),
       tax: money(bill.tax),
       gross: money(bill.gross),
@@ -793,7 +794,11 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
     method: payment.method,
     apAccountId: payment.supplier.apAccountId,
   }).map((line) => ({ ...line, debit: line.credit, credit: line.debit, description: `Reversal: ${line.description ?? "payment"}` }));
-  const posted = await postBalanced(
+  // A foreign settlement posted cash at one rate and the documents at others; only its own journal says what to undo.
+  const posted =
+    payment.journalId && payment.currency.toUpperCase() !== (await functionalCurrencyOf(companyId))
+      ? await postJournalReversal(companyId, payment.journalId, { date: reversalDate, description: `Reverse supplier payment ${payment.paymentNumber}${reason ? ` — ${reason}` : ""}`, sourceDocumentType: "ApPaymentReversal", sourceDocumentId: payment.id, sourceDocumentNumber: payment.paymentNumber, supplierRef: payment.supplierId }, actor)
+      : await postBalanced(
     companyId,
     {
       journalDate: reversalDate,
@@ -882,6 +887,7 @@ export async function createCreditNote(
     /** Required without lines; with lines the totals come from the lines and their tax codes. */
     net?: number;
     tax?: number;
+    exchangeRate?: number;
     description?: string;
     /** Category and item lines, priced like a bill's; each credits its own expense account. */
     lines?: DocumentLineInput[];
@@ -899,7 +905,6 @@ async function createCreditNoteInTransaction(
   actor: Actor,
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
-  await assertFunctionalDocument(companyId, null, supplier.currency);
   const noteDate = new Date(input.noteDate);
   const returned = (input.returnedItems ?? []).filter((item) => item && item.itemId);
   const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, noteDate, "purchase") : null;
@@ -917,6 +922,8 @@ async function createCreditNoteInTransaction(
     if (!bill) throw new Error("Bill does not exist");
     if (gross - billOutstanding(bill) > 0.0001) throw new Error("Credit note exceeds the bill's outstanding balance");
   }
+  // A credit on a bill goes back at the bill's own rate, so payables clear exactly.
+  const fx = await resolveDocumentMoney(companyId, { partyCurrency: supplier.currency, documentCurrency: bill?.currency, date: noteDate, rate: bill ? Number(bill.exchangeRate) : input.exchangeRate });
   const defaults = await defaultsFor(companyId);
   const creditNoteNumber = await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN");
   const note = await prisma.apCreditNote.create({
@@ -928,6 +935,8 @@ async function createCreditNoteInTransaction(
       supplierReference: input.supplierReference || undefined,
       noteDate,
       reason: input.reason,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       gross,
@@ -940,8 +949,11 @@ async function createCreditNoteInTransaction(
   const stock = returned.length
     ? await recordSupplierReturn(companyId, { documentId: note.id, reference: creditNoteNumber, date: noteDate, items: returned })
     : null;
+  // Stock leaves at its functional cost, so a stock return posts in functional currency whatever the supplier's.
+  const grossHome = roundMoney(gross * fx.rate);
+  const taxHome = roundMoney(tax * fx.rate);
   const lines = stock
-    ? buildSupplierReturnLines((await inventoryConfig(companyId)).accounts, { net, tax, cost: stock.cost, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId })
+    ? buildSupplierReturnLines((await inventoryConfig(companyId)).accounts, { net: roundMoney(grossHome - taxHome), tax: taxHome, cost: stock.cost, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId })
     : priced
       ? await linedCreditNoteJournal(companyId, defaults, priced.lines, supplier, bill?.expenseAccountId)
       : buildApCreditNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, returnsAccountId: bill?.expenseAccountId });
@@ -951,6 +963,8 @@ async function createCreditNoteInTransaction(
       journalDate: noteDate,
       description: input.description || `Supplier credit note ${creditNoteNumber}`,
       referenceNumber: input.supplierReference || creditNoteNumber,
+      currencyCode: stock ? fx.functional : fx.currency,
+      exchangeRate: stock ? 1 : fx.rate,
       sourceDocumentType: "ApCreditNote",
       sourceDocumentId: note.id,
       sourceDocumentNumber: creditNoteNumber,
@@ -1017,21 +1031,23 @@ export async function createDebitNote(
     reason: string;
     net: number;
     tax?: number;
+    exchangeRate?: number;
     expenseAccountId?: string;
     description?: string;
   },
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
-  await assertFunctionalDocument(companyId, null, supplier.currency);
+  const noteDate = new Date(input.noteDate);
+  const fx = await resolveDocumentMoney(companyId, { partyCurrency: supplier.currency, date: noteDate, rate: input.exchangeRate });
   const expenseAccountId = input.expenseAccountId || supplier.defaultExpenseAccountId || undefined;
   await assertAccountsUsable(companyId, [expenseAccountId]);
+  await assertPlausibleTax(companyId, "purchase", input.net, input.tax ?? 0, noteDate);
   const net = roundMoney(input.net);
   const tax = roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
   const defaults = await defaultsFor(companyId);
   const lines = buildApDebitNoteLines(defaults, { net, tax, apAccountId: supplier.apAccountId, expenseAccountId });
-  const noteDate = new Date(input.noteDate);
   const dueDate = input.dueDate ? new Date(input.dueDate) : new Date(noteDate.getTime() + supplier.creditPeriodDays * DAY);
   const debitNoteNumber = await nextNumber(companyId, "AP_DEBIT_NOTE", "SDN");
   // A debit note is payable like a bill, so it is carried as a bill for allocation and ageing.
@@ -1045,6 +1061,8 @@ export async function createDebitNote(
       noteDate,
       dueDate,
       reason: input.reason,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       gross,
@@ -1059,6 +1077,8 @@ export async function createDebitNote(
       journalDate: noteDate,
       description: input.description || `Supplier debit note ${debitNoteNumber}`,
       referenceNumber: input.supplierReference || debitNoteNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ApDebitNote",
       sourceDocumentId: note.id,
       sourceDocumentNumber: debitNoteNumber,
@@ -1076,7 +1096,8 @@ export async function createDebitNote(
         billNumber,
         billDate: noteDate,
         dueDate,
-        currency: (await resolveDocumentMoney(companyId, { date: new Date() })).currency,
+        currency: fx.currency,
+        exchangeRate: fx.rate,
         net,
         tax,
         gross,
@@ -1115,18 +1136,19 @@ export async function createAdvance(
     advanceDate: Date | string;
     method?: ApPaymentMethod;
     amount: number;
+    exchangeRate?: number;
     reference?: string;
     description?: string;
   },
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
-  await assertFunctionalDocument(companyId, null, supplier.currency);
+  const advanceDate = new Date(input.advanceDate);
+  const fx = await resolveDocumentMoney(companyId, { partyCurrency: supplier.currency, date: advanceDate, rate: input.exchangeRate });
   const amount = roundMoney(input.amount);
   const method = input.method ?? "BANK";
   const defaults = await defaultsFor(companyId);
   const lines = buildSupplierAdvanceLines(defaults, amount, method);
-  const advanceDate = new Date(input.advanceDate);
   const advanceNumber = await nextNumber(companyId, "AP_ADVANCE", "ADV");
   const advance = await prisma.apAdvance.create({
     data: {
@@ -1137,6 +1159,8 @@ export async function createAdvance(
       method,
       amount,
       remaining: amount,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       reference: input.reference,
       description: input.description,
       createdByErpUserId: actor.erpUserId,
@@ -1148,6 +1172,8 @@ export async function createAdvance(
       journalDate: advanceDate,
       description: input.description || `Supplier advance ${advanceNumber}`,
       referenceNumber: input.reference || advanceNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ApAdvance",
       sourceDocumentId: advance.id,
       sourceDocumentNumber: advanceNumber,
@@ -1174,9 +1200,21 @@ export async function allocateAdvance(
   if (amount - money(advance.remaining) > 0.0001) throw new Error("Allocation exceeds the advance still available");
   const bill = await prisma.apBill.findFirst({ where: { id: input.billId, companyId, supplierId: advance.supplierId, status: "POSTED" } });
   if (!bill) throw new Error("Bill does not exist");
+  const functional = await functionalCurrencyOf(companyId);
+  if (bill.currency.toUpperCase() !== advance.currency.toUpperCase()) throw new Error(`Advance ${advance.advanceNumber} is in ${advance.currency}; bill ${bill.billNumber} is in ${bill.currency}`);
   if (amount - billOutstanding(bill) > 0.0001) throw new Error("Allocation exceeds bill outstanding balance");
   const defaults = await defaultsFor(companyId);
-  const lines = buildAdvanceApplicationLines(defaults, amount, advance.supplier.apAccountId);
+  const booked = buildAdvanceApplicationLines(defaults, amount, advance.supplier.apAccountId);
+  // The bill clears at its own rate and the advance leaves at the rate it was paid at.
+  const lines =
+    advance.currency.toUpperCase() === functional
+      ? booked
+      : await realizedFxLines(
+          companyId,
+          amount,
+          { accountId: booked.find((l) => Number(l.debit) > 0)!.accountId, rate: Number(bill.exchangeRate), description: `Advance applied to ${bill.billNumber}` },
+          { accountId: booked.find((l) => Number(l.credit) > 0)!.accountId, rate: Number(advance.exchangeRate), description: "Supplier advance applied" },
+        );
   const allocation = await prisma.apAdvanceAllocation.create({ data: { advanceId: advance.id, billId: bill.id, amount } });
   const posted = await postBalanced(
     companyId,
@@ -1184,6 +1222,8 @@ export async function allocateAdvance(
       journalDate: allocationDate,
       description: `Apply advance ${advance.advanceNumber} to ${bill.billNumber}`,
       referenceNumber: advance.advanceNumber,
+      currencyCode: functional,
+      exchangeRate: 1,
       sourceDocumentType: "ApAdvanceAllocation",
       sourceDocumentId: allocation.id,
       sourceDocumentNumber: advance.advanceNumber,
@@ -1227,13 +1267,27 @@ export async function refundAdvance(
   if (amount <= 0) throw new Error("Advance has no remaining balance to refund");
   if (amount - remaining > 0.0001) throw new Error("Refund exceeds the advance still available");
   const defaults = await defaultsFor(companyId);
-  const lines = buildAdvanceRefundLines(defaults, amount, input.method ?? advance.method);
+  const refundDate = input.refundDate ? new Date(input.refundDate) : new Date();
+  const fx = await resolveDocumentMoney(companyId, { documentCurrency: advance.currency, date: refundDate });
+  const booked = buildAdvanceRefundLines(defaults, amount, input.method ?? advance.method);
+  // The money comes back at today's rate; the advance leaves at the rate it was paid at.
+  const lines =
+    fx.currency === fx.functional
+      ? booked
+      : await realizedFxLines(
+          companyId,
+          amount,
+          { accountId: booked.find((l) => Number(l.debit) > 0)!.accountId, rate: fx.rate, description: "Advance refunded" },
+          { accountId: booked.find((l) => Number(l.credit) > 0)!.accountId, rate: Number(advance.exchangeRate), description: "Supplier advance refunded" },
+        );
   const posted = await postBalanced(
     companyId,
     {
-      journalDate: input.refundDate ? new Date(input.refundDate) : new Date(),
+      journalDate: refundDate,
       description: `Refund of supplier advance ${advance.advanceNumber}`,
       referenceNumber: advance.advanceNumber,
+      currencyCode: fx.functional,
+      exchangeRate: 1,
       sourceDocumentType: "ApAdvanceRefund",
       sourceDocumentId: advance.id,
       sourceDocumentNumber: advance.advanceNumber,
@@ -1274,6 +1328,7 @@ export async function listAdvances(companyId: string, filter: { supplierId?: str
     supplierName: a.supplier.name,
     method: a.method,
     amount: money(a.amount),
+    currency: a.currency,
     remaining: money(a.remaining),
     refunded: money(a.refunded),
     reference: a.reference,
@@ -1541,7 +1596,7 @@ export async function apDashboard(companyId: string) {
       take: 8,
       include: { supplier: { select: { name: true } } },
     }),
-    prisma.apAdvance.findMany({ where: { companyId, status: "POSTED" }, select: { remaining: true } }),
+    prisma.apAdvance.findMany({ where: { companyId, status: "POSTED" }, select: { remaining: true, exchangeRate: true } }),
     prisma.apCreditNote.findMany({ where: { companyId, status: "POSTED" }, orderBy: { noteDate: "desc" }, take: 5, include: { supplier: { select: { name: true } } } }),
     prisma.apAllocation.findMany({
       where: { payment: { companyId, status: "POSTED", paymentDate: { gte: yearAgo } } },
@@ -1602,7 +1657,7 @@ export async function apDashboard(companyId: string) {
     billsDueToday: dueToday,
     overdueBills: overdue,
     dueNext7Days: dueNext7,
-    totalAdvances: roundMoney(advances.reduce((s, a) => s + money(a.remaining), 0)),
+    totalAdvances: roundMoney(advances.reduce((s, a) => s + money(a.remaining) * Number(a.exchangeRate), 0)),
     monthlyPurchases,
     averagePaymentDays: weight > 0 ? Math.round(weighted / weight) : null,
     ageing: ageing.buckets,
@@ -1832,7 +1887,7 @@ async function postJournalReversal(
       sourceDocumentId: info.sourceDocumentId,
       sourceDocumentNumber: info.sourceDocumentNumber,
       supplierRef: info.supplierRef,
-      lines: reverseJournalLines(linesInJournalCurrency(original.lines)),
+      lines: reverseJournalLines(linesInJournalCurrency(original.lines, Number(original.exchangeRate))),
     },
     actor,
   );
@@ -1847,12 +1902,11 @@ export async function supplierOpenItems(companyId: string, supplierId: string) {
     prisma.apAdvance.findMany({ where: { companyId, supplierId, status: "POSTED", remaining: { gt: 0.005 } }, orderBy: { advanceDate: "asc" } }),
     prisma.apBill.findMany({ where: { companyId, supplierId, status: "POSTED" }, orderBy: [{ dueDate: "asc" }, { billNumber: "asc" }] }),
   ]);
-  const functional = await functionalCurrencyOf(companyId);
   return {
     supplier: { id: supplier.id, code: supplier.code, name: supplier.name, currency: supplier.currency },
     credits: [
       ...payments.map((p) => ({ source: "PAYMENT" as const, id: p.id, number: p.paymentNumber, date: p.paymentDate, currency: p.currency, available: money(p.unallocated), description: p.reference ?? p.description })),
-      ...notes.map((n) => ({ source: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, currency: functional, available: money(n.unapplied), description: n.reason })),
+      ...notes.map((n) => ({ source: "CREDIT_NOTE" as const, id: n.id, number: n.creditNoteNumber, date: n.noteDate, currency: n.currency, available: money(n.unapplied), description: n.reason })),
       ...advances.map((a) => ({ source: "ADVANCE" as const, id: a.id, number: a.advanceNumber, date: a.advanceDate, currency: a.currency, available: money(a.remaining), description: a.reference ?? a.description })),
     ].sort((a, b) => a.date.getTime() - b.date.getTime()),
     bills: bills
@@ -1869,6 +1923,50 @@ export async function supplierOpenItems(companyId: string, supplierId: string) {
       }))
       .filter((b) => b.open > 0.005),
   };
+}
+
+/** A payment or credit cleared payables at its own rate and the bill was booked at another: books the difference. */
+async function postApplicationFx(
+  companyId: string,
+  supplier: { id: string; apAccountId: string | null },
+  bill: { billNumber: string; exchangeRate: unknown },
+  credit: { number: string; rate: number },
+  amount: number,
+  source: { type: string; id: string },
+  date: Date,
+  actor: Actor,
+) {
+  const diff = roundMoney(amount * (credit.rate - Number(bill.exchangeRate)));
+  if (Math.abs(diff) < 0.01) return;
+  const ap = supplier.apAccountId || (await defaultsFor(companyId)).accountsPayableId;
+  if (!ap) throw new Error("Payables account is not configured");
+  const { gainId, lossId } = await fxAccounts(companyId);
+  const note = `FX on ${credit.number} applied to ${bill.billNumber}`;
+  await postBalanced(
+    companyId,
+    {
+      journalDate: date,
+      description: `Apply ${credit.number} to ${bill.billNumber} (realized FX)`,
+      referenceNumber: credit.number,
+      currencyCode: await functionalCurrencyOf(companyId),
+      exchangeRate: 1,
+      sourceDocumentType: source.type,
+      sourceDocumentId: source.id,
+      sourceDocumentNumber: credit.number,
+      supplierRef: supplier.id,
+      lines:
+        diff > 0
+          ? [
+              { accountId: lossId, description: "Realized FX loss", debit: diff, credit: 0 },
+              { accountId: ap, description: note, debit: 0, credit: diff },
+            ]
+          : [
+              { accountId: ap, description: note, debit: -diff, credit: 0 },
+              { accountId: gainId, description: "Realized FX gain", debit: 0, credit: -diff },
+            ],
+    },
+    actor,
+  );
 }
 
 /**
@@ -1905,7 +2003,6 @@ export async function applySupplierCredits(
     const b = byBill.get(id)!;
     if (total - billOutstanding(b) > 0.0001) throw new Error(`Bill ${b.billNumber} only has ${billOutstanding(b)} left to pay`);
   }
-  const functional = await functionalCurrencyOf(companyId);
 
   const applied: Array<{ source: CreditSource; number: string; billNumber: string; amount: number }> = [];
   for (const r of rows) {
@@ -1922,44 +2019,7 @@ export async function applySupplierCredits(
       const payment = await prisma.apPayment.findFirst({ where: { id: r.sourceId, companyId, supplierId, status: "POSTED" } });
       if (!payment) throw new Error("Payment is not available");
       if (payment.currency !== bill.currency) throw new Error(`Payment ${payment.paymentNumber} is in ${payment.currency}; bill ${bill.billNumber} is in ${bill.currency}`);
-      const paymentRate = Number(payment.exchangeRate);
-      const billRate = Number(bill.exchangeRate);
-      if (Math.abs(paymentRate - billRate) > 1e-10) {
-        // The payment cleared AP at its own rate and the bill was booked at another: book the difference.
-        const diff = roundMoney(r.amount * (paymentRate - billRate));
-        if (Math.abs(diff) >= 0.01) {
-          const ap = supplier.apAccountId || (await defaultsFor(companyId)).accountsPayableId;
-          if (!ap) throw new Error("Payables account is not configured");
-          const { gainId, lossId } = await fxAccounts(companyId);
-          const note = `FX on ${payment.paymentNumber} applied to ${bill.billNumber}`;
-          const lines: JournalLineDraft[] =
-            diff > 0
-              ? [
-                  { accountId: lossId, description: "Realized FX loss", debit: diff, credit: 0 },
-                  { accountId: ap, description: note, debit: 0, credit: diff },
-                ]
-              : [
-                  { accountId: ap, description: note, debit: -diff, credit: 0 },
-                  { accountId: gainId, description: "Realized FX gain", debit: 0, credit: -diff },
-                ];
-          await postBalanced(
-            companyId,
-            {
-              journalDate: applyDate,
-              description: `Apply ${payment.paymentNumber} to ${bill.billNumber} (realized FX)`,
-              referenceNumber: payment.paymentNumber,
-              currencyCode: functional,
-              exchangeRate: 1,
-              sourceDocumentType: "ApCreditApplication",
-              sourceDocumentId: payment.id,
-              sourceDocumentNumber: payment.paymentNumber,
-              supplierRef: supplier.id,
-              lines,
-            },
-            actor,
-          );
-        }
-      }
+      await postApplicationFx(companyId, supplier, bill, { number: payment.paymentNumber, rate: Number(payment.exchangeRate) }, r.amount, { type: "ApCreditApplication", id: payment.id }, applyDate, actor);
       await prisma.$transaction(async (tx) => {
         const taken = await tx.apPayment.updateMany({ where: { id: payment.id, status: "POSTED", unallocated: { gte: r.amount } }, data: { unallocated: { decrement: r.amount } } });
         if (!taken.count) throw new Error(`Payment ${payment.paymentNumber} doesn't have ${r.amount} left to apply`);
@@ -1973,15 +2033,16 @@ export async function applySupplierCredits(
 
     const note = await prisma.apCreditNote.findFirst({ where: { id: r.sourceId, companyId, supplierId, status: "POSTED" } });
     if (!note) throw new Error("Supplier credit is not available");
-    // Supplier credits are posted in the functional currency.
-    if (bill.currency !== functional) throw new Error(`Supplier credit ${note.creditNoteNumber} is in ${functional}; bill ${bill.billNumber} is in ${bill.currency}`);
+    if (bill.currency.toUpperCase() !== note.currency.toUpperCase()) throw new Error(`Supplier credit ${note.creditNoteNumber} is in ${note.currency}; bill ${bill.billNumber} is in ${bill.currency}`);
+    let applicationId = "";
     await prisma.$transaction(async (tx) => {
       const taken = await tx.apCreditNote.updateMany({ where: { id: note.id, status: "POSTED", unapplied: { gte: r.amount } }, data: { unapplied: { decrement: r.amount } } });
       if (!taken.count) throw new Error(`Supplier credit ${note.creditNoteNumber} doesn't have ${r.amount} left to apply`);
-      await tx.apCreditApplication.create({ data: { creditNoteId: note.id, billId: bill.id, amount: r.amount, erpUserId: actor.erpUserId } });
+      applicationId = (await tx.apCreditApplication.create({ data: { creditNoteId: note.id, billId: bill.id, amount: r.amount, erpUserId: actor.erpUserId } })).id;
       const updated = await bumpPostedBill(tx, bill.id, { amountCredited: { increment: r.amount } });
       if (billOutstanding(updated) < -0.0001) throw new Error(`Bill ${bill.billNumber} would be overpaid`);
     });
+    await postApplicationFx(companyId, supplier, bill, { number: note.creditNoteNumber, rate: Number(note.exchangeRate) }, r.amount, { type: "ApCreditNoteApplication", id: applicationId }, applyDate, actor);
     applied.push({ source: r.source, number: note.creditNoteNumber, billNumber: bill.billNumber, amount: r.amount });
   }
 
@@ -2087,6 +2148,10 @@ export async function unapplyFromBill(companyId: string, kind: BillApplicationKi
       await tx.apCreditNote.update({ where: { id: c.creditNoteId }, data: { unapplied: { increment: amount } } });
       await tx.apBill.update({ where: { id: c.billId }, data: { amountCredited: { decrement: amount } } });
     });
+    // The realized FX booked when it was applied goes with it.
+    for (const j of await prisma.journal.findMany({ where: { companyId, sourceDocumentType: "ApCreditNoteApplication", sourceDocumentId: c.id, status: "POSTED" }, select: { id: true } })) {
+      await postJournalReversal(companyId, j.id, { date: new Date(), description: `Reverse FX on ${c.creditNote.creditNoteNumber}`, sourceDocumentType: "ApCreditNoteApplicationReversal", sourceDocumentId: c.id, sourceDocumentNumber: c.creditNote.creditNoteNumber, supplierRef: c.creditNote.supplierId }, actor);
+    }
     detail = { supplierId: c.creditNote.supplierId, sourceNumber: c.creditNote.creditNoteNumber, billNumber: c.bill.billNumber, amount };
   } else {
     const d = await prisma.apAdvanceAllocation.findFirst({ where: { id: applicationId, advance: { companyId } }, include: { advance: true, bill: true } });

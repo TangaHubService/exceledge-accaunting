@@ -7,6 +7,7 @@ import {
   type CategoryLine,
   categoryColumns,
   categoryLinesSchema,
+  categoryTax,
   categoryTotal,
   emptyCategoryLine,
   emptyProductLine,
@@ -25,7 +26,6 @@ import {
   AttachmentBox,
   BandAmount,
   CancelButton,
-  COMPANY_PROFILE,
   DocPreview,
   ErrorBanner,
   GridTools,
@@ -44,11 +44,12 @@ import {
   TxnFooter,
   TxnPage,
   uploadAttachments,
+  useCompanyContact,
   useValidation,
   ValidationSummary,
 } from "../../components/txn/TxnKit";
 import { financialAccountOptions, useFinancialAccounts } from "../../lib/banking";
-import { useCompany } from "../../lib/company";
+import { useCompany, usePartyCurrency } from "../../lib/company";
 import { amount, date, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
@@ -255,7 +256,8 @@ const CAT_BACK: Record<CatKind, string> = { bill: "/bills", cheque: "/banking", 
 export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const { api } = useSession();
   const { toast } = useFeedback();
-  const { currency, name: companyName } = useCompany();
+
+  const contact = useCompanyContact();
   const { query } = useLocation();
   const { suppliers, reload: reloadSuppliers } = useSuppliers();
   const { customers } = useCustomers();
@@ -275,7 +277,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     status: "OPEN",
     mailing: "",
     shipToCustomer: "",
-    shipping: [(companyName || "EXCEL EDGE CPA").toUpperCase(), COMPANY_PROFILE.address2, `${COMPANY_PROFILE.address1}, Rwanda`].join("\n"),
+    shipping: [contact.name.toUpperCase(), ...contact.address].join("\n"),
     shipVia: "",
     account: "",
     terms: "",
@@ -297,6 +299,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const [adding, setAdding] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
   const [more, setMore] = useState(false);
+  const [inclusive, setInclusive] = useState(false);
 
   /** Bills, purchase orders and supplier credits carry an Item details grid under the categories, as in QuickBooks. */
   const hasItems = ITEM_KINDS.includes(kind);
@@ -305,10 +308,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const itemLines = hasItems ? form.itemLines ?? [] : [];
   const categorySubtotal = categoryTotal(form.lines);
   const itemSubtotal = productTotal(itemLines);
-  const itemTax = productTax(itemLines, lineTax.rates);
+  const itemTax = Math.round((productTax(itemLines, lineTax.rates, 0, inclusive) + (hasItems ? categoryTax(form.lines, lineTax.rates, inclusive) : 0)) * 100) / 100;
   const itemsFilled = filledProductLines(itemLines).length > 0;
-  const total = Math.round((categorySubtotal + itemSubtotal + itemTax) * 100) / 100;
+  const total = Math.round((categorySubtotal + itemSubtotal + (inclusive ? 0 : itemTax)) * 100) / 100;
   const supplier = suppliers.find((s) => s.id === form.party);
+  const currency = usePartyCurrency(supplier?.currency);
   const payee = usesBank ? payees.lookup(form.party) : undefined;
   const partyName = supplier?.name ?? payee?.name ?? "";
   const bank = banks.data?.find((b) => b.id === form.account);
@@ -368,15 +372,23 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const accountLines = () =>
     filledCategoryLines(form.lines).map((l) => ({ accountId: l.category, amount: Math.round(num(l.amount) * 100) / 100, description: (l.description.trim() || categories.find((c) => c.value === l.category)?.label || title).slice(0, 300) }));
 
+  /** Category lines of a bill, credit or order, with their tax. */
+  const categoryPayload = () => {
+    const filled = filledCategoryLines(form.lines);
+    return accountLines().map((l, i) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId, taxCode: filled[i].tax || undefined, taxInclusive: inclusive && filled[i].tax ? true : undefined }));
+  };
+
+  const taxedLines = () => productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase").map((l) => ({ ...l, taxInclusive: inclusive && l.taxCode ? true : undefined }));
+
   const billLines = () => [
-    ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
-    ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
+    ...categoryPayload(),
+    ...taxedLines(),
   ];
 
   /** Item lines keep their item so a purchase order shows what was ordered and converts to a bill with it. */
   const itemPayloadWithIds = () => {
     const filled = filledProductLines(itemLines);
-    return productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase").map((l, i) => ({
+    return taxedLines().map((l, i) => ({
       ...l,
       itemId: filled[i].product.startsWith("item:") ? filled[i].product.slice(5) : undefined,
     }));
@@ -451,7 +463,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             memo: form.memo,
             note: form.message,
             lines: [
-              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+              ...categoryPayload(),
               ...itemPayloadWithIds(),
             ],
           }),
@@ -508,7 +520,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     const lines = rows.map((r) => {
       const amt = [...r].reverse().find((c) => Number.isFinite(num(c)) && num(c) > 0) ?? "";
       const match = categories.find((c) => c.label.toLowerCase() === (r[0] ?? "").toLowerCase());
-      return { category: match?.value ?? "", description: (match ? r[1] : r[0]) ?? "", amount: fmt(num(amt)) };
+      return { category: match?.value ?? "", description: (match ? r[1] : r[0]) ?? "", amount: fmt(num(amt)), tax: "" };
     });
     set("lines", [...filledCategoryLines(form.lines), ...lines]);
   }
@@ -751,8 +763,15 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
         )}
       </HeaderBand>
 
+      {hasItems && lineTax.options ? (
+        <div className="txn-row">
+          <TField label="Amounts are" className="w-md">
+            <Select value={inclusive ? "in" : "ex"} onChange={(x) => setInclusive(x === "in")} options={[{ value: "ex", label: "Exclusive of tax" }, { value: "in", label: "Inclusive of tax" }]} searchable={false} />
+          </TField>
+        </div>
+      ) : null}
       <LineGrid
-        columns={categoryColumns(categories, kind !== "cheque")}
+        columns={categoryColumns(categories, kind !== "cheque", hasItems ? lineTax.options : undefined)}
         rows={form.lines}
         onChange={(rows) => set("lines", rows)}
         newRow={emptyCategoryLine}
@@ -780,10 +799,10 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: hasItems ? 0 : -58, marginBottom: 30, pointerEvents: "none" }}>
         <Totals
           rows={[
-            ...(itemsFilled
+            ...(itemsFilled || itemTax
               ? [
                   { label: "Subtotal", value: rwf(categorySubtotal + itemSubtotal, currency) },
-                  ...(itemLines.some((l) => l.tax) ? [{ label: "Tax", value: rwf(itemTax, currency) }] : []),
+                  ...(itemTax ? [{ label: inclusive ? "Tax included" : "Tax", value: rwf(itemTax, currency) }] : []),
                 ]
               : []),
             { label: "Total", value: rwf(total, currency), strong: true, big: true },
@@ -840,7 +859,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
               ...filledCategoryLines(form.lines).map((l) => ({ description: [categories.find((c) => c.value === l.category)?.label, l.description].filter(Boolean).join(" — "), amount: num(l.amount) })),
               ...filledProductLines(itemLines).map((l) => ({ description: l.description || purchaseItems.options.find((o) => o.value === l.product)?.label || "", qty: l.qty, rate: l.rate, amount: num(l.amount) })),
             ]}
-            totals={[...(itemTax ? ([["Tax", rwf(itemTax, currency)]] as Array<[string, string]>) : []), ["Total", rwf(total, currency)]]}
+            totals={[...(itemTax ? ([[inclusive ? "Tax included" : "Tax", rwf(itemTax, currency)]] as Array<[string, string]>) : []), ["Total", rwf(total, currency)]]}
             note={form.message || form.memo}
           />
         </Modal>
@@ -1039,7 +1058,7 @@ const RANGES = [
 export function PayBillsForm() {
   const { api } = useSession();
   const { toast } = useFeedback();
-  const { currency } = useCompany();
+  const { currency: home } = useCompany();
   const banks = useFinancialAccounts();
   const bills = useResource<ApBill[]>("/api/v1/ap/bills?status=OPEN");
   const v = useValidation();
@@ -1073,6 +1092,9 @@ export function PayBillsForm() {
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const visible = rows.slice((page - 1) * pageSize, page * pageSize);
   const selected = rows.filter((b) => num(payments[b.id] ?? "") > 0);
+  const currency = selected[0]?.currency ?? home;
+  /** Totals only mean something in one currency. */
+  const oneCurrency = new Set(rows.map((b) => b.currency)).size < 2 ? (rows[0]?.currency ?? home) : null;
   const totalPayment = selected.reduce((s, b) => s + num(payments[b.id]), 0);
   const suppliersInList = useMemo(() => {
     const m = new Map<string, string>();
@@ -1093,8 +1115,9 @@ export function PayBillsForm() {
     v.setErrors(errs);
     if (Object.keys(errs).length) return;
     if (!selected.length) return setError("Select at least one bill to pay.");
+    if (selected.some((b) => b.currency !== currency)) return setError("Pay bills in one currency at a time.");
     const bank = banks.data?.find((b) => b.id === account);
-    if (bank && !bank.allowOverdraft && totalPayment > bank.balance + 0.001) return setError(`${bank.name} only has ${rwf(bank.balance, currency)} and doesn't allow overdrafts.`);
+    if (bank && bank.currency === currency && !bank.allowOverdraft && totalPayment > bank.balance + 0.001) return setError(`${bank.name} only has ${rwf(bank.balance, currency)} and doesn't allow overdrafts.`);
     setBusy(true);
     const bySupplier = new Map<string, ApBill[]>();
     for (const b of selected) bySupplier.set(b.supplierId, [...(bySupplier.get(b.supplierId) ?? []), b]);
@@ -1274,7 +1297,7 @@ export function PayBillsForm() {
                   <td>{date(b.dueDate)}</td>
                   {cols.status ? <td style={{ color: overdue ? "#b42318" : undefined }}>{overdue ? "Overdue" : "Due"}</td> : null}
                   {cols.approval ? <td className="right">Approved</td> : null}
-                  <td className="right">{amount(b.outstanding, 2)}</td>
+                  <td className="right">{b.currency === home ? "" : `${b.currency} `}{amount(b.outstanding, 2)}</td>
                   {cols.credit ? <td className="right">{amount(b.credited, 2)}</td> : null}
                   <td className="right">
                     <input
@@ -1286,7 +1309,7 @@ export function PayBillsForm() {
                     />
                     {err ? <div className="field-error">{err}</div> : null}
                   </td>
-                  <td className="right">{amount(b.gross, 2)}</td>
+                  <td className="right">{b.currency === home ? "" : `${b.currency} `}{amount(b.gross, 2)}</td>
                   <td className="right">
                     <button type="button" className="txn-link" onClick={() => setPayments((p) => ({ ...p, [b.id]: fmt(b.outstanding) }))}>
                       Pay full
@@ -1305,10 +1328,10 @@ export function PayBillsForm() {
             <td />
             {cols.status ? <td /> : null}
             {cols.approval ? <td /> : null}
-            <td className="right">{rwf(rows.reduce((s, b) => s + b.outstanding, 0), currency)}</td>
-            {cols.credit ? <td className="right">{rwf(rows.reduce((s, b) => s + b.credited, 0), currency)}</td> : null}
+            <td className="right">{oneCurrency ? rwf(rows.reduce((s, b) => s + b.outstanding, 0), oneCurrency) : ""}</td>
+            {cols.credit ? <td className="right">{oneCurrency ? rwf(rows.reduce((s, b) => s + b.credited, 0), oneCurrency) : ""}</td> : null}
             <td className="right">{rwf(totalPayment, currency)}</td>
-            <td className="right">{rwf(rows.reduce((s, b) => s + b.gross, 0), currency)}</td>
+            <td className="right">{oneCurrency ? rwf(rows.reduce((s, b) => s + b.gross, 0), oneCurrency) : ""}</td>
             <td />
           </tr>
         </tfoot>

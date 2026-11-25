@@ -77,6 +77,7 @@ export const APP_FLYOUTS: Record<string, { flyoutTitle: string; items: Array<{ l
     flyoutTitle: "EXPENSES & PAY BILLS",
     items: [
       { label: "Expense transactions", to: "/expenses" },
+      { label: "Receipts", to: "/expenses/receipts" },
       { label: "Suppliers", to: "/suppliers" },
       { label: "Bills", to: "/bills" },
       { label: "Cheque", to: "/expenses/cheque/new" },

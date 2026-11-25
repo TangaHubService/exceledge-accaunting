@@ -4,6 +4,7 @@ import { z } from "zod";
 import { nextNumber } from "../../lib/documents";
 import { type Actor, clientId, isoDay, notFound, optionalDay, optionalText, toDate } from "../../lib/http";
 import { inTransaction, prisma } from "../../lib/prisma";
+import { openEmployee, sealEmployee } from "./employee-privacy";
 import { writeAudit } from "../audit/audit.service";
 
 const audit = (companyId: string, actor: Actor, action: string, entityType: string, entityId: string, afterJson?: unknown) =>
@@ -49,8 +50,9 @@ const RESTRICTED = ["dateOfBirth", "nationalId", "payFrequency", "currency", "ba
 
 /** Pay, bank and identity details only reach people who can manage the team. */
 export function presentEmployee(employee: Employee, canSeePrivate: boolean) {
-  if (canSeePrivate) return employee;
-  const copy: Record<string, unknown> = { ...employee };
+  const { basicSalaryEnc: _sealed, ...row } = canSeePrivate ? openEmployee(employee) : employee;
+  if (canSeePrivate) return row;
+  const copy: Record<string, unknown> = { ...row };
   for (const key of RESTRICTED) delete copy[key];
   return copy;
 }
@@ -81,11 +83,11 @@ export async function saveEmployee(companyId: string, id: string, input: z.infer
     };
     if (data.contractStart && data.contractEnd && data.contractEnd < data.contractStart) throw new Error("The contract can't end before it starts");
     const row = existing
-      ? await prisma.employee.update({ where: { id }, data })
-      : await prisma.employee.create({ data: { id, companyId, employeeNumber: await nextNumber(companyId, "EMPLOYEE", "EMP"), createdByErpUserId: actor.erpUserId, ...data } });
+      ? await prisma.employee.update({ where: { id }, data: sealEmployee(data) })
+      : await prisma.employee.create({ data: { id, companyId, employeeNumber: await nextNumber(companyId, "EMPLOYEE", "EMP"), createdByErpUserId: actor.erpUserId, ...sealEmployee(data) } });
     // The trail records that someone changed a record, never the salary or bank details themselves.
     await audit(companyId, actor, existing ? "UPDATE" : "CREATE", "Employee", id, { employeeNumber: row.employeeNumber, name: `${row.firstName} ${row.lastName}`, status: row.employmentStatus });
-    return row;
+    return presentEmployee(row, true);
   });
 }
 

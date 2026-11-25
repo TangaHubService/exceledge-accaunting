@@ -30,7 +30,7 @@ const SIDE_ACCOUNT_TYPES: Record<"sales" | "purchase", AccountType[]> = {
 const cents = (n: number) => Math.round(n * 100) / 100;
 
 /** Same pricing as the server: line net and tax are rounded to the cent, line by line. */
-export function priceLines(lines: LineDraft[], codes: TaxCode[]) {
+export function priceLines(lines: LineDraft[], codes: TaxCode[], inclusive = false) {
   let net = 0;
   let tax = 0;
   const priced = lines.map((l) => {
@@ -39,21 +39,23 @@ export function priceLines(lines: LineDraft[], codes: TaxCode[]) {
     const d = parseAmount(l.discount) || 0;
     const lineNet = Number.isFinite(q) && Number.isFinite(p) ? cents(q * p - d) : 0;
     const rate = l.taxCode ? Number(codes.find((c) => c.code === l.taxCode)?.ratePercent ?? 0) : 0;
-    const lineTax = cents((lineNet * rate) / 100);
-    net += lineNet;
+    const lineTax = cents(inclusive ? (lineNet * rate) / (100 + rate) : (lineNet * rate) / 100);
+    const before = inclusive ? cents(lineNet - lineTax) : lineNet;
+    net += before;
     tax += lineTax;
-    return { net: lineNet, tax: lineTax };
+    return { net: before, tax: lineTax };
   });
   return { priced, net: cents(net), tax: cents(tax), gross: cents(net + tax) };
 }
 
-export function linesPayload(lines: LineDraft[]) {
+export function linesPayload(lines: LineDraft[], inclusive = false) {
   return lines.map((l) => ({
     description: l.description.trim(),
     quantity: parseAmount(l.quantity),
     unitPrice: parseAmount(l.unitPrice),
     discount: parseAmount(l.discount) || undefined,
     taxCode: l.taxCode || undefined,
+    taxInclusive: (inclusive && Boolean(l.taxCode)) || undefined,
     accountId: l.accountId || undefined,
   }));
 }
@@ -71,12 +73,17 @@ export function LineItemsEditor({
   side,
   codes,
   currency,
+  inclusive = false,
+  onInclusive,
 }: {
   lines: LineDraft[];
   onChange: (lines: LineDraft[]) => void;
   side: "sales" | "purchase";
   codes: TaxCode[];
   currency: string;
+  inclusive?: boolean;
+  /** When given, prices can be entered with tax inside. */
+  onInclusive?: (inside: boolean) => void;
 }) {
   const { accounts } = useCompany();
   const accountChoices = useMemo(
@@ -87,7 +94,7 @@ export function LineItemsEditor({
     [accounts, side],
   );
   const taxChoices = [{ value: "", label: "No tax" }, ...codes.map((c) => ({ value: c.code, label: c.code, hint: `${Number(c.ratePercent)}% · ${c.name}` }))];
-  const totals = priceLines(lines, codes);
+  const totals = priceLines(lines, codes, inclusive);
   const set = (i: number, key: keyof LineDraft, value: string) => onChange(lines.map((l, j) => (j === i ? { ...l, [key]: value } : l)));
 
   return (
@@ -163,6 +170,12 @@ export function LineItemsEditor({
         <Plus size={14} aria-hidden="true" />
         Add line
       </button>
+      {onInclusive && (
+        <label className="check" style={{ marginTop: 8 }}>
+          <input type="checkbox" checked={inclusive} onChange={(e) => onInclusive(e.target.checked)} />
+          Prices include tax
+        </label>
+      )}
       <SummaryRows
         rows={[
           ["Amount before tax", amount(totals.net, 2)],

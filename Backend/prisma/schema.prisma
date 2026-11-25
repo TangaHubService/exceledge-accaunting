@@ -138,6 +138,11 @@ model Company {
   arDebitNotes          ArDebitNote[]
   arDeposits            ArDeposit[]
   arRefunds             ArRefund[]
+  spreadSchedules       SpreadSchedule[]
+  customFields          CustomField[]
+  workflowRules         WorkflowRule[]
+  receiptInbox          ReceiptInboxItem[]
+  invoiceActions        InvoiceAction[]
   integrationKeys       IntegrationKey[]
   arLedgerEntries       ArLedgerEntry[]
   suppliers             Supplier[]
@@ -1166,6 +1171,8 @@ model ArInvoiceLine {
   taxRate     Decimal @default(0) @db.Decimal(9, 4)
   tax         Decimal @default(0) @db.Decimal(18, 4)
   accountId   String?
+  /// Product or service sold, for sales by product
+  itemId      String?
 
   invoice ArInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -1647,6 +1654,8 @@ model ApCreditNote {
   supplierReference  String?
   noteDate           DateTime
   reason             String
+  currency           String           @default("RWF")
+  exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   net                Decimal          @default(0) @db.Decimal(18, 4)
   tax                Decimal          @default(0) @db.Decimal(18, 4)
   gross              Decimal          @default(0) @db.Decimal(18, 4)
@@ -3949,6 +3958,8 @@ model Employee {
   payFrequency       String?
   currency           String?
   basicSalary        Decimal?  @db.Decimal(18, 4)
+  /// The salary when field encryption is on; basicSalary is then empty.
+  basicSalaryEnc     String?
   effectiveFrom      DateTime?
   paymentMethod      String?
   bankName           String?
@@ -4207,4 +4218,178 @@ model IntegrationKey {
 
   @@index([companyId])
   @@map("integration_keys")
+}
+
+/// A reminder sent or late fee charged by the scheduler, so neither happens twice.
+model InvoiceAction {
+  id        String   @id @default(cuid())
+  companyId String
+  invoiceId String
+  /// REMINDER or LATE_FEE
+  kind      String
+  /// Days from the due date the rule asked for
+  day       Int
+  /// SENT, CHARGED, SKIPPED or FAILED
+  status    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, kind, day])
+  @@index([companyId, createdAt])
+  @@map("invoice_actions")
+}
+
+/// An amount moved month by month: prepaid cost into expense, deferred income into income, or a cost building up as owed.
+model SpreadSchedule {
+  id                 String   @id @default(cuid())
+  companyId          String
+  /// PREPAID, DEFERRED or ACCRUAL
+  kind               String
+  name               String
+  debitAccountId     String
+  creditAccountId    String
+  total              Decimal  @db.Decimal(18, 4)
+  months             Int
+  startDate          DateTime
+  costCentre         String?
+  project            String?
+  /// ACTIVE, DONE or STOPPED
+  status             String   @default("ACTIVE")
+  lastError          String?
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postings SpreadPosting[]
+
+  @@index([companyId, status])
+  @@map("spread_schedules")
+}
+
+model SpreadPosting {
+  id         String   @id @default(cuid())
+  scheduleId String
+  sequence   Int
+  date       DateTime
+  amount     Decimal  @db.Decimal(18, 4)
+  journalId  String
+  createdAt  DateTime @default(now())
+
+  schedule SpreadSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, sequence])
+  @@map("spread_postings")
+}
+
+model CustomField {
+  id         String   @id @default(cuid())
+  companyId  String
+  entityType String
+  name       String
+  /// TEXT, NUMBER, DATE, LIST or YES_NO
+  type       String
+  options    String[] @default([])
+  showOnForm Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  values  CustomFieldValue[]
+
+  @@unique([companyId, entityType, name])
+  @@map("custom_fields")
+}
+
+model CustomFieldValue {
+  id        String   @id @default(cuid())
+  fieldId   String
+  entityId  String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  field CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, entityId])
+  @@index([entityId])
+  @@map("custom_field_values")
+}
+
+/// When something happens in the books, tell someone.
+model WorkflowRule {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  trigger            String
+  minAmount          Decimal? @db.Decimal(18, 4)
+  /// NOTIFY or EMAIL
+  action             String
+  /// Role to notify, or the email address
+  target             String
+  message            String?
+  isActive           Boolean  @default(true)
+  /// Events before this are never considered
+  activeFrom         DateTime @default(now())
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  runs    WorkflowRuleRun[]
+
+  @@index([companyId, isActive])
+  @@map("workflow_rules")
+}
+
+model WorkflowRuleRun {
+  id           String   @id @default(cuid())
+  ruleId       String
+  auditEventId String
+  /// SENT or FAILED
+  status       String
+  detail       String?
+  createdAt    DateTime @default(now())
+
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, auditEventId])
+  @@map("workflow_rule_runs")
+}
+
+/// A receipt or bill waiting to be turned into an expense.
+model ReceiptInboxItem {
+  id                 String    @id @default(cuid())
+  companyId          String
+  /// NEW, USED or DISMISSED
+  status             String    @default("NEW")
+  note               String?
+  expenseId          String?
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@map("receipt_inbox_items")
+}
+
+/// A database backup taken by `npm run backup`. For the whole server, not one company.
+model BackupRun {
+  id         String    @id @default(cuid())
+  /// RUNNING, DONE, VERIFIED or FAILED
+  status     String
+  fileName   String?
+  sizeBytes  BigInt?
+  sha256     String?
+  detail     String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  verifiedAt DateTime?
+
+  @@index([startedAt])
+  @@map("backup_runs")
 }

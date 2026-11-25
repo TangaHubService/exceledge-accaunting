@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
 import { InvoiceForm, ReceiptForm } from "../components/ArForms";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
+import { CustomFieldsPanel } from "../components/CustomFieldsPanel";
 import { type Column, DataTable } from "../components/DataTable";
 import { PdfButton } from "../components/Documents";
 import { EmailComposer } from "../components/customers/EmailComposer";
@@ -10,7 +11,7 @@ import { SummaryRows } from "../components/forms";
 import { Badge, Drawer, DueStatus, EmptyState, Figure, Loadable, PageHeader, Pagination } from "../components/ui";
 import { useCompany } from "../lib/company";
 import { amount, date, plural, toNumber } from "../lib/format";
-import { Link, setQueryParam, useLocation } from "../lib/router";
+import { Link, setQueryParam, useLocation, navigate } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
 import type { ArInvoiceDetail, ArInvoiceList, ArInvoiceRow, Customer, InvoiceApplications } from "../lib/types";
 
@@ -340,6 +341,11 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
               Write off
             </button>
           )}
+          {canVoid && invoice.data?.sourceModule === "AR" && invoice.data.sourceDocumentType === "ArInvoice" && (
+            <button type="button" className="btn" onClick={() => navigate(`/sales/invoice/new?edit=${id}`)}>
+              Edit
+            </button>
+          )}
           {canVoid && (
             <button type="button" className="btn btn-quiet" style={{ color: "var(--negative)" }} onClick={() => void voidIt()}>
               Void
@@ -481,6 +487,7 @@ export function InvoiceDrawer({ id, onClose, onChanged }: { id: string; onClose:
                 )
               }
             </Loadable>
+            <CustomFieldsPanel entityType="ArInvoice" entityId={inv.id} />
             <AttachmentsPanel entityType="ArInvoice" entityId={inv.id} />
           </>
         )}

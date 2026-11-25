@@ -57,3 +57,18 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }
+
+const PartyCurrencyContext = createContext<string | null | undefined>(undefined);
+
+/** Everything inside shows money in this party's currency. */
+export function PartyCurrency({ value, children }: { value?: string | null; children: ReactNode }) {
+  return <PartyCurrencyContext.Provider value={value}>{children}</PartyCurrencyContext.Provider>;
+}
+
+/** The currency a party is billed in: its own when it is foreign, else the company's. RWF is the unset default. */
+export function usePartyCurrency(partyCurrency?: string | null) {
+  const { currency } = useCompany();
+  const around = useContext(PartyCurrencyContext);
+  const own = partyCurrency ?? around;
+  return own && own !== "RWF" ? own : currency;
+}

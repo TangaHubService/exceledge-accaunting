@@ -150,7 +150,8 @@ describe("Ageing equals the control account", () => {
     expect((await post("/ar/credit-notes", { customerId: id, invoiceId: inv.id, noteDate: "2026-03-05", reason: "x", net: 1_000 })).status).toBe(201);
     expect((await get("/ar/ageing")).body.data.total).toBeCloseTo(before, 2);
     expect(await integrityErrors()).toBe(0);
-    expect((await post("/ar/deposits", { customerId: id, depositDate: "2026-03-05", amount: 10 })).body.error).toMatch(/not supported/);
+    expect((await post("/ar/deposits", { customerId: id, depositDate: "2026-03-05", amount: 10 })).body.data).toMatchObject({ currency: "USD", exchangeRate: "1450" });
+    expect(await integrityErrors()).toBe(0);
     const opening = (await post("/ar/customers", { name: "USD opening", customerType: "CREDIT", creditLimit: 1e6, currency: "USD", openingBalance: 100, openingBalanceDate: "2026-02-05" })).body.data.id;
     expect((await get("/ar/ageing")).body.data.lines.find((l: { customerId: string }) => l.customerId === opening).outstanding).toBe(140_000);
     expect(await integrityErrors()).toBe(0);

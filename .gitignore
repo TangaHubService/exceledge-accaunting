@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 
 # RRA VSDC sandbox WAR artifact
 *.war
+
+# macOS
+.DS_Store

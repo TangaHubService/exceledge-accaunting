@@ -957,6 +957,7 @@ export function reverseJournalLines(lines: JournalLineDraft[]): JournalLineDraft
     ...l,
     debit: Number(l.credit) || 0,
     credit: Number(l.debit) || 0,
+    ...(l.amountForeign != null ? { amountForeign: -l.amountForeign } : {}),
     description: l.description ? `Reversal: ${l.description}` : "Reversal",
   }));
 }

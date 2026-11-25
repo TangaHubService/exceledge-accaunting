@@ -76,7 +76,13 @@ import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
 import { ImportChartOfAccounts } from "./pages/ImportChartOfAccounts";
-import { NotAvailable } from "./pages/NotAvailable";
+import { Backups } from "./pages/Backups";
+import { ImportOpenBills, ImportOpenInvoices } from "./pages/ImportOpenItems";
+import { ReceiptInbox } from "./pages/ReceiptInbox";
+import { Schedules } from "./pages/Schedules";
+import { WorkflowRules } from "./pages/WorkflowRules";
+import { CustomFields } from "./pages/settings/CustomFields";
+import { FormStyles } from "./pages/settings/FormStyles";
 import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
 import { SignIn } from "./SignIn";
@@ -142,7 +148,7 @@ const ROUTES: Route[] = [
   { pattern: "/projects/new", needs: "setup:view", render: () => <ProjectForm key="new" /> },
   { pattern: "/projects/:id", needs: "setup:view", render: (p) => <ProjectDetail key={p.id} id={p.id} /> },
   { pattern: "/projects/:id/edit", needs: "setup:view", render: (p) => <ProjectForm key={p.id} id={p.id} /> },
-  { pattern: "/workflows", needs: "setup:view", render: () => <NotAvailable title="Workflows" body="Automatic workflows aren't available yet. Approval rules are in Setup, and document workflows are in Assurance." /> },
+  { pattern: "/workflows", needs: "platform:manage", render: () => <WorkflowRules /> },
   { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
   { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
@@ -152,10 +158,10 @@ const ROUTES: Route[] = [
   { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
   { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
   { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
-  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <NotAvailable title="Custom fields" body="Custom fields can't be saved yet." /> },
-  { pattern: "/settings/forms", needs: "setup:view", render: () => <NotAvailable title="Form templates" body="Form templates can't be changed yet. Invoices and statements print in the standard layout." /> },
-  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <NotAvailable title="Form styles" body="Form styles can't be changed yet. Invoices and statements print in the standard layout." /> },
-  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <NotAvailable title="Form styles" body="Form styles can't be changed yet. Invoices and statements print in the standard layout." /> },
+  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <CustomFields /> },
+  { pattern: "/settings/forms", needs: "setup:view", render: () => <FormStyles /> },
+  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <FormStyles /> },
+  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <FormStyles /> },
   { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
   { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
@@ -202,6 +208,7 @@ const ROUTES: Route[] = [
   { pattern: "/expenses", needs: "expense:view", render: () => <Expenses /> },
   { pattern: "/expenses/list", needs: "expense:view", render: () => <ExpensesList /> },
   { pattern: "/expenses/recurring", needs: "expense:view", render: () => <ExpensesRecurring /> },
+  { pattern: "/expenses/receipts", needs: "expense:view", render: () => <ReceiptInbox /> },
   { pattern: "/expenses/categories", needs: "expense:view", render: () => <ExpenseCategories /> },
   { pattern: "/expenses/report", needs: "expense:view", render: () => <ExpensesReport /> },
   { pattern: "/fixed-assets", needs: "fa:view", render: () => <FixedAssets /> },
@@ -212,7 +219,7 @@ const ROUTES: Route[] = [
   { pattern: "/journals", needs: "journal:view", render: () => <Journals /> },
   { pattern: "/journals/new", needs: "journal:create", render: () => <JournalNew /> },
   { pattern: "/journals/:id/edit", needs: "journal:create", render: (p) => <JournalNew key={p.id} id={p.id} /> },
-  { pattern: "/accounting/revenue-recognition", needs: "journal:view", render: () => <Journals /> },
+  { pattern: "/accounting/revenue-recognition", needs: "journal:view", render: () => <Schedules key="income" view="income" /> },
   { pattern: "/approvals", needs: "journal:view", render: () => <Approvals /> },
   { pattern: "/notifications", needs: "setup:view", render: () => <Notifications /> },
   { pattern: "/ledger", needs: "gl:view", render: () => <Ledger /> },
@@ -220,7 +227,7 @@ const ROUTES: Route[] = [
   { pattern: "/accounts", needs: "coa:view", render: () => <Redirect to="/accounting/chart-of-accounts" /> },
   { pattern: "/accounting/recurring-transactions", needs: "journal:view", render: () => <RecurringTxnTypes /> },
   { pattern: "/recurring-journals", needs: "journal:view", render: () => <Redirect to="/accounting/recurring-transactions" /> },
-  { pattern: "/accounting/prepaid-expenses", needs: "expense:view", render: () => <Expenses /> },
+  { pattern: "/accounting/prepaid-expenses", needs: "journal:view", render: () => <Schedules key="expenses" view="expenses" /> },
   { pattern: "/accounting/my-accountant", needs: "setup:view", render: () => <Setup /> },
   { pattern: "/journal-import", needs: "journal:create", render: () => <JournalImport /> },
   { pattern: "/reports", needs: "report:view", render: () => <Redirect to="/reports/standard" /> },
@@ -260,10 +267,12 @@ const ROUTES: Route[] = [
   { pattern: "/branches", needs: "setup:view", render: () => <Branches /> },
   { pattern: "/exceptions", needs: "exceptions:view", render: () => <Exceptions /> },
   { pattern: "/audit", needs: "audit:view", render: () => <AuditLog /> },
+  { pattern: "/import-data/open-invoices", needs: "setup:prepare", render: () => <ImportOpenInvoices key="invoices" /> },
+  { pattern: "/import-data/open-bills", needs: "setup:prepare", render: () => <ImportOpenBills key="bills" /> },
   { pattern: "/import-data", needs: "setup:view", render: () => <ImportData /> },
   { pattern: "/import-data/chart-of-accounts", needs: "coa:import", render: () => <ImportChartOfAccounts /> },
   { pattern: "/export-data", needs: "setup:view", render: () => <ExportData /> },
-  { pattern: "/backup-restore", needs: "setup:view", render: () => <NotAvailable title="Backup and restore" body="Backups can't be run or restored from here. Ask your administrator how the database is backed up." /> },
+  { pattern: "/backup-restore", needs: "platform:manage", render: () => <Backups /> },
 ];
 
 export function App() {
@@ -332,9 +341,8 @@ function RoutedShell() {
   const { path } = useLocation();
   const page = <Routes />;
   // Full-page chrome (not the main app Shell).
-  if (path.startsWith("/settings/form-styles/edit")) return page;
   if (path.startsWith("/settings/custom-fields")) return <Shell>{page}</Shell>;
-  if (path.startsWith("/settings") && !path.startsWith("/settings/form-styles")) return page;
+  if (path.startsWith("/settings") && !path.startsWith("/settings/form")) return page;
   if (path.startsWith("/time/")) return page;
   return <Shell>{page}</Shell>;
 }

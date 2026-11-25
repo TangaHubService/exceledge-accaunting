@@ -95,48 +95,6 @@ export const ALL_APPS = [
   { key: "marketing", label: "Marketing", to: "/customers", color: "#7c3aed", icon: "sales" as const },
 ] as const;
 
-export const PINNED = [
-  {
-    key: "accounting",
-    label: "Accounting",
-    flyoutTitle: "ACCOUNTING",
-    items: [
-      { label: "Bank transactions", to: "/banking/transactions" },
-      { label: "Integration transactions", to: "/banking/integration-transactions" },
-      { label: "Reconcile", to: "/banking/reconciliation" },
-      { label: "Rules", to: "/banking/rules" },
-      { label: "Chart of accounts", to: "/accounting/chart-of-accounts" },
-      { label: "Recurring transactions", to: "/accounting/recurring-transactions" },
-      { label: "Revenue recognition", to: "/accounting/revenue-recognition" },
-      { label: "Fixed assets", to: "/fixed-assets" },
-      { label: "Prepaid expenses", to: "/accounting/prepaid-expenses" },
-      { label: "My accountant", to: "/accounting/my-accountant" },
-    ],
-  },
-  {
-    key: "expenses",
-    label: "Expenses",
-    flyoutTitle: "EXPENSES & PAY BILLS",
-    items: [
-      { label: "Expense transactions", to: "/expenses" },
-      { label: "Suppliers", to: "/suppliers" },
-      { label: "Bills", to: "/bills" },
-    ],
-  },
-  {
-    key: "sales",
-    label: "Sales",
-    flyoutTitle: "SALES & GET PAID",
-    items: [
-      { label: "Overview", to: "/invoices" },
-      { label: "Sales transactions", to: "/invoices" },
-      { label: "Invoices", to: "/invoices" },
-      { label: "Sales orders", to: "/invoices" },
-      { label: "Products & services", to: "/inventory" },
-    ],
-  },
-] as const;
-
 /** Apps that can be pinned via Customise → Navigation. */
 export const CUSTOMISE_NAV_APPS = [
   { key: "accounting", label: "Accounting", color: "#2f6fed", icon: "accounting" as const, pinned: true },

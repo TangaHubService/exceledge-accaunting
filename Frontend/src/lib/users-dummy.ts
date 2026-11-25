@@ -1,37 +1,4 @@
-/** Dummy data for mocks not yet wired to the server (form styles, shortcuts, side panels). */
 
-export const FORM_STYLES = [
-  {
-    id: "s1",
-    name: "My INVOICE Template - 10-17 (4172)",
-    formType: "Invoice",
-    lastEdited: "17 Oct 2026",
-    isDefault: false,
-  },
-  {
-    id: "s2",
-    name: "Standard",
-    formType: "Default",
-    lastEdited: "16 Oct 2026",
-    isDefault: true,
-  },
-];
-
-export const INVOICE_STYLE_MENU = [
-  { id: "template", title: "Choose a template", subtitle: "Pick a layout that fits your business.", tone: "blue" },
-  { id: "logo", title: "Add your logo", subtitle: "Upload and position your logo.", tone: "green" },
-  { id: "colours", title: "Colours", subtitle: "Set your brand colours.", tone: "multi" },
-  { id: "font", title: "Font", subtitle: "Choose a font for your invoice.", tone: "ink" },
-  { id: "bank", title: "Bank transfer details", subtitle: "Add your bank or mobile money details.", tone: "teal" },
-  { id: "print", title: "Print settings", subtitle: "Adjust page layout and display options.", tone: "navy" },
-  {
-    id: "stamp",
-    title: "Stamp, signature or QR code",
-    subtitle: "Add a finishing touch to your invoice.",
-    tone: "lime",
-    badge: "NEW",
-  },
-] as const;
 
 export const KEYBOARD_SHORTCUTS = [
   { action: "Add a new transaction line", keys: ["Ctrl", "Alt", "N"] },

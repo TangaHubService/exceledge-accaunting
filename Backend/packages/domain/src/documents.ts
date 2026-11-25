@@ -10,6 +10,7 @@ export interface DocumentLineInput {
   accountId?: string | null;
   /** The unit price and discount already include tax. */
   taxInclusive?: boolean;
+  itemId?: string | null;
 }
 
 export interface TaxCodeRate {
@@ -32,6 +33,7 @@ export interface ComputedDocumentLine {
   taxRate: number;
   tax: number;
   accountId: string | null;
+  itemId?: string | null;
   taxAccountId: string | null;
 }
 
@@ -90,6 +92,7 @@ export function computeDocumentLines(lines: DocumentLineInput[], taxCodes: TaxCo
       taxRate,
       tax,
       accountId: line.accountId || null,
+      itemId: line.itemId || null,
       taxAccountId,
     };
   });

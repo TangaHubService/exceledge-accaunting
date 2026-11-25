@@ -262,6 +262,29 @@ function pnlBuilt(rows: MonthFigures[], mode: "month" | "quarter" | "percent"): 
   };
 }
 
+/** Built by the server, with their own columns and dates. */
+const DETAIL = new Set([
+  "estimates-by-customer", "open-purchase-order-list", "open-purchase-order-detail", "sales-by-product-service-detail", "sales-by-product-service-summary", "sales-by-customer-type-detail",
+  "product-item-profitability-by-customer", "project-profitability-summary", "time-activities-by-employee-detail", "recent-edited-time-activities", "time-summary-by-pay-type", "unbilled-time", "unbilled-charges", "statement-list",
+]);
+const CASH_BASIS = "profit-and-loss-cash-basis";
+type DetailData = { columns: Array<{ key: string; label: string; kind?: "money" | "date" | "number" }>; rows: Row[]; totals: string[]; notes: string[] };
+type CashData = Record<"income" | "costOfSales" | "expenses", Array<{ code: string; name: string; amount: number }>> & { totals: Record<"income" | "costOfSales" | "expenses" | "profit", number>; notes: string[] };
+
+function detailBuilt(d: DetailData): Built {
+  // A total is shown only for columns in one currency.
+  const totalled = d.totals.length && d.rows.length ? [Object.fromEntries(d.columns.map((c, i) => [c.key, i === 0 ? "Total" : d.totals.includes(c.key) ? d.rows.reduce((s, r) => s + (Number(r[c.key]) || 0), 0) : ""]))] : [];
+  return { columns: d.columns.map((c) => ({ ...c, kind: c.kind === "number" ? "text" : c.kind })), rows: [...d.rows, ...totalled] };
+}
+
+function cashBuilt(d: CashData): Built {
+  const part = (title: string, rows: CashData["income"], total: number): Row[] => [...rows.map((r) => ({ section: title, code: r.code, name: r.name, amount: r.amount })), { section: `Total ${title.toLowerCase()}`, code: "", name: "", amount: total }];
+  return {
+    columns: [{ key: "section", label: "Section" }, { key: "code", label: "No." }, { key: "name", label: "Account" }, { key: "amount", label: "Amount", kind: "money" }],
+    rows: [...part("Income", d.income, d.totals.income), ...part("Cost of sales", d.costOfSales, d.totals.costOfSales), ...part("Expenses", d.expenses, d.totals.expenses), { section: "Net profit", code: "", name: "", amount: d.totals.profit }],
+  };
+}
+
 const PNL_MODES: Record<string, "month" | "quarter" | "percent"> = {
   "profit-and-loss-by-month": "month",
   "quarterly-profit-and-loss-summary": "quarter",
@@ -283,6 +306,7 @@ export function ReportViewer({ slug }: { slug: string }) {
   const { name: company } = useCompany();
 
   const saved = useMemo(() => (query.get("saved") ? readLocal<CustomReport>("custom-reports").find((r) => r.id === query.get("saved")) : undefined), [query]);
+  const server = DETAIL.has(slug) ? `/api/v1/books/detail-reports/${slug}` : slug === CASH_BASIS ? "/api/v1/books/cash-basis" : null;
   const source = SOURCES[slug];
   const pnlMode = PNL_MODES[slug];
   const isTerms = slug === "terms-list";
@@ -299,13 +323,16 @@ export function ReportViewer({ slug }: { slug: string }) {
     setTo(saved?.to ?? "");
   }, [saved]);
 
-  const resource = useResource<unknown>(source?.path ?? null);
+  const dates = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&");
+  const resource = useResource<unknown>(server ? `${server}${dates ? `?${dates}` : ""}` : (source?.path ?? null));
+  const notes = server ? ((resource.data as { notes?: string[] } | undefined)?.notes ?? []) : [];
   const months = useYearMonths("THIS_YEAR");
   const monthly = useMonthlyFigures(pnlMode ? months : []);
 
   const built = useMemo<Built | undefined>(() => {
     if (isTerms) return TERMS_BUILT;
     if (pnlMode) return monthly.rows && pnlBuilt(monthly.rows, pnlMode).built;
+    if (server) return resource.data === undefined ? undefined : slug === CASH_BASIS ? cashBuilt(resource.data as CashData) : detailBuilt(resource.data as DetailData);
     if (!source || resource.data === undefined) return undefined;
     const raw = source.build(resource.data);
     // ?customer=<name> (from a customer's profile) narrows customer reports to that customer.
@@ -313,12 +340,12 @@ export function ReportViewer({ slug }: { slug: string }) {
     if (!b.dateKey || (!from && !to)) return b;
     const key = b.dateKey;
     return { ...b, rows: b.rows.filter((r) => { const d = String(r[key] ?? "").slice(0, 10); return (!from || d >= from) && (!to || d <= to); }) };
-  }, [isTerms, pnlMode, monthly.rows, source, resource.data, from, to, customerFilter]);
+  }, [isTerms, pnlMode, monthly.rows, server, slug, source, resource.data, from, to, customerFilter]);
 
-  const connected = Boolean(source || pnlMode || isTerms);
-  const loading = pnlMode ? monthly.loading : source ? resource.loading && resource.data === undefined : false;
-  const error = pnlMode ? monthly.error : source ? resource.error : undefined;
-  const hasDates = Boolean(built?.dateKey);
+  const connected = Boolean(server || source || pnlMode || isTerms);
+  const loading = pnlMode ? monthly.loading : server || source ? resource.loading && resource.data === undefined : false;
+  const error = pnlMode ? monthly.error : server || source ? resource.error : undefined;
+  const hasDates = Boolean(server || built?.dateKey);
 
   function commit() {
     if (!saveName.trim()) return setSaveError("Give the report a name.");
@@ -332,7 +359,7 @@ export function ReportViewer({ slug }: { slug: string }) {
     <div className="rp-page">
       <PageHeader
         title={title}
-        description={`${company} · ${built?.dateKey && (from || to) ? `${from ? date(from) : "Start"} – ${to ? date(to) : date(isoDay())}` : pnlMode ? `January – ${monthLong(months[months.length - 1])}` : `As of ${date(isoDay())}`}`}
+        description={`${company} · ${(server || built?.dateKey) && (from || to) ? `${from ? date(from) : "Start"} – ${to ? date(to) : date(isoDay())}` : pnlMode ? `January – ${monthLong(months[months.length - 1])}` : `As of ${date(isoDay())}`}`}
         back={{ to: saved ? "/reports/custom" : "/reports/standard", label: saved ? "Custom reports" : "Standard reports" }}
         actions={
           connected ? (
@@ -390,7 +417,12 @@ export function ReportViewer({ slug }: { slug: string }) {
           ) : loading || !built ? (
             <SkeletonRows rows={8} cols={5} />
           ) : (
-            <Table built={built} title={title} />
+            <>
+              <Table built={built} title={title} />
+              {notes.map((n) => (
+                <p key={n} className="rp-muted">{n}</p>
+              ))}
+            </>
           )}
         </>
       )}

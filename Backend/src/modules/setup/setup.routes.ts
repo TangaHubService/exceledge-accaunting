@@ -10,6 +10,7 @@ import {
 } from "../../middleware/auth";
 import { GATED_ENTITY_TYPES } from "../approvals/approval.service";
 import * as branches from "./branch.service";
+import { importOpenItems, openItemsBody } from "./open-items.service";
 import * as setup from "./setup.service";
 
 export const setupRouter = Router();
@@ -23,6 +24,15 @@ function actor(req: AuthedRequest) {
     meta: getRequestMeta(req),
   };
 }
+
+/** Opening balances touch both subledgers and equity, so it takes the right to prepare setup and to post. */
+setupRouter.post("/open-items", requireCapability("setup:prepare"), requireCapability("journal:post"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await importOpenItems(req.companyId!, openItemsBody.parse({ side: req.query.side, ...req.body }), actor(req)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e instanceof z.ZodError ? e.issues[0].message : (e as Error).message });
+  }
+});
 
 setupRouter.get("/dashboard", async (req: AuthedRequest, res) => {
   const data = await setup.getSetupDashboard(req.companyId!);

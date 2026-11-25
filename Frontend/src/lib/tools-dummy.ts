@@ -1,52 +1,4 @@
-/** Dummy data and definitions for PRIMARY RIBBONS - TOOLS (#71–85). */
 
-export type MyWorkflow = {
-  id: string;
-  name: string;
-  transactionType: string;
-  workflowType: string;
-  createdOn: string;
-  createdBy: string;
-  lastUpdatedBy: string;
-  updatedOn: string;
-  enabled: boolean;
-};
-
-export const INITIAL_MY_WORKFLOWS: MyWorkflow[] = [
-  {
-    id: "wf-1",
-    name: "Get unsent invoice reminder",
-    transactionType: "Invoice",
-    workflowType: "Reminder",
-    createdOn: "10/16/2026",
-    createdBy: "System Administration",
-    lastUpdatedBy: "System Administration",
-    updatedOn: "10/16/2026",
-    enabled: true,
-  },
-  {
-    id: "wf-2",
-    name: "Pay vendor bill reminder",
-    transactionType: "Bill",
-    workflowType: "Reminder",
-    createdOn: "10/16/2026",
-    createdBy: "System Administration",
-    lastUpdatedBy: "System Administration",
-    updatedOn: "10/16/2026",
-    enabled: true,
-  },
-  {
-    id: "wf-3",
-    name: "Send open estimate reminder",
-    transactionType: "Estimate",
-    workflowType: "Reminder",
-    createdOn: "10/16/2026",
-    createdBy: "System Administration",
-    lastUpdatedBy: "System Administration",
-    updatedOn: "10/16/2026",
-    enabled: true,
-  },
-];
 
 export type ImportCatalogItem = {
   id: string;
@@ -101,7 +53,7 @@ export const IMPORT_CATALOG_ITEMS: ImportCatalogItem[] = [
   },
   {
     id: "invoices",
-    title: "Invoices",
+    title: "Open invoices",
     iconName: "file-check",
     category: "sales",
     description: "Import historical or open customer invoices and item line details.",
@@ -127,7 +79,7 @@ export const IMPORT_CATALOG_ITEMS: ImportCatalogItem[] = [
   },
   {
     id: "bills",
-    title: "Bills",
+    title: "Open bills",
     iconName: "clipboard-list",
     category: "expenses",
     description: "Import accounts payable vendor bills, due dates and line breakdowns.",
@@ -293,43 +245,3 @@ export type AuditLogItem = {
   eventLink?: string;
   hasViewHistory: boolean;
 };
-
-export type BackupItem = {
-  id: string;
-  date: string;
-  type: "Auto" | "Manual";
-  kind?: "Incremental" | "Full" | "Complete";
-  status: "Success" | "In progress" | "Failed";
-  expiration: string;
-};
-
-export const INITIAL_BACKUPS: BackupItem[] = [
-  {
-    id: "bak-1",
-    date: "24/10/2026 03:04 am",
-    type: "Auto",
-    status: "Success",
-    expiration: "24/10/2027 03:04 am",
-  },
-  {
-    id: "bak-2",
-    date: "23/10/2026 03:04 am",
-    type: "Auto",
-    status: "Success",
-    expiration: "23/10/2027 03:04 am",
-  },
-  {
-    id: "bak-3",
-    date: "22/10/2026 02:24 am",
-    type: "Auto",
-    status: "Success",
-    expiration: "22/10/2027 02:24 am",
-  },
-  {
-    id: "bak-4",
-    date: "21/10/2026 02:17 am",
-    type: "Auto",
-    status: "Success",
-    expiration: "21/10/2027 02:17 am",
-  },
-];

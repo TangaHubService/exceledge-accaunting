@@ -22,6 +22,7 @@ export const ATTACHABLE_TYPES = {
   Project: { view: "project:view", attach: "project:manage" },
   InventoryAdjustment: { view: "inventory:view", attach: "inventory:manage" },
   ItemReceipt: { view: "inventory:view", attach: "inventory:manage" },
+  ReceiptInbox: { view: "expense:view", attach: "expense:manage" },
 } as const satisfies Record<string, { view: AccountingCapability; attach: AccountingCapability }>;
 export type AttachableType = keyof typeof ATTACHABLE_TYPES;
 
@@ -84,12 +85,12 @@ function canDo(actor: Actor, capability: AccountingCapability) {
   return actorCan(actor, capability);
 }
 
-function assertCan(actor: Actor, capability: AccountingCapability) {
+export function assertCan(actor: Actor, capability: AccountingCapability) {
   if (!canDo(actor, capability)) throw new DocumentError(403, `Missing capability: ${capability}`);
 }
 
 /** The record (in this company) a document is attached to, with why its documents can't be removed, if so. */
-async function findRecord(companyId: string, entityType: AttachableType, entityId: string): Promise<{ date: Date | null; keepReason: string | null } | null> {
+export async function findRecord(companyId: string, entityType: AttachableType, entityId: string): Promise<{ date: Date | null; keepReason: string | null } | null> {
   const where = { id: entityId, companyId };
   switch (entityType) {
     case "Journal": {
@@ -137,6 +138,10 @@ async function findRecord(companyId: string, entityType: AttachableType, entityI
     case "ItemReceipt": {
       const row = await prisma.itemReceipt.findFirst({ where, select: { receiptDate: true } });
       return row && { date: row.receiptDate, keepReason: "it supports a posted goods receipt" };
+    }
+    case "ReceiptInbox": {
+      const row = await prisma.receiptInboxItem.findFirst({ where, select: { id: true } });
+      return row && { date: null, keepReason: null };
     }
     case "ControlTest": {
       const t = await prisma.controlTest.findFirst({ where, select: { id: true } });

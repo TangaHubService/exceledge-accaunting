@@ -677,7 +677,7 @@ async function reverseOnce(companyId: string, id: string, input: ReversalInput, 
     reversalJournalId = (await reverseRefund(companyId, txn.arRefundId, actor, { reason: input.reason, reversalDate })).journalId;
   } else {
     const original = await prisma.journal.findFirstOrThrow({ where: { id: txn.journalId, companyId }, include: { lines: { orderBy: { lineNumber: "asc" } } } });
-    const lines = reverseJournalLines(linesInJournalCurrency(original.lines));
+    const lines = reverseJournalLines(linesInJournalCurrency(original.lines, Number(original.exchangeRate)));
     const journal = await postBanking(
       companyId,
       {

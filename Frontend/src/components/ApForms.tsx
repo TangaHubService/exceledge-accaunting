@@ -1,7 +1,7 @@
 import { SUPPLIER_CATEGORIES } from "@exceledge/accounting-domain-web";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { accountOptions } from "../pages/Accounts";
-import { useCompany } from "../lib/company";
+import { useCompany, usePartyCurrency } from "../lib/company";
 import { amount, date, humanize, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
 import type { AccountType, ApAdvance, ApBill, ApPayment, ApPaymentMethod, Supplier, SupplierOpenItems } from "../lib/types";
@@ -78,7 +78,7 @@ function SupplierPicker({
 
 export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Supplier; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [picked, setPicked] = useState<Supplier | undefined>(preset);
   const [supplierId, setSupplierId] = useState(preset?.id ?? "");
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
@@ -93,6 +93,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
   const [tax, setTax] = useState("");
   const [discount, setDiscount] = useState("");
   const [lined, setLined] = useState(false);
+  const [inclusive, setInclusive] = useState(false);
   const taxCodes = useLineTaxCodes("purchase");
   const [lines, setLines] = useState<LineDraft[]>(() => [emptyLine()]);
   const { busy, error, run } = useSubmit(onSaved);
@@ -108,7 +109,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!supplier || (lined ? priceLines(lines, taxCodes).gross <= 0 : !Number.isFinite(n) || n <= 0)) return;
+    if (!supplier || (lined ? priceLines(lines, taxCodes, inclusive).gross <= 0 : !Number.isFinite(n) || n <= 0)) return;
     void run(async () => {
       const bill = await api<{ billNumber: string }>("/api/v1/ap/bills", {
         method: "POST",
@@ -120,7 +121,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
           poReference: poReference.trim() || undefined,
           grnReference: grnReference.trim() || undefined,
           expenseAccountId: expenseAccountId || undefined,
-          ...(lined ? { lines: linesPayload(lines) } : { net: n, tax: t || undefined, discount: d || undefined }),
+          ...(lined ? { lines: linesPayload(lines, inclusive) } : { net: n, tax: t || undefined, discount: d || undefined }),
           description: description.trim() || undefined,
         }),
       });
@@ -182,7 +183,7 @@ export function BillForm({ supplier: preset, onClose, onSaved }: { supplier?: Su
         <EntryModeSwitch lined={lined} onChange={setLined} />
         <div className="form-section-title" style={{ marginTop: 16 }}>Amounts ({currency})</div>
         {lined ? (
-          <LineItemsEditor lines={lines} onChange={setLines} side="purchase" codes={taxCodes} currency={currency} />
+          <LineItemsEditor lines={lines} onChange={setLines} side="purchase" codes={taxCodes} currency={currency} inclusive={inclusive} onInclusive={setInclusive} />
         ) : (
           <>
             <div className="form-grid">
@@ -226,7 +227,7 @@ export function PaymentForm({
   onSaved: () => void;
 }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [picked, setPicked] = useState<Supplier | undefined>(preset);
   const [supplierId, setSupplierId] = useState(preset?.id ?? "");
   const [paymentDate, setPaymentDate] = useState(isoDay());
@@ -493,7 +494,7 @@ export function PaymentForm({
 
 export function ReversePaymentForm({ payment, onClose, onSaved }: { payment: ApPayment; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [reversalDate, setReversalDate] = useState(isoDay());
   const [reason, setReason] = useState("");
   const { busy, error, run } = useSubmit(onSaved);
@@ -538,7 +539,7 @@ export function ReversePaymentForm({ payment, onClose, onSaved }: { payment: ApP
 
 export function VoidBillForm({ bill, onClose, onSaved }: { bill: ApBill; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [voidDate, setVoidDate] = useState(isoDay());
   const [reason, setReason] = useState("");
   const { busy, error, run } = useSubmit(onSaved);
@@ -582,7 +583,7 @@ export function VoidBillForm({ bill, onClose, onSaved }: { bill: ApBill; onClose
 
 export function SupplierCreditNoteForm({ supplier, onClose, onSaved }: { supplier: Supplier; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(supplier.currency);
   const bills = useOpenBills(supplier.id);
   const [billId, setBillId] = useState("");
   const [supplierReference, setSupplierReference] = useState("");
@@ -658,7 +659,7 @@ export function SupplierCreditNoteForm({ supplier, onClose, onSaved }: { supplie
 
 export function SupplierDebitNoteForm({ supplier, onClose, onSaved }: { supplier: Supplier; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(supplier.currency);
   const [supplierReference, setSupplierReference] = useState("");
   const [noteDate, setNoteDate] = useState(isoDay());
   const [reason, setReason] = useState("");
@@ -730,7 +731,7 @@ export function SupplierDebitNoteForm({ supplier, onClose, onSaved }: { supplier
 
 export function AdvanceForm({ supplier, onClose, onSaved }: { supplier: Supplier; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(supplier.currency);
   const [advanceDate, setAdvanceDate] = useState(isoDay());
   const [method, setMethod] = useState<string>("BANK");
   const [value, setValue] = useState("");
@@ -791,7 +792,7 @@ export function AdvanceForm({ supplier, onClose, onSaved }: { supplier: Supplier
 
 export function AllocateAdvanceForm({ advance, onClose, onSaved }: { advance: ApAdvance; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(advance.currency);
   const bills = useOpenBills(advance.supplierId);
   const [billId, setBillId] = useState("");
   const [value, setValue] = useState("");
@@ -853,7 +854,7 @@ export function AllocateAdvanceForm({ advance, onClose, onSaved }: { advance: Ap
 
 export function RefundAdvanceForm({ advance, onClose, onSaved }: { advance: ApAdvance; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(advance.currency);
   const [value, setValue] = useState(amount(advance.remaining, advance.remaining % 1 ? 2 : 0));
   const [method, setMethod] = useState<string>(advance.method);
   const [refundDate, setRefundDate] = useState(isoDay());

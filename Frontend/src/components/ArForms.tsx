@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, Footer, FormError, MoneyInput, parseAmount, SummaryRows, useSubmit } from "./forms";
-import { useCompany } from "../lib/company";
+import { usePartyCurrency } from "../lib/company";
 import { amount, date, isoDay, money, toNumber } from "../lib/format";
 import { useResource, useSession } from "../lib/session";
 import type { ArDeposit, Customer, CustomerLedger, CustomerStatement, CustomerType } from "../lib/types";
@@ -95,7 +95,7 @@ function CustomerPicker({
 
 export function InvoiceForm({ customer: preset, onClose, onSaved }: { customer?: Customer; onClose: () => void; onSaved: () => void }) {
   const { api, can } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [picked, setPicked] = useState<Customer | undefined>(preset);
   const [customerId, setCustomerId] = useState(preset?.id ?? "");
   const [invoiceDate, setInvoiceDate] = useState(isoDay());
@@ -244,7 +244,7 @@ export function ReceiptForm({
   onSaved: () => void;
 }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [customerId, setCustomerId] = useState(preset?.id ?? "");
   const [receiptDate, setReceiptDate] = useState(isoDay());
   const [method, setMethod] = useState("CASH");
@@ -410,7 +410,7 @@ export function ReceiptForm({
 
 export function CreditNoteForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(customer.currency);
   const { invoices } = useOpenInvoices(customer.id);
   const [invoiceId, setInvoiceId] = useState("");
   const [noteDate, setNoteDate] = useState(isoDay());
@@ -479,7 +479,7 @@ export function CreditNoteForm({ customer, onClose, onSaved }: { customer: Custo
 
 export function DepositForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(customer.currency);
   const [depositDate, setDepositDate] = useState(isoDay());
   const [method, setMethod] = useState("CASH");
   const [value, setValue] = useState("");
@@ -540,7 +540,7 @@ export function DepositForm({ customer, onClose, onSaved }: { customer: Customer
 
 export function AllocateDepositForm({ customer, deposit, onClose, onSaved }: { customer: Customer; deposit: ArDeposit; onClose: () => void; onSaved: () => void }) {
   const { api } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(deposit.currency);
   const { invoices } = useOpenInvoices(customer.id);
   const [invoiceId, setInvoiceId] = useState("");
   const [value, setValue] = useState("");
@@ -600,7 +600,7 @@ export function AllocateDepositForm({ customer, deposit, onClose, onSaved }: { c
 
 export function DebitNoteForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
   const { api, can } = useSession();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency(customer.currency);
   const [noteDate, setNoteDate] = useState(isoDay());
   const [reason, setReason] = useState("");
   const [description, setDescription] = useState("");

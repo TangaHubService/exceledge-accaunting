@@ -13,6 +13,7 @@ import {
   VoidBillForm,
 } from "../components/ApForms";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
+import { CustomFieldsPanel } from "../components/CustomFieldsPanel";
 import { MoneyBar, PAYABLES_LABELS } from "../components/customers/MoneyBar";
 import { type Column, DataTable } from "../components/DataTable";
 import { PdfButton } from "../components/Documents";
@@ -23,7 +24,7 @@ import { ApplySupplierCreditsDrawer } from "../components/suppliers/ApplySupplie
 import { SupplierFormDrawer } from "../components/suppliers/SupplierFormDrawer";
 import { BillDrawer, isStockLine, poStatus, PurchaseOrderDrawer, SUPPLIER_TXN_LABEL, SupplierTxnDrawer } from "../components/suppliers/SupplierTxnDrawers";
 import { Badge, EmptyState, ErrorState, Loadable, Menu, PageHeader, Pagination, SkeletonRows } from "../components/ui";
-import { useCompany } from "../lib/company";
+import { PartyCurrency, useCompany, usePartyCurrency } from "../lib/company";
 import { amount, date, dateTime, humanize, isoDay, plural, toNumber } from "../lib/format";
 import { usePagedResource } from "../lib/pagination";
 import { Link, navigate, setQueryParam, useLocation } from "../lib/router";
@@ -96,7 +97,6 @@ function initials(name: string) {
 export function SupplierDetail({ id }: { id: string }) {
   const { can, api } = useSession();
   const { toast, confirm } = useFeedback();
-  const { currency } = useCompany();
   const { query } = useLocation();
   const requested = query.get("tab") as Tab | null;
   const tab: Tab = requested && TABS.some(([k]) => k === requested) ? requested : "overview";
@@ -105,6 +105,7 @@ export function SupplierDetail({ id }: { id: string }) {
   const [version, setVersion] = useState(0);
 
   const supplier = useResource<Supplier>(`/api/v1/ap/suppliers/${id}`);
+  const currency = usePartyCurrency(supplier.data?.currency);
   const summary = useResource<SupplierSummary>(`/api/v1/ap/suppliers/${id}/summary`);
   const advances = useResource<ApAdvance[]>(dialog?.kind === "allocate" || dialog?.kind === "refund" ? `/api/v1/ap/advances?supplierId=${id}&v=${version}` : null);
 
@@ -143,6 +144,7 @@ export function SupplierDetail({ id }: { id: string }) {
   const advance = (advanceId: string) => advances.data?.find((a) => a.id === advanceId);
 
   return (
+    <PartyCurrency value={supplier.data?.currency}>
     <Loadable
       resource={supplier}
       skeleton={
@@ -446,6 +448,7 @@ export function SupplierDetail({ id }: { id: string }) {
         );
       }}
     </Loadable>
+    </PartyCurrency>
   );
 }
 
@@ -557,6 +560,7 @@ function Overview({
           </div>
         )}
         <div className="cust-attachments">
+          <CustomFieldsPanel entityType="Supplier" entityId={s.id} />
           <AttachmentsPanel entityType="Supplier" entityId={s.id} title="Documents" />
         </div>
       </section>
@@ -674,7 +678,7 @@ function TxnTable({
   statusFilter?: boolean;
   empty?: ReactNode;
 }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [type, setType] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [from, setFrom] = useState("");

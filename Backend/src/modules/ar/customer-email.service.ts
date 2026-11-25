@@ -41,6 +41,13 @@ async function record(companyId: string, customerId: string, actor: Actor, what:
   });
 }
 
+/** The message the company set for its sales forms, if any. */
+async function defaultMessage(companyId: string) {
+  const row = await prisma.workspaceRecord.findFirst({ where: { companyId, collection: "settings", recordId: "sales-messages", ownerErpUserId: 0 } });
+  const text = (row?.data as { values?: { email?: unknown } } | null)?.values?.email;
+  return typeof text === "string" ? text.trim().slice(0, 4000) : "";
+}
+
 export function emailStatus() {
   return { configured: mailConfigured() };
 }
@@ -71,7 +78,7 @@ export async function emailInvoice(
   const text = [
     `Dear ${invoice.customer.contactPerson || invoice.customer.name},`,
     "",
-    input.message?.trim() || intro,
+    input.message?.trim() || (reminder ? "" : await defaultMessage(companyId)) || intro,
     "",
     `Invoice total: ${fmt(money(invoice.gross), currency)}`,
     `Balance due: ${fmt(outstanding, currency)}`,

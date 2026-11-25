@@ -6,7 +6,12 @@ import { purgeIdempotency } from "../../middleware/idempotency";
 import { openStartedPeriods } from "../journals/journal.service";
 import { deliverDueEmails } from "../notifications/email-outbox.service";
 import { notify } from "../notifications/notification.service";
+import { env } from "../../config/env";
+import { runWorkflowRules } from "../workspace/workflow-rules.service";
+import { runBackup } from "../platform/backup.service";
+import { runSpreads } from "./spread.service";
 import { deliverDueWebhooks } from "../platform/webhook.service";
+import { lowStockAlert, runCollections } from "./collections.service";
 import { runDueTemplates } from "./recurring-templates.service";
 import { automationDue, purgeApiKeyUsage, runAutomation, runRecurring } from "./books.service";
 
@@ -116,6 +121,21 @@ async function runDailyWork(companyId: string, now: Date) {
     await notifyFailure(companyId, "Recurring transactions did not run", e);
   }
   try {
+    await runSpreads(companyId, now);
+  } catch (e) {
+    await notifyFailure(companyId, "Prepaid and deferred schedules did not run", e);
+  }
+  try {
+    await runCollections(companyId, now);
+  } catch (e) {
+    await notifyFailure(companyId, "Payment reminders and late fees did not run", e);
+  }
+  try {
+    await lowStockAlert(companyId, now);
+  } catch (e) {
+    console.error(`[scheduler] low stock for ${companyId}`, e);
+  }
+  try {
     await dailyAlerts(companyId, now);
   } catch (e) {
     console.error(`[scheduler] alerts for ${companyId}`, e);
@@ -163,10 +183,12 @@ export async function runScheduledWork(now = new Date()) {
       try {
         if (daily) await runDailyWork(companyId, now);
         automationRuns += await runDueAutomation(companyId, now);
+        await runWorkflowRules(companyId, now);
       } catch (e) {
         console.error(`[scheduler] company ${companyId}`, e);
       }
     }
+    if (daily && env.backupDir) await runBackup().catch((e) => console.error("[scheduler] backup", e));
     const webhooks = await deliverDueWebhooks(now).catch((e) => (console.error("[scheduler] webhooks", e), null));
     const emails = await deliverDueEmails(now).catch((e) => (console.error("[scheduler] emails", e), null));
     return { daily, automationRuns, webhooks, emails };

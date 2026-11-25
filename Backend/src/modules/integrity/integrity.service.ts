@@ -64,7 +64,7 @@ async function foreignParties(companyId: string, side: "receivables" | "payables
     const mine = { companyId, supplierId: { in: ids }, status: "POSTED" as const };
     for (const d of await prisma.apBill.findMany({ where: mine })) value += at(money(d.gross) - money(d.amountPaid) - money(d.amountCredited), d.exchangeRate);
     for (const d of await prisma.apPayment.findMany({ where: mine })) value -= at(d.unallocated, d.exchangeRate);
-    for (const d of await prisma.apCreditNote.findMany({ where: mine })) value -= money(d.unapplied);
+    for (const d of await prisma.apCreditNote.findMany({ where: mine })) value -= at(d.unapplied, d.exchangeRate);
     const ledger = await prisma.apLedgerEntry.aggregate({ where: { companyId, supplierId: { in: ids } }, _sum: { debit: true, credit: true } });
     value -= money(ledger._sum.credit) - money(ledger._sum.debit);
     value -= await revaluations(companyId, "payables");

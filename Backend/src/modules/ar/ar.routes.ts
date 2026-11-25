@@ -567,6 +567,17 @@ arRouter.post("/credit-notes", requireCapability("ar:manage"), async (req: Authe
   }
 });
 
+arRouter.put("/invoices/:id", requireCapability("ar:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = z
+      .object({ invoiceDate: isoDay, dueDate: isoDay.optional(), description: z.string().trim().max(1000).optional(), lines: documentLines, updatedAt: z.string().optional(), creditOverride: z.boolean().optional() })
+      .parse(req.body);
+    res.json({ success: true, data: await inTransaction(() => ar.editInvoice(req.companyId!, req.params.id, body, actor(req, body.creditOverride))) });
+  } catch (e) {
+    res.status(notFoundStatus(e)).json({ success: false, error: zodMessage(e) });
+  }
+});
+
 arRouter.post("/invoices/:id/write-off", requireCapability("ar:credit-override"), async (req: AuthedRequest, res) => {
   try {
     const body = z.object({ date: isoDay.optional(), amount: z.number().positive().optional(), reason: z.string().trim().min(3, "Say why it is written off").max(300) }).parse(req.body);
@@ -639,6 +650,7 @@ arRouter.post("/debit-notes", requireCapability("ar:manage"), async (req: Authed
         dueDate: z.string().optional(),
         reason: z.string().min(1),
         net: z.number().positive(),
+        exchangeRate: z.number().positive().optional(),
         tax: z.number().min(0).optional(),
         description: z.string().optional(),
         creditOverride: z.boolean().optional(),
@@ -660,6 +672,7 @@ arRouter.post("/deposits", requireCapability("ar:manage"), async (req: AuthedReq
         customerId: z.string().min(1),
         depositDate: z.string(),
         method: payMethod.optional(),
+        exchangeRate: z.number().positive().optional(),
         amount: z.number().positive(),
         reference: z.string().optional(),
         description: z.string().optional(),

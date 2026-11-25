@@ -45,6 +45,7 @@ const lineBody = z.object({
   quantity: z.number().positive(),
   unitPrice: z.number().min(0),
   taxCode: optionalText(40),
+  taxInclusive: z.boolean().optional(),
 });
 
 export const documentBody = z.object({
@@ -147,6 +148,7 @@ async function prepare(companyId: string, slug: KindSlug, input: DocumentBody) {
       discount: roundMoney((l.quantity * l.unitPrice * pct) / 100),
       taxCode: l.taxCode,
       accountId: l.accountId,
+      taxInclusive: l.taxInclusive,
     })),
     date,
     config.side,
@@ -345,6 +347,7 @@ export async function convertDocument(companyId: string, id: string, input: z.in
       discount: Number(l.discount),
       taxCode: l.taxCode,
       accountId: l.accountId,
+      itemId: l.itemId,
     }));
 
     if (input.target === "BILL") return billPurchaseOrder(companyId, doc, input, date, actor);

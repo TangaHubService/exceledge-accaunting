@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { pdfDate, pdfMoney, renderPdf, type PdfBlock } from "../../lib/pdf";
 import { money } from "../../lib/documents";
+import { printedFields } from "../workspace/custom-fields.service";
 import * as ar from "../ar/ar.service";
 import * as ap from "../ap/ap.service";
 
@@ -20,21 +21,33 @@ export async function companyHeader(companyId: string) {
   return { name, subtitle: details.join("  |  ") };
 }
 
+/** Wording the company chose for its invoices; anything unset keeps the standard form. */
+export async function formStyle(companyId: string) {
+  const rows = await prisma.workspaceRecord.findMany({ where: { companyId, collection: "settings", recordId: { in: ["form-style", "sales-payments"] }, ownerErpUserId: 0 } });
+  const v = (id: string) => ((rows.find((r) => r.recordId === id)?.data as { values?: Record<string, unknown> } | null)?.values ?? {}) as Record<string, unknown>;
+  const text = (x: unknown, max: number) => (typeof x === "string" ? x.trim().slice(0, max) : "");
+  const style = v("form-style");
+  return { heading: text(style.heading, 40) || "Tax invoice", message: text(style.message, 500), footer: text(style.footer, 120), hideDiscount: style.hideDiscount === true, hideCustomerTin: style.hideCustomerTin === true, instructions: text(v("sales-payments").instructions, 1000) };
+}
+
 const safeName = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-");
 
 export async function invoicePdf(companyId: string, invoiceId: string): Promise<PrintedDocument> {
-  const [header, invoice] = await Promise.all([companyHeader(companyId), ar.getInvoice(companyId, invoiceId)]);
+  const [header, invoice, style, custom] = await Promise.all([companyHeader(companyId), ar.getInvoice(companyId, invoiceId), formStyle(companyId), printedFields(companyId, "ArInvoice", invoiceId)]);
+  // A column is only left out when it has nothing to say.
+  const hideDiscount = style.hideDiscount && !invoice.lines.some((l) => money(l.discount));
   const c = invoice.customer;
   const blocks: PdfBlock[] = [
-    { kind: "heading", text: `${invoice.status === "REVERSED" ? "VOID " : ""}Tax invoice ${invoice.invoiceNumber}` },
+    { kind: "heading", text: `${invoice.status === "REVERSED" ? "VOID " : ""}${style.heading} ${invoice.invoiceNumber}` },
     {
       kind: "pairs",
       rows: [
         ["Invoice date", pdfDate(invoice.invoiceDate)],
         ["Due date", pdfDate(invoice.dueDate)],
         ["Customer", `${c.name} (${c.code})`],
-        ...(c.tin ? ([["Customer TIN", c.tin]] as Array<[string, string]>) : []),
+        ...(c.tin && !style.hideCustomerTin ? ([["Customer TIN", c.tin]] as Array<[string, string]>) : []),
         ...(c.physicalAddress ? ([["Address", c.physicalAddress]] as Array<[string, string]>) : []),
+        ...custom,
       ],
     },
   ];
@@ -43,10 +56,10 @@ export async function invoicePdf(companyId: string, invoiceId: string): Promise<
       kind: "table",
       columns: [
         { header: "#", width: 20 },
-        { header: "Description", width: 180 },
+        { header: "Description", width: hideDiscount ? 240 : 180 },
         { header: "Qty", width: 45, align: "right" },
         { header: "Unit price", width: 70, align: "right" },
-        { header: "Discount", width: 60, align: "right" },
+        ...(hideDiscount ? [] : [{ header: "Discount", width: 60, align: "right" as const }]),
         { header: "Tax", width: 50 },
         { header: "Net", width: 75, align: "right" },
       ],
@@ -55,7 +68,7 @@ export async function invoicePdf(companyId: string, invoiceId: string): Promise<
         l.description,
         String(Number(l.quantity)),
         pdfMoney(l.unitPrice),
-        pdfMoney(l.discount),
+        ...(hideDiscount ? [] : [pdfMoney(l.discount)]),
         l.taxCode ? `${l.taxCode} ${Number(l.taxRate)}%` : "-",
         pdfMoney(l.net),
       ]),
@@ -74,7 +87,9 @@ export async function invoicePdf(companyId: string, invoiceId: string): Promise<
       ["Balance due", pdfMoney(invoice.outstanding)],
     ],
   });
-  const pdf = renderPdf({ title: header.name, subtitle: header.subtitle, blocks, footer: `Invoice ${invoice.invoiceNumber}` });
+  if (style.instructions) blocks.push({ kind: "space" }, { kind: "text", text: "How to pay", bold: true }, { kind: "text", text: style.instructions });
+  if (style.message) blocks.push({ kind: "space" }, { kind: "text", text: style.message });
+  const pdf = renderPdf({ title: header.name, subtitle: header.subtitle, blocks, footer: [`Invoice ${invoice.invoiceNumber}`, style.footer].filter(Boolean).join("  |  ") });
   return { filename: `${safeName(invoice.invoiceNumber)}.pdf`, pdf };
 }
 

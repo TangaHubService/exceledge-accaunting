@@ -5,7 +5,7 @@ import { Link } from "../../lib/router";
 import { useFeedback } from "../feedback";
 import { SettingsToggle } from "./SettingsToggle";
 
-export type SettingRow = { key: string; label: string; hint?: string; badge?: string } & (
+export type SettingRow = { key: string; label: string; hint?: string; badge?: string; /** Nothing reads it yet: shown, but can't be changed */ soon?: boolean } & (
   | { kind: "toggle"; value: boolean }
   | { kind: "select"; value: string; options: string[] }
   | { kind: "text" | "longtext" | "email"; value: string; empty?: string }
@@ -61,6 +61,7 @@ export function SettingsCard({
   }
 
   function control(row: SettingRow) {
+    if (row.soon) return <span className="muted small">Not available yet</span>;
     if (row.kind === "toggle") {
       const set = (on: boolean) => {
         if (!canEdit || busy) return;
@@ -92,7 +93,7 @@ export function SettingsCard({
           <h2>{title}</h2>
           {description ? <p>{description}</p> : null}
         </div>
-        {canEdit && !draft && rows.some((r) => r.kind !== "link") ? (
+        {canEdit && !draft && rows.some((r) => r.kind !== "link" && !r.soon) ? (
           <button type="button" className="ee-link-btn" aria-label={`Edit ${title}`} onClick={() => setDraft({ ...values })}>
             <Pencil size={14} strokeWidth={1.5} aria-hidden="true" /> Edit
           </button>

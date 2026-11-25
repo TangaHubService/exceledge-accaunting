@@ -133,6 +133,8 @@ export async function priceDocumentLines(companyId: string, lines: DocumentLineI
     taxCodes.map((c) => ({ ...c, ratePercent: Number(c.ratePercent) })),
     documentDate,
   );
+  const itemIds = [...new Set(priced.lines.map((l) => l.itemId).filter(Boolean) as string[])];
+  if (itemIds.length && (await prisma.inventoryItem.count({ where: { companyId, id: { in: itemIds } } })) !== itemIds.length) throw new Error("A line item does not exist");
   const accountIds = [...new Set(priced.lines.map((l) => l.accountId).filter(Boolean) as string[])];
   if (accountIds.length) {
     const [accounts, control] = await Promise.all([
@@ -184,4 +186,23 @@ export async function assertPlausibleTax(companyId: string, side: "sales" | "pur
   const highest = codes.length ? Math.max(...codes.map((c) => Number(c.ratePercent))) : 18;
   const most = (net * highest) / 100 + 1;
   if (tax > most) throw new Error(`Tax of ${tax} is more than ${highest}% of ${net}; check the amount or use lines with a tax code`);
+}
+
+/**
+ * Moves foreign money between two accounts carried at different rates: `debit` at its rate, `credit` at its own, and
+ * the difference to realized FX. Used when a deposit or advance is applied or paid back. Posts in functional currency.
+ */
+export async function realizedFxLines(companyId: string, amount: number, debit: { accountId: string; rate: number; description: string }, credit: { accountId: string; rate: number; description: string }) {
+  const at = (rate: number) => Math.round(amount * rate * 100) / 100;
+  const [dr, cr] = [at(debit.rate), at(credit.rate)];
+  const diff = Math.round((dr - cr) * 100) / 100;
+  const lines = [
+    { accountId: debit.accountId, description: debit.description, debit: dr, credit: 0, amountForeign: amount },
+    { accountId: credit.accountId, description: credit.description, debit: 0, credit: cr, amountForeign: -amount },
+  ];
+  if (diff) {
+    const { gainId, lossId } = await fxAccounts(companyId);
+    lines.push(diff > 0 ? { accountId: gainId, description: "Realized FX gain", debit: 0, credit: diff, amountForeign: 0 } : { accountId: lossId, description: "Realized FX loss", debit: -diff, credit: 0, amountForeign: 0 });
+  }
+  return lines;
 }

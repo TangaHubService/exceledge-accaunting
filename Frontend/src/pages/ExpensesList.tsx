@@ -1,6 +1,7 @@
 import { Paperclip, Plus } from "lucide-react";
 import { useState } from "react";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
+import { CustomFieldsPanel } from "../components/CustomFieldsPanel";
 import { ExpenseForm } from "../components/ExpenseForms";
 import { useFeedback } from "../components/feedback";
 import { Badge, Drawer, EmptyState, Field, Loadable, PageHeader } from "../components/ui";
@@ -161,6 +162,7 @@ export function ExpensesList() {
       </Loadable>
       {filesFor && (
         <Drawer title={`Expense ${filesFor.number}`} subtitle={`${date(filesFor.expenseDate)} · ${amount(filesFor.grossAmount)} ${currency}`} onClose={() => setFilesFor(null)}>
+          <CustomFieldsPanel entityType="Expense" entityId={filesFor.id} />
           <AttachmentsPanel
             entityType="Expense"
             entityId={filesFor.id}

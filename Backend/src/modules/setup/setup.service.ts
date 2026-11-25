@@ -872,7 +872,7 @@ async function openingItem(
   } else {
     await prisma.apCreditNote.create({
       data: {
-        companyId, supplierId: p.partyId, creditNoteNumber: await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN"), noteDate: date, reason: "Opening credit", net: -owed, gross: -owed, unapplied: -owed,
+        companyId, supplierId: p.partyId, creditNoteNumber: await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN"), noteDate: date, reason: "Opening credit", currency, net: -owed, gross: -owed, unapplied: -owed,
         description, journalId, createdByErpUserId: actor.erpUserId,
       },
     });

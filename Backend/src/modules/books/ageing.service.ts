@@ -6,8 +6,9 @@ import { endOfDay } from "./reports.service";
 type Side = "receivables" | "payables";
 type BucketKey = (typeof AGEING_BUCKETS)[number]["key"];
 /** One document as it stood: what it was for, and what was settled on which date. */
-type OpenItem = {
+export type OpenItem = {
   partyId: string;
+  journalId: string | null;
   documentId: string;
   number: string;
   partyReference?: string | null;
@@ -48,7 +49,7 @@ async function reversalDates(companyId: string, types: string[]) {
   return new Map(rows.map((r) => [r.sourceDocumentId ?? "", r.journalDate]));
 }
 
-async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]> {
+export async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]> {
   const [invoices, debitNotes, depositAllocations, voids] = await Promise.all([
     prisma.arInvoice.findMany({
       where: { companyId, status: { in: ["POSTED", "REVERSED"] }, invoiceDate: { lte: to } },
@@ -62,6 +63,10 @@ async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]>
     prisma.arDepositAllocation.findMany({ where: { deposit: { companyId } }, select: { invoiceId: true, amount: true, journalId: true, createdAt: true } }),
     prisma.journal.findMany({ where: { companyId, sourceDocumentType: "ArInvoiceVoid", status: "POSTED" }, select: { sourceDocumentId: true, journalDate: true } }),
   ]);
+  const erpNotes = invoices.flatMap((i) => i.creditNotes.map((n) => n.id));
+  const paidBack = new Map(
+    (await prisma.arLedgerEntry.findMany({ where: { companyId, docType: "REFUND", docId: { in: erpNotes } }, select: { docId: true, debit: true } })).map((e) => [e.docId, money(e.debit)]),
+  );
   const reversed = await reversalDates(companyId, ["ArReceiptReversal", "ArWriteOffReversal"]);
   const journals = new Map(
     (await prisma.journal.findMany({ where: { companyId, id: { in: depositAllocations.flatMap((d) => d.journalId ?? []) } }, select: { id: true, journalDate: true } })).map((j) => [j.id, j.journalDate]),
@@ -78,6 +83,7 @@ async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]>
       .filter((i) => i.status === "POSTED" || voided.has(i.id))
       .map((i) => ({
         partyId: i.customerId,
+        journalId: i.journalId,
         documentId: i.id,
         number: i.invoiceNumber,
         date: i.invoiceDate,
@@ -87,7 +93,16 @@ async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]>
         settled: [
           ...i.allocations.filter((a) => a.receipt.status === "POSTED" || reversed.has(a.receipt.id)).map((a) => ({ date: later(a.receipt.receiptDate, i.invoiceDate), amount: money(a.amount), until: a.receipt.status === "POSTED" ? undefined : reversed.get(a.receipt.id) })),
           ...i.creditApplications.map((a) => ({ date: later(a.creditNote.noteDate, i.invoiceDate), amount: money(a.amount) })),
-          ...i.creditNotes.filter((n) => n.status === "POSTED" || reversed.has(n.id)).map((n) => ({ date: later(n.noteDate, i.invoiceDate), until: n.status === "POSTED" ? undefined : reversed.get(n.id), amount: roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0)) })),
+          ...i.creditNotes.filter((n) => n.status === "POSTED" || reversed.has(n.id)).flatMap((n) => {
+            const amount = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0));
+            const until = n.status === "POSTED" ? undefined : reversed.get(n.id);
+            // Money paid back for an ERP sale had settled it since the sale; the refund only swapped payment for credit.
+            const wasPaid = Math.min(paidBack.get(n.id) ?? 0, amount);
+            return [
+              { date: later(n.noteDate, i.invoiceDate), until, amount: roundMoney(amount - wasPaid) },
+              ...(wasPaid > 0 ? [{ date: i.invoiceDate, until, amount: wasPaid }] : []),
+            ];
+          }),
           ...(deposits.get(i.id) ?? []),
         ],
         voidDate: i.status === "REVERSED" ? voided.get(i.id) : undefined,
@@ -96,6 +111,7 @@ async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]>
       })),
     ...debitNotes.map((n) => ({
       partyId: n.customerId,
+      journalId: n.journalId,
       documentId: n.id,
       number: n.debitNoteNumber,
       date: n.noteDate,
@@ -109,7 +125,7 @@ async function receivableItems(companyId: string, to: Date): Promise<OpenItem[]>
   ];
 }
 
-async function payableItems(companyId: string, to: Date): Promise<OpenItem[]> {
+export async function payableItems(companyId: string, to: Date): Promise<OpenItem[]> {
   const bills = await prisma.apBill.findMany({
     where: { companyId, billDate: { lte: to }, OR: [{ status: "POSTED" }, { voidJournalId: { not: null } }] },
     include: {
@@ -124,6 +140,7 @@ async function payableItems(companyId: string, to: Date): Promise<OpenItem[]> {
   const reversed = await reversalDates(companyId, ["ApPaymentReversal"]);
   return bills.map((b) => ({
     partyId: b.supplierId,
+    journalId: b.journalId,
     documentId: b.id,
     number: b.billNumber,
     partyReference: b.supplierInvoiceNumber,

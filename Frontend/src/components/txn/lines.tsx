@@ -149,8 +149,16 @@ export function productLinesSchema(opts: { requireProduct?: boolean; requireAcco
  * `rates` maps tax code → percent; `inclusive` when amounts already include tax.
  */
 export function productTax(lines: ProductLine[], rates: Map<string, number>, discountPct = 0, inclusive = false) {
+  return lineTaxes(filledProductLines(lines), rates, discountPct, inclusive);
+}
+
+export function categoryTax(lines: CategoryLine[], rates: Map<string, number>, inclusive = false) {
+  return lineTaxes(filledCategoryLines(lines), rates, 0, inclusive);
+}
+
+function lineTaxes(lines: Array<{ amount: string; tax: string }>, rates: Map<string, number>, discountPct: number, inclusive: boolean) {
   const keep = 1 - Math.min(Math.max(discountPct, 0), 100) / 100;
-  const tax = filledProductLines(lines).reduce((s, l) => {
+  const tax = lines.reduce((s, l) => {
     const rate = l.tax ? (rates.get(l.tax) ?? 0) : 0;
     // With tax inside the price the tax is the part of it, not on top.
     return s + Math.round((num(l.amount) * keep * rate * 100) / (inclusive ? 100 + rate : 100)) / 100;
@@ -168,6 +176,7 @@ export function productLinesPayload(lines: ProductLine[], options: SelectOption[
       quantity: q,
       unitPrice: Math.round((a / q) * 10000) / 10000,
       accountId: productAccountId(l.product, items, side),
+      itemId: l.product.startsWith("item:") ? l.product.slice(5) : undefined,
       taxCode: l.tax || null,
     };
   });
@@ -184,9 +193,10 @@ export const previewLines = (lines: ProductLine[], options: SelectOption[]) =>
 
 /* ── Category (account) lines ──────────────────────────── */
 
-export type CategoryLine = { category: string; description: string; amount: string };
+/** `tax` is a tax code ("" for none). */
+export type CategoryLine = { category: string; description: string; amount: string; tax: string };
 
-export const emptyCategoryLine = (): CategoryLine => ({ category: "", description: "", amount: "" });
+export const emptyCategoryLine = (): CategoryLine => ({ category: "", description: "", amount: "", tax: "" });
 
 const CATEGORY_KEYS = ["category", "description", "amount"];
 
@@ -196,11 +206,12 @@ export function filledCategoryLines(lines: CategoryLine[]) {
 
 export const categoryTotal = (lines: CategoryLine[]) => filledCategoryLines(lines).reduce((s, l) => s + num(l.amount), 0);
 
-export function categoryColumns(options: SelectOption[], caps = true): GridColumn<CategoryLine>[] {
+export function categoryColumns(options: SelectOption[], caps = true, taxOptions?: SelectOption[]): GridColumn<CategoryLine>[] {
   return [
     { key: "category", label: caps ? "CATEGORY" : "Category", kind: "select", options, width: "28%", placeholder: "" },
-    { key: "description", label: caps ? "DESCRIPTION" : "Description", width: "52%" },
+    { key: "description", label: caps ? "DESCRIPTION" : "Description", width: taxOptions ? "40%" : "52%" },
     { key: "amount", label: caps ? "AMOUNT" : "AMOUNT", kind: "money", align: "right", width: "18%" },
+    ...(taxOptions ? [{ key: "tax" as const, label: caps ? "TAX" : "Tax", kind: "select" as const, options: taxOptions, width: "12%", placeholder: "" }] : []),
   ];
 }
 

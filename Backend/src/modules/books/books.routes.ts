@@ -2,7 +2,7 @@ import { type Response, Router } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { env } from "../../config/env";
-import { API_KEY_SCOPES, AuthedRequest, authenticate, requireCapability, resolveCompany } from "../../middleware/auth";
+import { can, API_KEY_SCOPES, AuthedRequest, authenticate, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as approvals from "../approvals/approval.service";
 import * as integrity from "../integrity/integrity.service";
 import * as notifications from "../notifications/notification.service";
@@ -10,9 +10,12 @@ import * as webhooks from "../platform/webhook.service";
 import * as books from "./books.service";
 import * as budgets from "./budget.service";
 import * as close from "./close.service";
+import { cashBasisProfit } from "./cash-basis.service";
+import { detailReport } from "./detail-reports.service";
 import * as documents from "./documents.service";
 import * as insights from "./insights.service";
 import * as risks from "./risk.service";
+import * as spread from "./spread.service";
 import * as signatures from "./signatures.service";
 import * as reportDocs from "./report-documents";
 import { exportFormat, queryDay, queryDims, sendReport } from "../../lib/report-export";
@@ -37,7 +40,7 @@ async function readableCompanies(req: AuthedRequest) {
 const day = (value: unknown) => (typeof value === "string" && value ? new Date(`${value.slice(0, 10)}T23:59:59.999Z`) : undefined);
 
 function fail(res: { status: (c: number) => { json: (b: unknown) => void } }, e: unknown) {
-  res.status(400).json({ success: false, error: (e as Error).message });
+  res.status(400).json({ success: false, error: e instanceof z.ZodError ? e.issues.map((i) => i.message).join("; ") : (e as Error).message });
 }
 
 const TB_MODES = ["STANDARD", "UNADJUSTED", "ADJUSTED", "POST_CLOSING", "COMPARATIVE", "COLUMNS"] as const;
@@ -71,6 +74,53 @@ booksRouter.get("/statements", requireCapability("report:view"), async (req: Aut
     });
     if (format) return await sendReport(res, await reportDocs.statementsDocument(req.companyId!, data, parts as reportDocs.StatementPart[]), format);
     res.json({ success: true, data });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+booksRouter.get("/spread", requireCapability("journal:view"), async (req: AuthedRequest, res) => {
+  res.json({ success: true, data: await spread.listSpreads(req.companyId!) });
+});
+
+booksRouter.post("/spread", requireCapability("journal:post"), async (req: AuthedRequest, res) => {
+  try {
+    res.status(201).json({ success: true, data: await spread.createSpread(req.companyId!, spread.spreadBody.parse(req.body), actor(req)) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+booksRouter.post("/spread/run", requireCapability("journal:post"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await spread.runSpreads(req.companyId!, new Date(), actor(req)) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+booksRouter.post("/spread/:id/stop", requireCapability("journal:post"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await spread.stopSpread(req.companyId!, req.params.id, actor(req)) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+booksRouter.get("/cash-basis", requireCapability("report:view"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await cashBasisProfit(req.companyId!, { from: queryDay(req.query.from, "start", "from"), to: queryDay(req.query.to, "end", "to") }) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+booksRouter.get("/detail-reports/:slug", requireCapability("report:view"), async (req: AuthedRequest, res) => {
+  try {
+    const report = detailReport(req.params.slug);
+    if (!report) return res.status(404).json({ success: false, error: "No such report" });
+    if (!can(req, report.needs)) return res.status(403).json({ success: false, error: `Missing capability: ${report.needs}` });
+    res.json({ success: true, data: await report.run(req.companyId!, { from: queryDay(req.query.from, "start", "from"), to: queryDay(req.query.to, "end", "to") }) });
   } catch (e) {
     fail(res, e);
   }

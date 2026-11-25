@@ -109,6 +109,8 @@ const IMPORTERS: Record<string, string> = {
   "chart-of-accounts": "/import-data/chart-of-accounts",
   "products-services": "/products-services/import",
   "journal-entries": "/journal-import",
+  invoices: "/import-data/open-invoices",
+  bills: "/import-data/open-bills",
 };
 
 export function ImportData() {

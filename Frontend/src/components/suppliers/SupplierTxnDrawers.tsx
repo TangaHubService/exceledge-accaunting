@@ -1,11 +1,12 @@
 import { type FormEvent, useMemo, useState } from "react";
-import { useCompany } from "../../lib/company";
+import { usePartyCurrency } from "../../lib/company";
 import { amount, date, humanize, isoDay, toNumber } from "../../lib/format";
 import { navigate } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import type { ApBill, ApBillDetail, ApPayment, BillApplications, CommercialDoc, InventoryLocation, SupplierTxnDetail, SupplierTxnType } from "../../lib/types";
 import { methodLabel } from "../ApForms";
 import { AttachmentsPanel } from "../AttachmentsPanel";
+import { CustomFieldsPanel } from "../CustomFieldsPanel";
 import { PdfButton } from "../Documents";
 import { useFeedback } from "../feedback";
 import { Footer, FormError, SummaryRows, useSubmit } from "../forms";
@@ -97,6 +98,7 @@ export function BillDrawer({
     dueDate: x.dueDate,
     poReference: x.poReference,
     grnReference: x.grnReference,
+    currency: x.currency,
     net: toNumber(x.net),
     tax: toNumber(x.tax),
     gross: toNumber(x.gross),
@@ -225,6 +227,7 @@ export function BillDrawer({
               </>
             )}
             <div className="cust-attachments">
+              <CustomFieldsPanel entityType="ApBill" entityId={x.id} />
               <AttachmentsPanel entityType="ApBill" entityId={x.id} title="Supplier invoice and other files" />
             </div>
           </>
@@ -260,7 +263,7 @@ export function SupplierTxnDrawer({
   /** Opens Apply credits with this supplier credit or unapplied payment selected ("CREDIT_NOTE:id"). */
   onApplyCredit?: (source: string) => void;
 }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const detail = useResource<SupplierTxnDetail>(`/api/v1/ap/transactions/${type}/${id}`);
   const d = detail.data;
   const reversible = Boolean(manage && d && type === "PAYMENT" && d.status === "POSTED" && d.sourceModule === "AP");

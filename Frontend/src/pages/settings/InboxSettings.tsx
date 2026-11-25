@@ -22,9 +22,9 @@ export function InboxSettings() {
         </div>
       </section>
         <SettingsSection id="inbox-messages" title="Messages" description="Control team alerts and automatic follow-up." rows={[
-          { key: "alerts", label: "Company alerts", kind: "toggle", value: true, hint: "Assigned team members receive reminders to reply to new messages." },
-          { key: "schedule", label: "Alert day", kind: "select", value: "Every Monday", options: ["Every day", "Every Monday", "Every Friday"] },
-          { key: "ai", label: "AI follow-up", kind: "toggle", value: true, hint: "Asks for more details when replies to accountants or team members are incomplete." },
+          { key: "alerts", label: "Company alerts", kind: "toggle", value: true, hint: "Assigned team members receive reminders to reply to new messages.", soon: true },
+          { key: "schedule", label: "Alert day", kind: "select", value: "Every Monday", options: ["Every day", "Every Monday", "Every Friday"], soon: true },
+          { key: "ai", label: "AI follow-up", kind: "toggle", value: true, hint: "Asks for more details when replies to accountants or team members are incomplete.", soon: true },
         ]} />
     </SettingsLayout>
   );

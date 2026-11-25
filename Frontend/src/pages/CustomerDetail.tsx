@@ -2,6 +2,7 @@ import { ArrowLeft, CalendarClock, Mail, MapPin, Phone } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { AllocateDepositForm, CreditNoteForm, DebitNoteForm, DepositForm, InvoiceForm, ReceiptForm } from "../components/ArForms";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
+import { CustomFieldsPanel } from "../components/CustomFieldsPanel";
 import { ApplyCreditsDrawer } from "../components/customers/ApplyCreditsDrawer";
 import { CustomerFormDrawer } from "../components/customers/CustomerFormDrawer";
 import { EmailComposer } from "../components/customers/EmailComposer";
@@ -12,7 +13,7 @@ import { useFeedback } from "../components/feedback";
 import { SummaryRows } from "../components/forms";
 import { Select } from "../components/Select";
 import { Badge, Drawer, EmptyState, Field, ErrorState, Loadable, Menu, PageHeader, Pagination, SkeletonRows } from "../components/ui";
-import { useCompany } from "../lib/company";
+import { PartyCurrency, usePartyCurrency } from "../lib/company";
 import { amount, date, dateTime, humanize, plural, toNumber } from "../lib/format";
 import { usePagedResource } from "../lib/pagination";
 import { Link, navigate, setQueryParam, useLocation } from "../lib/router";
@@ -77,7 +78,6 @@ type Viewing = { type: CustomerTxnType; id: string } | null;
 export function CustomerDetail({ id }: { id: string }) {
   const { can, api } = useSession();
   const { toast, confirm } = useFeedback();
-  const { currency } = useCompany();
   const { query } = useLocation();
   const requested = query.get("tab") as Tab | null;
   const tab: Tab = requested && TABS.some(([k]) => k === requested) ? requested : "overview";
@@ -89,6 +89,7 @@ export function CustomerDetail({ id }: { id: string }) {
   const [version, setVersion] = useState(0);
 
   const customer = useResource<Customer>(`/api/v1/ar/customers/${id}`);
+  const currency = usePartyCurrency(customer.data?.currency);
   const summary = useResource<CustomerSummary>(`/api/v1/ar/customers/${id}/summary`);
 
   const refresh = useCallback(() => {
@@ -150,6 +151,7 @@ export function CustomerDetail({ id }: { id: string }) {
     row.type === "REFUND" ? navigate(`/banking/transactions?q=${encodeURIComponent(row.number ?? "")}`) : setViewing({ type: row.type, id: row.id });
 
   return (
+    <PartyCurrency value={customer.data?.currency}>
     <Loadable
       resource={customer}
       skeleton={
@@ -451,13 +453,14 @@ export function CustomerDetail({ id }: { id: string }) {
         );
       }}
     </Loadable>
+    </PartyCurrency>
   );
 }
 
 /* ── Summary strip ─────────────────────────────────────── */
 
 function SummaryStrip({ summary }: { summary: { data?: CustomerSummary; error?: string; loading: boolean; reload: () => void } }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   if (summary.error && !summary.data) {
     return (
       <div className="panel">
@@ -518,7 +521,7 @@ function Overview({
   onTab: (t: Tab) => void;
   onChanged: () => void;
 }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const openInvoices = useResource<CustomerTxnPage>(`/api/v1/ar/customers/${c.id}/transactions?type=INVOICE&status=open&pageSize=5&v=${version}`);
   const recent = useResource<CustomerTxnPage>(`/api/v1/ar/customers/${c.id}/transactions?pageSize=5&v=${version}`);
   const detail = (label: string, value: ReactNode) =>
@@ -551,6 +554,7 @@ function Overview({
           {detail("Notes", c.notes && <span className="pre">{c.notes}</span>)}
         </dl>
         <div className="cust-attachments">
+          <CustomFieldsPanel entityType="Customer" entityId={c.id} />
           <AttachmentsPanel entityType="Customer" entityId={c.id} title="Documents" />
         </div>
         {summary && summary.availableCredit > 0 && (
@@ -678,7 +682,7 @@ function TxnTable({
   statusFilter?: boolean;
   empty?: ReactNode;
 }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const [type, setType] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [from, setFrom] = useState("");
@@ -813,7 +817,7 @@ function TxnTable({
 function Deposits({ customerId, manage, onApply, onChanged }: { customerId: string; manage: boolean; onApply: (d: ArDeposit) => void; onChanged: () => void }) {
   const { api } = useSession();
   const { toast, confirm } = useFeedback();
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const deposits = useResource<ArDeposit[]>(`/api/v1/ar/customers/${customerId}/deposits`);
   if (!deposits.data?.length) return null;
 
@@ -1000,7 +1004,7 @@ function TxnDrawer({
   onOpenInvoice: (invoiceId: string) => void;
   onReverse?: (d: { id: string; number: string; total: number }) => void;
 }) {
-  const { currency } = useCompany();
+  const currency = usePartyCurrency();
   const detail = useResource<CustomerTxnDetail>(`/api/v1/ar/transactions/${type}/${id}`);
   const d = detail.data;
   return (

@@ -458,7 +458,7 @@ export async function createAndSubmitJournal(companyId: string, input: JournalIn
   });
 }
 
-/** Lines as they were entered: in the foreign currency when the journal had one, else functional. */
+/** Lines as they were entered: in the foreign currency when the journal had one, else functional (a settlement keeps its foreign amounts beside its functional ones). */
 export function linesInJournalCurrency(
   lines: Array<{
     accountId: string;
@@ -470,14 +470,16 @@ export function linesInJournalCurrency(
     project?: string | null;
     branchId?: string | null;
   }>,
+  rate: number,
 ): JournalLineDraft[] {
-  const foreign = lines.some((l) => l.amountForeign !== null);
+  const foreign = Math.abs(rate - 1) > 1e-10 && lines.some((l) => l.amountForeign !== null);
   return lines.map((l) => {
     const f = Number(l.amountForeign ?? 0);
     return {
       accountId: l.accountId,
       debit: foreign ? Math.max(f, 0) : Number(l.debit),
       credit: foreign ? Math.max(-f, 0) : Number(l.credit),
+      ...(!foreign && l.amountForeign !== null ? { amountForeign: f } : {}),
       description: l.description ?? undefined,
       costCentre: l.costCentre ?? undefined,
       project: l.project ?? undefined,
@@ -521,8 +523,8 @@ export async function reverseJournal(
     throw new Error(`Journal ${original.journalNumber} was created${source}; reverse it from its source document`);
   }
 
-  const foreign = original.lines.some((l) => l.amountForeign !== null);
-  const reversalLines = reverseJournalLines(linesInJournalCurrency(original.lines));
+  const foreign = Math.abs(Number(original.exchangeRate) - 1) > 1e-10 && original.lines.some((l) => l.amountForeign !== null);
+  const reversalLines = reverseJournalLines(linesInJournalCurrency(original.lines, Number(original.exchangeRate)));
 
   return inTransaction(async () => {
     const claimed = await prisma.journal.updateMany({

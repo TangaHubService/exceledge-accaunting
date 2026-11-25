@@ -444,7 +444,12 @@ export type ArInvoiceDetail = {
     taxCode: string | null;
     taxRate: Decimal;
     tax: Decimal;
+    accountId: string | null;
+    itemId: string | null;
   }>;
+  updatedAt: string;
+  sourceModule: string | null;
+  sourceDocumentType: string | null;
 };
 
 export type ArDeposit = {
@@ -453,6 +458,7 @@ export type ArDeposit = {
   depositDate: string;
   method: string;
   amount: number;
+  currency: string;
   remaining: number;
   status: "POSTED" | "REVERSED";
   reference: string | null;
@@ -676,6 +682,7 @@ export type ApBill = {
   dueDate: string;
   poReference: string | null;
   grnReference: string | null;
+  currency: string;
   net: number;
   tax: number;
   gross: number;
@@ -711,6 +718,7 @@ export type ApAdvance = {
   supplierName: string;
   method: ApPaymentMethod;
   amount: number;
+  currency: string;
   remaining: number;
   refunded: number;
   reference: string | null;

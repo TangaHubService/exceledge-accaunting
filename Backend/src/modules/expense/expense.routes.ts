@@ -2,6 +2,7 @@ import { EXPENSE_PAYMENT_MODES, RECURRING_FREQUENCIES } from "@exceledge/account
 import { type Response, Router } from "express";
 import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, can, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
+import * as inbox from "./receipt-inbox.service";
 import * as expense from "./expense.service";
 import { inTransaction } from "../../lib/prisma";
 
@@ -27,6 +28,11 @@ const handle = (fn: Handler, status = 200) => async (req: AuthedRequest, res: Re
     fail(res, e);
   }
 };
+
+expenseRouter.get("/inbox", handle((req) => inbox.listInbox(req.companyId!, z.enum(["NEW", "USED", "DISMISSED"]).catch("NEW").parse(req.query.status))));
+expenseRouter.post("/inbox", requireCapability("expense:manage"), handle((req) => inbox.addInboxItem(req.companyId!, z.object({ note: z.string().max(500).optional() }).parse(req.body ?? {}).note, actor(req)), 201));
+expenseRouter.post("/inbox/:id/expense", requireCapability("expense:manage"), handle((req) => inbox.inboxToExpense(req.companyId!, req.params.id, inbox.inboxExpenseBody.parse(req.body), actor(req)), 201));
+expenseRouter.post("/inbox/:id/dismiss", requireCapability("expense:manage"), handle((req) => inbox.dismissInboxItem(req.companyId!, req.params.id, actor(req))));
 
 const str = (q: unknown) => (typeof q === "string" && q.trim() ? q.trim() : undefined);
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Use a yyyy-mm-dd date");

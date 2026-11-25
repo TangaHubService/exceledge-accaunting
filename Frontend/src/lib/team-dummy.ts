@@ -120,16 +120,6 @@ export const BANK_OPTIONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export const TIME_NAME_OPTIONS = [
-  { value: "", label: "Select name" },
-  { value: "self", label: "Me" },
-] as const;
-
-export const TIME_CUSTOMER_OPTIONS = [
-  { value: "", label: "Select customer" },
-  { value: "internal", label: "Internal / Admin" },
-] as const;
-
 export const TIME_SERVICE_OPTIONS = [
   { value: "", label: "Select service" },
   { value: "consulting", label: "Consulting" },
