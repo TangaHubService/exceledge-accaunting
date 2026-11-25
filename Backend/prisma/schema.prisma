@@ -4181,6 +4181,8 @@ model IdempotencyRecord {
   scope       String
   key         String
   requestHash String
+  /// The sender's access at the time; a replay needs the same
+  accessHash  String?
   /// Null while the first request is still running
   statusCode  Int?
   response    Json?

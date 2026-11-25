@@ -748,18 +748,19 @@ export async function reverseReceipt(companyId: string, receiptId: string, actor
 
 async function reverseReceiptOnce(companyId: string, receiptId: string, actor: Actor, options: { reason?: string; reversalDate?: Date }) {
   const reversalDate = options.reversalDate ?? new Date();
-  const receipt = await prisma.arReceipt.findFirst({
-    where: { id: receiptId, companyId },
-    include: { allocations: true, customer: true },
-  });
-  if (!receipt) throw new Error("Receipt does not exist");
-  const held = money(receipt.unallocated) + receipt.allocations.reduce((t, x) => t + money(x.amount), 0);
-  if (money(receipt.amount) - held > 0.005) throw new Error(`Part of payment ${receipt.receiptNumber} was refunded; reverse the refund first`);
+  if (!(await prisma.arReceipt.count({ where: { id: receiptId, companyId } }))) throw new Error("Receipt does not exist");
   // A receipt recorded in Banking is claimed through its bank transaction first, in the same order Banking uses.
   const bankLinked = await prisma.bankTransaction.updateMany({ where: { companyId, arReceiptId: receiptId, status: "POSTED" }, data: { status: "REVERSED" } });
   // The conditional update row-locks the receipt, so a concurrent reversal waits and then finds it reversed.
   const claimed = await prisma.arReceipt.updateMany({ where: { id: receiptId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
   if (!claimed.count) throw new Error("Receipt is already reversed");
+  // Read only now that the row is locked: a refund or an application that was under way has finished and shows here.
+  const receipt = await prisma.arReceipt.findFirstOrThrow({
+    where: { id: receiptId, companyId },
+    include: { allocations: true, customer: true },
+  });
+  const held = money(receipt.unallocated) + receipt.allocations.reduce((t, x) => t + money(x.amount), 0);
+  if (money(receipt.amount) - held > 0.005) throw new Error(`Part of payment ${receipt.receiptNumber} was refunded; reverse the refund first`);
   const defaults = await settlementDefaults(companyId, receipt.financialAccountId);
   const original = buildReceiptReversalSource(
     defaults,
@@ -2070,9 +2071,10 @@ export async function unapplyFromInvoice(companyId: string, kind: ApplicationKin
     }
     const amount = money(a.amount);
     await prisma.$transaction(async (tx) => {
-      const gone = await tx.arAllocation.deleteMany({ where: { id: a.id } });
+      // Locks the receipt first, as a reversal does, so the two can't both take it off the invoice.
+      const held = await tx.arReceipt.updateMany({ where: { id: a.receiptId, status: "POSTED" }, data: { unallocated: { increment: amount } } });
+      const gone = held.count ? await tx.arAllocation.deleteMany({ where: { id: a.id } }) : held;
       if (!gone.count) throw new Error("This payment is no longer applied to the invoice");
-      await tx.arReceipt.update({ where: { id: a.receiptId }, data: { unallocated: { increment: amount } } });
       await tx.arInvoice.update({ where: { id: a.invoiceId }, data: { amountPaid: { decrement: amount } } });
     });
     detail = { customerId: a.receipt.customerId, sourceNumber: a.receipt.receiptNumber, invoiceNumber: a.invoice.invoiceNumber, amount };

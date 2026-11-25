@@ -3,20 +3,27 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { autonomousPrisma } from "../lib/prisma";
+import { effectiveAccess } from "../modules/users/access.service";
 import type { ErpTokenPayload } from "./auth";
 
 const WAIT_MS = 20_000;
 const POLL_MS = 150;
 const KEEP_DAYS = 7;
 
+/** Answers that show a secret once; keeping them would keep the secret. */
+const SHOWS_SECRET = /^\/api\/v1\/(integration\/key|books\/api-keys|books\/webhooks)\/?(\?|$)/;
+
 /** Organization and user of a valid token. Without one the request goes on to be refused by sign-in as usual. */
-function scopeOf(req: Request) {
+async function scopeOf(req: Request) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return null;
   try {
     const p = jwt.verify(header.slice("Bearer ".length), env.jwtSecret, { algorithms: ["HS256"] }) as ErpTokenPayload;
     const org = p.activeOrganizationId ?? (Array.isArray(p.organizationId) ? p.organizationId[0] : p.organizationId);
-    return p.userId && org ? `${org}:${p.userId}` : null;
+    if (!p.userId || !org) return null;
+    const access = await effectiveAccess({ erpOrganizationId: org, erpUserId: p.userId, email: p.email, erpRole: p.role });
+    const accessHash = createHash("sha256").update([...access.capabilities].sort().join(",")).digest("hex");
+    return { scope: `${org}:${p.userId}`, accessHash };
   } catch {
     return null;
   }
@@ -29,16 +36,17 @@ function scopeOf(req: Request) {
  */
 export async function idempotency(req: Request, res: Response, next: NextFunction) {
   const key = req.header("idempotency-key")?.trim();
-  if (req.method !== "POST" || !key) return next();
+  if (req.method !== "POST" || !key || SHOWS_SECRET.test(req.originalUrl)) return next();
   if (!/^[\w.-]{8,100}$/.test(key)) return res.status(400).json({ success: false, error: "Idempotency-Key must be 8 to 100 letters, digits, dots, dashes or underscores" });
-  const scope = scopeOf(req);
-  if (!scope) return next();
+  const caller = await scopeOf(req);
+  if (!caller) return next();
+  const { scope, accessHash } = caller;
   const requestHash = createHash("sha256").update(`${req.originalUrl}\n${JSON.stringify(req.body ?? null)}`).digest("hex");
   try {
-    await autonomousPrisma.idempotencyRecord.create({ data: { scope, key, requestHash } });
+    await autonomousPrisma.idempotencyRecord.create({ data: { scope, key, requestHash, accessHash } });
   } catch (e) {
     if ((e as { code?: string }).code !== "P2002") throw e;
-    return replay(res, scope, key, requestHash);
+    return replay(res, scope, key, requestHash, accessHash);
   }
 
   let body: unknown;
@@ -57,11 +65,13 @@ export async function idempotency(req: Request, res: Response, next: NextFunctio
   return next();
 }
 
-async function replay(res: Response, scope: string, key: string, requestHash: string) {
+async function replay(res: Response, scope: string, key: string, requestHash: string, accessHash: string) {
   const until = Date.now() + WAIT_MS;
   for (;;) {
     const row = await autonomousPrisma.idempotencyRecord.findUnique({ where: { scope_key: { scope, key } } });
     if (!row) return res.status(409).json({ success: false, error: "The first attempt was refused; check the details and try again" });
+    // The routes check access before doing anything; an answer saved under other access must not get round that.
+    if (row.accessHash !== accessHash) return res.status(403).json({ success: false, error: "Your access changed since this was sent; check whether it was saved" });
     if (row.requestHash !== requestHash) return res.status(422).json({ success: false, error: "This Idempotency-Key was already used for a different request" });
     if (row.statusCode !== null) {
       res.setHeader("Idempotent-Replay", "true");

@@ -782,6 +782,8 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
   // The conditional update row-locks the payment, so a concurrent reversal waits and then finds it reversed.
   const claimed = await prisma.apPayment.updateMany({ where: { id: paymentId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
   if (!claimed.count) throw new Error("Payment is already reversed");
+  // Read only now that the row is locked, so an application that was under way is taken off its bill too.
+  const allocations = await prisma.apAllocation.findMany({ where: { paymentId } });
   const paid = money(payment.amount);
   const wht = money(payment.withholdingTax);
   const defaults = await settlementDefaults(companyId, payment.financialAccountId);
@@ -807,7 +809,7 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
     actor,
   );
   await prisma.$transaction(async (tx) => {
-    for (const allocation of payment.allocations) {
+    for (const allocation of allocations) {
       await tx.apBill.update({ where: { id: allocation.billId }, data: { amountPaid: { decrement: money(allocation.amount) } } });
     }
     await appendLedger(tx, {
@@ -2067,9 +2069,10 @@ export async function unapplyFromBill(companyId: string, kind: BillApplicationKi
     }
     const amount = money(a.amount);
     await prisma.$transaction(async (tx) => {
-      const gone = await tx.apAllocation.deleteMany({ where: { id: a.id } });
+      // Locks the payment first, as a reversal does, so the two can't both take it off the bill.
+      const held = await tx.apPayment.updateMany({ where: { id: a.paymentId, status: "POSTED" }, data: { unallocated: { increment: amount } } });
+      const gone = held.count ? await tx.apAllocation.deleteMany({ where: { id: a.id } }) : held;
       if (!gone.count) throw new Error("This payment is no longer applied to the bill");
-      await tx.apPayment.update({ where: { id: a.paymentId }, data: { unallocated: { increment: amount } } });
       await tx.apBill.update({ where: { id: a.billId }, data: { amountPaid: { decrement: amount } } });
     });
     detail = { supplierId: a.payment.supplierId, sourceNumber: a.payment.paymentNumber, billNumber: a.bill.billNumber, amount };
