@@ -4,32 +4,38 @@ import {
   ExternalLink,
   List,
   Maximize2,
-  MessageSquare,
   Printer,
   Search,
-  Settings,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Menu } from "../components/ui";
 import { useFeedback } from "../components/feedback";
-import { Link, navigate } from "../lib/router";
+import { amount, date } from "../lib/format";
+import { navigate } from "../lib/router";
+import { useResource, useSession } from "../lib/session";
+import { type RecurringTemplate, TXN_LABELS, type TxnKind } from "../lib/txn";
 
-const TRANSACTION_TYPES = [
-  "Bill",
-  "Non-Posting Charge",
-  "Cheque",
-  "Non-Posting Credit",
-  "Credit Card Credit",
-  "Credit Note",
-  "Deposit",
-  "Estimate",
-  "Expense",
-  "Invoice",
-  "Journal Entry",
-  "Refund",
-  "Sales Receipt",
-  "Transfer",
-];
+/** Each type opens its form; "Make recurring" there saves the template with the form's contents. */
+const FORMS: Record<string, string> = {
+  Bill: "/expenses/bill/new",
+  "Non-Posting Charge": "/sales/delayed-charge/new",
+  Cheque: "/expenses/cheque/new",
+  "Non-Posting Credit": "/sales/delayed-credit/new",
+  "Credit Card Credit": "/expenses/credit-card-credit/new",
+  "Credit Note": "/sales/credit-note/new",
+  Deposit: "/banking/deposit/new",
+  Invoice: "/sales/invoice/new",
+  "Journal Entry": "/accounting/journal-entry/new",
+  Refund: "/sales/refund-receipt/new",
+  "Sales Receipt": "/sales/sales-receipt/new",
+  Transfer: "/banking/transfer/new",
+};
+const TRANSACTION_TYPES = Object.keys(FORMS);
+const UNIT = { DAILY: "day", WEEKLY: "week", MONTHLY: "month", YEARLY: "year" } as const;
+const FORM_OF: Partial<Record<TxnKind, string>> = { cheque: FORMS.Cheque, transfer: FORMS.Transfer, journal: FORMS["Journal Entry"], "bank-deposit": FORMS.Deposit, "credit-note": FORMS["Credit Note"], "refund-receipt": FORMS.Refund, "sales-receipt": FORMS["Sales Receipt"], "delayed-charge": FORMS["Non-Posting Charge"], "delayed-credit": FORMS["Non-Posting Credit"], "credit-card-credit": FORMS["Credit Card Credit"], "supplier-credit": "/expenses/supplier-credit/new", "purchase-order": "/expenses/purchase-order/new", invoice: FORMS.Invoice, bill: FORMS.Bill };
+
+const intervalText = (t: RecurringTemplate) => (t.mode === "UNSCHEDULED" ? "Unscheduled" : `Every ${t.every > 1 ? `${t.every} ${UNIT[t.interval]}s` : UNIT[t.interval]}`);
 
 export function RecurringTxnTypes() {
   const { toast } = useFeedback();
@@ -38,10 +44,54 @@ export function RecurringTxnTypes() {
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
 
+  const { confirm } = useFeedback();
+  const { api } = useSession();
+  const res = useResource<RecurringTemplate[]>("/api/v1/recurring");
+  const [remindersOnly, setRemindersOnly] = useState(false);
+  const rows = useMemo(
+    () => (res.data ?? []).filter((t) => (!remindersOnly || t.mode === "REMINDER") && t.name.toLowerCase().includes(searchFilter.trim().toLowerCase())),
+    [res.data, remindersOnly, searchFilter],
+  );
+  const perPage = 25;
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
+  const current = Math.min(page, pages - 1);
+
   function handleCreateTemplate() {
     setModalOpen(false);
-    toast(`Creating recurring template for ${selectedType}…`);
+    toast(`Fill in the form, then choose Make recurring`);
+    navigate(FORMS[selectedType]);
   }
+
+  async function run(action: () => Promise<string>) {
+    try {
+      toast(await action());
+      res.reload();
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    }
+  }
+
+  const use = (t: RecurringTemplate) => {
+    if (t.mode === "REMINDER") return navigate(FORM_OF[t.kind] ?? "/");
+    return run(async () => {
+      if (!(await confirm({ title: `Create from ${t.name}?`, body: `A ${TXN_LABELS[t.kind].toLowerCase()} dated today will be created now. The schedule doesn't change.`, confirmLabel: "Create" }))) return "Nothing was created";
+      const made = await api<{ number: string | null }>(`/api/v1/recurring/${t.id}/use`, { method: "POST", body: "{}" });
+      return `${TXN_LABELS[t.kind]} ${made.number ?? ""} created`;
+    });
+  };
+  const toggle = (t: RecurringTemplate) =>
+    run(async () => {
+      const { kind, mode, name, interval, every, startDate, endDate, daysInAdvance, partyName, amount: total, payload } = t;
+      await api(`/api/v1/recurring/${t.id}`, { method: "PUT", body: JSON.stringify({ kind, mode, name, interval, every, startDate, endDate, daysInAdvance, partyName, amount: total, payload, isActive: !t.isActive }) });
+      return t.isActive ? `${t.name} paused` : `${t.name} resumed`;
+    });
+  const remove = (t: RecurringTemplate) =>
+    run(async () => {
+      if (!(await confirm({ title: `Delete ${t.name}?`, body: "Transactions it already created stay in the books.", confirmLabel: "Delete", danger: true }))) return "Nothing was deleted";
+      await api(`/api/v1/recurring/${t.id}`, { method: "DELETE" });
+      return `${t.name} deleted`;
+    });
 
   return (
     <div className="ee-rec-container">
@@ -66,15 +116,6 @@ export function RecurringTxnTypes() {
             <span>All lists</span>
           </a>
 
-          <button
-            type="button"
-            className="ee-rec-top-link"
-            style={{ background: "none", border: "none", padding: 0 }}
-            onClick={() => toast("Feedback dialog opened")}
-          >
-            <MessageSquare size={15} />
-            <span>Feedback</span>
-          </button>
 
           <button
             type="button"
@@ -114,9 +155,10 @@ export function RecurringTxnTypes() {
           <button
             type="button"
             className="ee-btn-reminder-list"
-            onClick={() => toast("Reminder list filter options")}
+            aria-pressed={remindersOnly}
+            onClick={() => setRemindersOnly((v) => !v)}
           >
-            <span>Reminder list</span>
+            <span>{remindersOnly ? "All templates" : "Reminder list"}</span>
             <ChevronDown size={14} />
           </button>
 
@@ -152,14 +194,6 @@ export function RecurringTxnTypes() {
           >
             <Printer size={18} />
           </button>
-          <button
-            type="button"
-            className="ee-icon-btn"
-            onClick={() => toast("Table display settings")}
-            title="Table settings"
-          >
-            <Settings size={18} />
-          </button>
         </div>
       </div>
 
@@ -184,18 +218,46 @@ export function RecurringTxnTypes() {
             </tr>
           </thead>
           <tbody>
-            <tr className="ee-table-empty-row">
-              <td colSpan={8}>0 results matching the criteria.</td>
-            </tr>
+            {rows.slice(current * perPage, (current + 1) * perPage).map((t) => (
+              <tr key={t.id}>
+                <td>
+                  {t.name}
+                  {t.isActive ? null : <span className="muted small"> · Paused</span>}
+                  {t.lastError ? <div className="text-negative small">{t.lastError}</div> : null}
+                </td>
+                <td>{TXN_LABELS[t.kind]}</td>
+                <td>{intervalText(t)}</td>
+                <td>{t.previousDate ? date(t.previousDate) : "—"}</td>
+                <td>{t.isActive && t.nextDate ? date(t.nextDate) : "—"}</td>
+                <td>{t.partyName ?? "—"}</td>
+                <td className="num">{t.amount === null ? "—" : amount(t.amount)}</td>
+                <td>
+                  <Menu
+                    label="Actions"
+                    triggerClassName="ee-link-btn"
+                    items={[
+                      { label: "Use", onSelect: () => void use(t) },
+                      { label: t.isActive ? "Pause" : "Resume", onSelect: () => void toggle(t) },
+                      { label: "Delete", onSelect: () => void remove(t) },
+                    ]}
+                  />
+                </td>
+              </tr>
+            ))}
+            {rows.length ? null : (
+              <tr className="ee-table-empty-row">
+                <td colSpan={8}>{res.error ?? (res.loading ? "Loading…" : "0 results matching the criteria.")}</td>
+              </tr>
+            )}
           </tbody>
         </table>
 
         <div className="ee-table-pagination">
-          <span>0 results</span>
-          <button type="button" className="ee-page-btn" disabled>
+          <span>{rows.length} result{rows.length === 1 ? "" : "s"}</span>
+          <button type="button" className="ee-page-btn" aria-label="Previous page" disabled={current === 0} onClick={() => setPage(current - 1)}>
             &lt;
           </button>
-          <button type="button" className="ee-page-btn" disabled>
+          <button type="button" className="ee-page-btn" aria-label="Next page" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>
             &gt;
           </button>
         </div>

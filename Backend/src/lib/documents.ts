@@ -163,3 +163,25 @@ export async function settlementDefaults(companyId: string, financialAccountId?:
   if (!account.isActive) throw new Error(`${account.name} is inactive`);
   return { ...defaults, defaultBankAccountId: account.glAccountId, defaultCashAccountId: account.glAccountId, mobileMoneyClearingId: account.glAccountId };
 }
+
+/** Where opening balances are balanced: Opening Balance Equity, else the company's suspense or retained earnings account. */
+export async function openingContraAccount(companyId: string) {
+  const equity = await prisma.account.findFirst({
+    where: { companyId, type: "EQUITY", isActive: true, OR: [{ code: "3020" }, { name: { equals: "Opening Balance Equity", mode: "insensitive" } }] },
+    select: { id: true },
+  });
+  const defaults = await defaultsFor(companyId);
+  return equity?.id ?? defaults.suspenseAccountId ?? defaults.retainedEarningsId ?? null;
+}
+
+/** Tax typed on a total (no lines) can't be more than the highest rate in force; less is normal when part is exempt. */
+export async function assertPlausibleTax(companyId: string, side: "sales" | "purchase", net: number, tax: number, date: Date) {
+  if (!(tax > 0)) return;
+  const codes = await prisma.taxCode.findMany({
+    where: { companyId, isActive: true, taxType: { in: [...LINE_TAX_TYPES[side]] }, effectiveFrom: { lte: date }, OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }] },
+    select: { ratePercent: true },
+  });
+  const highest = codes.length ? Math.max(...codes.map((c) => Number(c.ratePercent))) : 18;
+  const most = (net * highest) / 100 + 1;
+  if (tax > most) throw new Error(`Tax of ${tax} is more than ${highest}% of ${net}; check the amount or use lines with a tax code`);
+}

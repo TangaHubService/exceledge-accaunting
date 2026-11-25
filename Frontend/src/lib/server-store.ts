@@ -19,7 +19,6 @@ const WORKSPACE = new Set([
   "planner-items",
   "planner-started",
   "performance-layout",
-  "recurring",
   "statement",
 ]);
 

@@ -21,6 +21,7 @@ import type {
   SetupSectionStatusValue as PrismaSectionStatus,
 } from "@prisma/client";
 import { Prisma as PrismaNs } from "@prisma/client";
+import { assertFunctionalDocument, functionalCurrencyOf, nextNumber } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { ensureDefaultAutomation } from "../books/books.service";
@@ -832,6 +833,52 @@ export async function approveOpeningBalances(companyId: string, id: string, acto
   return after;
 }
 
+/** What the party owes or is owed on day one, as an open document that can be aged, paid or used. */
+async function openingItem(
+  companyId: string,
+  kind: "CUSTOMER" | "SUPPLIER",
+  p: { partyId: string; debit: number; credit: number },
+  date: Date,
+  journalId: string,
+  description: string,
+  actor: SetupActor,
+) {
+  const owed = roundMoney(kind === "CUSTOMER" ? p.debit - p.credit : p.credit - p.debit);
+  if (!owed) return;
+  const currency = await functionalCurrencyOf(companyId);
+  if (kind === "CUSTOMER") {
+    if (owed > 0) {
+      await prisma.arInvoice.create({
+        data: {
+          companyId, customerId: p.partyId, invoiceNumber: await nextNumber(companyId, "AR_INVOICE", "INV"), invoiceDate: date, dueDate: date, currency, net: owed, gross: owed,
+          description, journalId, sourceModule: "AR", sourceDocumentType: "CustomerOpening", sourceDocumentId: p.partyId, createdByErpUserId: actor.erpUserId,
+        },
+      });
+    } else {
+      await prisma.arCreditNote.create({
+        data: {
+          companyId, customerId: p.partyId, creditNoteNumber: await nextNumber(companyId, "AR_CREDIT_NOTE", "CN"), noteDate: date, reason: "Opening credit", currency, net: -owed, gross: -owed, unapplied: -owed,
+          description, journalId, createdByErpUserId: actor.erpUserId,
+        },
+      });
+    }
+  } else if (owed > 0) {
+    await prisma.apBill.create({
+      data: {
+        companyId, supplierId: p.partyId, billNumber: await nextNumber(companyId, "AP_BILL", "BILL"), billDate: date, dueDate: date, currency, net: owed, gross: owed,
+        description, journalId, sourceModule: "AP", sourceDocumentType: "SupplierOpening", sourceDocumentId: p.partyId, createdByErpUserId: actor.erpUserId,
+      },
+    });
+  } else {
+    await prisma.apCreditNote.create({
+      data: {
+        companyId, supplierId: p.partyId, creditNoteNumber: await nextNumber(companyId, "AP_CREDIT_NOTE", "SCN"), noteDate: date, reason: "Opening credit", net: -owed, gross: -owed, unapplied: -owed,
+        description, journalId, createdByErpUserId: actor.erpUserId,
+      },
+    });
+  }
+}
+
 /**
  * Posts an approved batch as one OPENING_BALANCE journal on the first day of the earliest financial
  * year. Customer and supplier lines must sit on the AR/AP control account and also open the party's
@@ -863,6 +910,7 @@ export async function postOpeningBalances(companyId: string, id: string, actor: 
           ? await prisma.customer.findFirst({ where: { companyId, OR: [{ id: l.partyRef ?? "" }, { code: l.partyRef ?? "" }] } })
           : await prisma.supplier.findFirst({ where: { companyId, OR: [{ id: l.partyRef ?? "" }, { code: l.partyRef ?? "" }] } });
       if (!party) throw new Error(`${l.partyType === "CUSTOMER" ? "Customer" : "Supplier"} ${l.partyRef} not found`);
+      await assertFunctionalDocument(companyId, null, party.currency);
       if (l.partyType === "CUSTOMER") customerRef = party.id;
       else supplierRef = party.id;
       parties.push({ kind: l.partyType, partyId: party.id, debit, credit, memo: l.memo });
@@ -903,6 +951,7 @@ export async function postOpeningBalances(companyId: string, id: string, actor: 
             docNumber: journal.journalNumber, description: p.memo ?? batch.name, debit: p.debit, credit: p.credit, runningBalance: next,
           },
         });
+        await openingItem(companyId, "CUSTOMER", p, year.startDate, journal.id, p.memo ?? batch.name, actor);
       } else {
         const s = await prisma.supplier.findUniqueOrThrow({ where: { id: p.partyId } });
         const next = roundMoney(Number(s.balance) + p.credit - p.debit);
@@ -913,6 +962,7 @@ export async function postOpeningBalances(companyId: string, id: string, actor: 
             docNumber: journal.journalNumber, description: p.memo ?? batch.name, debit: p.debit, credit: p.credit, runningBalance: next,
           },
         });
+        await openingItem(companyId, "SUPPLIER", p, year.startDate, journal.id, p.memo ?? batch.name, actor);
       }
     }
     const after = await prisma.openingBalanceBatch.update({ where: { id }, data: { journalId: journal.id }, include: { lines: true } });

@@ -146,13 +146,14 @@ export function productLinesSchema(opts: { requireProduct?: boolean; requireAcco
 
 /**
  * Tax on product lines as the server will work it out: each line's net (after its share of a document discount) × its rate.
- * `rates` maps tax code → percent.
+ * `rates` maps tax code → percent; `inclusive` when amounts already include tax.
  */
-export function productTax(lines: ProductLine[], rates: Map<string, number>, discountPct = 0) {
+export function productTax(lines: ProductLine[], rates: Map<string, number>, discountPct = 0, inclusive = false) {
   const keep = 1 - Math.min(Math.max(discountPct, 0), 100) / 100;
   const tax = filledProductLines(lines).reduce((s, l) => {
     const rate = l.tax ? (rates.get(l.tax) ?? 0) : 0;
-    return s + Math.round(num(l.amount) * keep * rate) / 100;
+    // With tax inside the price the tax is the part of it, not on top.
+    return s + Math.round((num(l.amount) * keep * rate * 100) / (inclusive ? 100 + rate : 100)) / 100;
   }, 0);
   return Math.round(tax * 100) / 100;
 }

@@ -111,7 +111,10 @@ export const isCash = (a: AccountInfo) =>
     /^cash and cash equivalents\|\|\|/i.test(a.reportingGroup ?? "") ||
     /\|\|\|undeposited funds$/i.test(a.reportingGroup ?? "") ||
     (!(a.reportingGroup ?? "").includes("|||") && a.code.startsWith("11")));
-const isDepreciation = (a: AccountInfo) => a.type === "EXPENSE" && (a.code === "6300" || /depreciation|amorti[sz]ation/i.test(a.name));
+/** Non-cash charges against assets: depreciation, amortisation and impairment. */
+const isDepreciation = (a: AccountInfo) => ((a.type === "EXPENSE" || a.type === "OTHER_EXPENSE") && /depreciation|amorti[sz]ation|impairment/i.test(a.name)) || (a.type === "EXPENSE" && a.code === "6300");
+/** The result of selling an asset: its cash is in the proceeds, which are investing. */
+const isDisposalResult = (a: AccountInfo) => (a.type === "OTHER_INCOME" || a.type === "OTHER_EXPENSE") && /(gain|loss|profit).*dispos|dispos.*(gain|loss|profit)/i.test(a.name);
 
 /**
  * Indirect cash flow from the period's movements (year-end closing journals excluded): non-current assets are investing,
@@ -124,6 +127,7 @@ function cashFlowFrom(accounts: Map<string, AccountInfo>, movement: Sums) {
   let investing = 0;
   let financing = 0;
   let cashChange = 0;
+  let disposalResult = 0;
   for (const [id, v] of movement) {
     const a = accounts.get(id);
     if (!a) continue;
@@ -131,6 +135,7 @@ function cashFlowFrom(accounts: Map<string, AccountInfo>, movement: Sums) {
     if (isPnl(a.type)) {
       profit += v.credit - v.debit;
       if (isDepreciation(a)) depreciation += net;
+      else if (isDisposalResult(a)) disposalResult += v.credit - v.debit;
     } else if (a.type === "ASSET") {
       if (isCash(a)) cashChange += net;
       else if (classify(a, accounts) === "NON_CURRENT") investing -= net;
@@ -141,10 +146,10 @@ function cashFlowFrom(accounts: Map<string, AccountInfo>, movement: Sums) {
     } else if (equityKind(a) === "OCI") investing += net;
     else financing += net;
   }
-  const operating = money4(profit + depreciation + workingCapital);
-  investing = money4(investing - depreciation);
+  const operating = money4(profit - disposalResult + depreciation + workingCapital);
+  investing = money4(investing + disposalResult - depreciation);
   financing = money4(financing);
-  return { operating, investing, financing, netChange: money4(operating + investing + financing), cashChange: money4(cashChange), depreciation: money4(depreciation), profit: money4(profit) };
+  return { operating, investing, financing, netChange: money4(operating + investing + financing), cashChange: money4(cashChange), depreciation: money4(depreciation), disposalResult: money4(disposalResult), profit: money4(profit) };
 }
 
 async function figuresFor(companyId: string, accounts: Map<string, AccountInfo>, from: Date, to: Date) {
@@ -246,7 +251,7 @@ async function notesFor(companyId: string, from: Date, to: Date, sections: Array
   const framework = business?.reportingFramework?.replace(/_/g, " ");
   const basis = [
     `These statements are prepared from journals posted to the general ledger for ${day(from)} to ${day(to)}.`,
-    `${(policy?.accountingBasis ?? business?.accountingBasis ?? "ACCRUAL") === "CASH" ? "Cash" : "Accrual"} basis${framework ? `, ${framework} framework` : ""}. Amounts are in ${currency?.functionalCurrency ?? "the functional currency"}.`,
+    `Accrual basis${framework ? `, ${framework} framework` : ""}. Amounts are in ${currency?.functionalCurrency ?? "the functional currency"}.`,
     "Assets and liabilities are split into current and non-current from each account's reporting group, or its code range when no group is set.",
   ];
   const policies: Array<{ title: string; text: string }> = [];

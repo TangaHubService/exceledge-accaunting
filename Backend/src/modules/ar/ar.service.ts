@@ -1,6 +1,4 @@
 import {
-  ageingBucketKey,
-  AGEING_BUCKETS,
   assertCreditAvailable,
   assertCustomerTransactable,
   assertReceiptAllocations,
@@ -24,10 +22,11 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import type { ArPaymentMethod, CustomerType, Prisma } from "@prisma/client";
-import { defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { assertFunctionalDocument, assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
-import { createAndPostJournal, linesInJournalCurrency, reversalCurrency } from "../journals/journal.service";
+import { agedBalances } from "../books/ageing.service";
+import { createAndPostJournal, linesInJournalCurrency, reversalCurrency, reversalDate } from "../journals/journal.service";
 
 type Actor = {
   erpUserId?: number;
@@ -70,6 +69,10 @@ async function appendLedger(
       runningBalance: next,
     },
   });
+}
+
+function auditAr(companyId: string, actor: Actor, action: string, entityType: string, entityId: string, afterJson: unknown) {
+  return writeAudit({ companyId, erpUserId: actor.erpUserId ?? 0, erpRole: actor.erpRole, action, entityType, entityId, afterJson, ...actor.meta });
 }
 
 async function postBalanced(
@@ -248,7 +251,8 @@ export async function createCustomer(
   if (opening > 0) {
     const defaults = await defaultsFor(companyId);
     const ar = customer.arAccountId || defaults.accountsReceivableId;
-    const contra = defaults.suspenseAccountId || defaults.retainedEarningsId;
+    const contra = await openingContraAccount(companyId);
+    const fx = await resolveDocumentMoney(companyId, { partyCurrency: customer.currency, date: openingDate });
     if (!ar || !contra) throw new Error("AR and suspense/retained earnings accounts are required for opening balances");
     const posted = await postBalanced(
       companyId,
@@ -256,6 +260,8 @@ export async function createCustomer(
         journalDate: openingDate,
         description: `Opening balance ${customer.code}`,
         referenceNumber: customer.code,
+        currencyCode: fx.currency,
+        exchangeRate: fx.rate,
         sourceDocumentType: "CustomerOpening",
         sourceDocumentId: customer.id,
         sourceDocumentNumber: customer.code,
@@ -286,7 +292,8 @@ export async function createCustomer(
           invoiceNumber: await nextNumber(companyId, "AR_INVOICE", "INV"),
           invoiceDate: openingDate,
           dueDate: openingDate,
-          currency: customer.currency,
+          currency: fx.currency,
+          exchangeRate: fx.rate,
           net: opening,
           gross: opening,
           description: "Opening balance",
@@ -492,6 +499,7 @@ export async function createInvoice(
   if (priced && input.discount) throw new Error("Give discounts on the lines when an invoice has lines");
   if (priced && (input.net != null || input.tax != null)) throw new Error("An invoice with lines takes its net and tax from the lines");
   if (!priced && !(Number(input.net) > 0)) throw new Error("Invoice amount must be positive");
+  if (!priced) await assertPlausibleTax(companyId, "sales", input.net!, exempt ? 0 : (input.tax ?? 0), invoiceDate);
   const net = priced ? priced.net : roundMoney(input.net!);
   const tax = exempt ? 0 : priced ? priced.tax : roundMoney(input.tax ?? 0);
   const discount = priced ? 0 : roundMoney(input.discount ?? 0);
@@ -727,6 +735,7 @@ export async function createReceipt(
       credit: amount,
     });
   });
+  await auditAr(companyId, actor, "POST", "ArReceipt", receipt.id, { receiptNumber, amount, allocations: requested });
   return prisma.arReceipt.findUniqueOrThrow({
     where: { id: receipt.id },
     include: { allocations: true },
@@ -739,16 +748,19 @@ export async function reverseReceipt(companyId: string, receiptId: string, actor
 
 async function reverseReceiptOnce(companyId: string, receiptId: string, actor: Actor, options: { reason?: string; reversalDate?: Date }) {
   const reversalDate = options.reversalDate ?? new Date();
-  const receipt = await prisma.arReceipt.findFirst({
-    where: { id: receiptId, companyId },
-    include: { allocations: true, customer: true },
-  });
-  if (!receipt) throw new Error("Receipt does not exist");
+  if (!(await prisma.arReceipt.count({ where: { id: receiptId, companyId } }))) throw new Error("Receipt does not exist");
   // A receipt recorded in Banking is claimed through its bank transaction first, in the same order Banking uses.
   const bankLinked = await prisma.bankTransaction.updateMany({ where: { companyId, arReceiptId: receiptId, status: "POSTED" }, data: { status: "REVERSED" } });
   // The conditional update row-locks the receipt, so a concurrent reversal waits and then finds it reversed.
   const claimed = await prisma.arReceipt.updateMany({ where: { id: receiptId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
   if (!claimed.count) throw new Error("Receipt is already reversed");
+  // Read only now that the row is locked: a refund or an application that was under way has finished and shows here.
+  const receipt = await prisma.arReceipt.findFirstOrThrow({
+    where: { id: receiptId, companyId },
+    include: { allocations: true, customer: true },
+  });
+  const held = money(receipt.unallocated) + receipt.allocations.reduce((t, x) => t + money(x.amount), 0);
+  if (money(receipt.amount) - held > 0.005) throw new Error(`Part of payment ${receipt.receiptNumber} was refunded; reverse the refund first`);
   const defaults = await settlementDefaults(companyId, receipt.financialAccountId);
   const original = buildReceiptReversalSource(
     defaults,
@@ -816,6 +828,7 @@ async function reverseReceiptOnce(companyId: string, receiptId: string, actor: A
       data: { reversalJournalId: posted.id, reversedAt: reversalDate, reversedByErpUserId: actor.erpUserId, reversalReason: options.reason || `Receipt ${receipt.receiptNumber} reversed in Receivables` },
     });
   }
+  await auditAr(companyId, actor, "REVERSE", "ArReceipt", receipt.id, { receiptNumber: receipt.receiptNumber, reason: options.reason });
   return { receiptId: receipt.id, journalId: posted.id, status: "REVERSED" as const };
 }
 
@@ -826,15 +839,25 @@ export async function createCreditNote(
     invoiceId?: string;
     noteDate: Date | string;
     reason: string;
-    net: number;
+    /** Required without lines; with lines the totals come from the lines and their tax codes. */
+    net?: number;
     tax?: number;
     description?: string;
+    currency?: string;
+    exchangeRate?: number;
+    lines?: DocumentLineInput[];
   },
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
-  const net = roundMoney(input.net);
-  const tax = roundMoney(input.tax ?? 0);
+  const noteDate = new Date(input.noteDate);
+  const pricedLines = input.lines?.length ? (customer.taxExempt ? input.lines.map((l) => ({ ...l, taxCode: null })) : input.lines) : undefined;
+  const priced = pricedLines ? await priceDocumentLines(companyId, pricedLines, noteDate, "sales") : null;
+  if (priced && (input.net != null || input.tax != null)) throw new Error("A credit note with lines takes its net and tax from the lines");
+  if (!priced && !(Number(input.net) > 0)) throw new Error("Credit note amount must be positive");
+  if (!priced) await assertPlausibleTax(companyId, "sales", input.net!, customer.taxExempt ? 0 : (input.tax ?? 0), noteDate);
+  const net = priced ? priced.net : roundMoney(input.net!);
+  const tax = priced ? priced.tax : customer.taxExempt ? 0 : roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
   let invoice = null as Awaited<ReturnType<typeof prisma.arInvoice.findFirst>>;
   if (input.invoiceId) {
@@ -846,9 +869,22 @@ export async function createCreditNote(
       throw new Error("Credit note exceeds invoice outstanding balance");
     }
   }
+  // A credit on an invoice goes back at the invoice's own rate, so receivables clear exactly.
+  const fx = await resolveDocumentMoney(companyId, {
+    documentCurrency: input.currency,
+    partyCurrency: customer.currency,
+    date: noteDate,
+    rate: invoice ? Number(invoice.exchangeRate) : input.exchangeRate,
+  });
+  if (invoice && invoice.currency.toUpperCase() !== fx.currency) throw new Error(`Invoice ${invoice.invoiceNumber} is in ${invoice.currency}; the credit note is in ${fx.currency}`);
   const defaults = await defaultsFor(companyId);
-  const lines = buildArCreditNoteLines(defaults, { net, tax, arAccountId: customer.arAccountId });
-  const noteDate = new Date(input.noteDate);
+  const returnsId = defaults.salesReturnsId || defaults.salesRevenueId;
+  // Same lines as the sale, turned round, with the revenue side on sales returns.
+  const lines = priced
+    ? reverseJournalLines(
+        buildLinedInvoiceJournal(defaults, { lines: priced.lines.map((l) => ({ ...l, accountId: null })), arAccountId: customer.arAccountId, salesAccountId: returnsId }),
+      )
+    : buildArCreditNoteLines(defaults, { net, tax, arAccountId: customer.arAccountId });
   const creditNoteNumber = await nextNumber(companyId, "AR_CREDIT_NOTE", "CN");
   const note = await prisma.arCreditNote.create({
     data: {
@@ -858,6 +894,8 @@ export async function createCreditNote(
       creditNoteNumber,
       noteDate,
       reason: input.reason,
+      currency: fx.currency,
+      exchangeRate: fx.rate,
       net,
       tax,
       gross,
@@ -872,6 +910,8 @@ export async function createCreditNote(
       journalDate: noteDate,
       description: input.description || `Credit note ${creditNoteNumber}`,
       referenceNumber: creditNoteNumber,
+      currencyCode: fx.currency,
+      exchangeRate: fx.rate,
       sourceDocumentType: "ArCreditNote",
       sourceDocumentId: note.id,
       sourceDocumentNumber: creditNoteNumber,
@@ -895,6 +935,16 @@ export async function createCreditNote(
       credit: gross,
     });
   });
+  await writeAudit({
+    companyId,
+    erpUserId: actor.erpUserId ?? 0,
+    erpRole: actor.erpRole,
+    action: "POST",
+    entityType: "ArCreditNote",
+    entityId: note.id,
+    afterJson: { creditNoteNumber, net, tax, gross },
+    ...actor.meta,
+  });
   return prisma.arCreditNote.findUniqueOrThrow({ where: { id: note.id } });
 }
 
@@ -912,6 +962,7 @@ export async function createDebitNote(
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
+  await assertFunctionalDocument(companyId, null, customer.currency);
   const net = roundMoney(input.net);
   const tax = roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
@@ -993,6 +1044,7 @@ export async function createDeposit(
   actor: Actor = {},
 ) {
   const customer = await loadActiveCustomer(companyId, input.customerId);
+  await assertFunctionalDocument(companyId, null, customer.currency);
   const amount = roundMoney(input.amount);
   const defaults = await defaultsFor(companyId);
   const lines = buildCustomerDepositLines(defaults, amount, input.method ?? "CASH");
@@ -1026,6 +1078,7 @@ export async function createDeposit(
     },
     actor,
   );
+  await auditAr(companyId, actor, "POST", "ArDeposit", deposit.id, { depositNumber, amount });
   return prisma.arDeposit.update({
     where: { id: deposit.id },
     data: { journalId: posted.id },
@@ -1035,7 +1088,7 @@ export async function createDeposit(
 export async function allocateDeposit(
   companyId: string,
   depositId: string,
-  input: { invoiceId: string; amount: number },
+  input: { invoiceId: string; amount: number; date?: Date | string },
   actor: Actor = {},
 ) {
   const deposit = await prisma.arDeposit.findFirst({
@@ -1052,6 +1105,7 @@ export async function allocateDeposit(
   if (amount - invoiceOutstanding(invoice) > 0.0001) {
     throw new Error("Allocation exceeds invoice outstanding balance");
   }
+  const when = await actionDate(companyId, input.date, deposit.depositDate > invoice.invoiceDate ? deposit.depositDate : invoice.invoiceDate, "Applying a deposit");
   const defaults = await defaultsFor(companyId);
   const lines = buildDepositApplicationLines(defaults, amount, deposit.customer.arAccountId);
   const allocation = await prisma.arDepositAllocation.create({
@@ -1060,7 +1114,7 @@ export async function allocateDeposit(
   const posted = await postBalanced(
     companyId,
     {
-      journalDate: new Date(),
+      journalDate: when,
       description: `Apply deposit ${deposit.depositNumber}`,
       referenceNumber: deposit.depositNumber,
       sourceDocumentType: "ArDepositAllocation",
@@ -1086,7 +1140,7 @@ export async function allocateDeposit(
     await appendLedger(tx, {
       companyId,
       customerId: deposit.customerId,
-      entryDate: new Date(),
+      entryDate: when,
       docType: "DEPOSIT_APPLICATION",
       docId: allocation.id,
       docNumber: deposit.depositNumber,
@@ -1095,19 +1149,21 @@ export async function allocateDeposit(
       credit: amount,
     });
   });
+  await auditAr(companyId, actor, "APPLY", "ArDeposit", deposit.id, { depositNumber: deposit.depositNumber, invoiceNumber: invoice.invoiceNumber, amount });
   return prisma.arDeposit.findUniqueOrThrow({
     where: { id: deposit.id },
     include: { allocations: true },
   });
 }
 
-export async function refundDeposit(companyId: string, depositId: string, actor: Actor = {}) {
+export async function refundDeposit(companyId: string, depositId: string, actor: Actor = {}, date?: Date | string) {
   const deposit = await prisma.arDeposit.findFirst({
     where: { id: depositId, companyId, status: "POSTED" },
   });
   if (!deposit) throw new Error("Deposit does not exist");
   const amount = money(deposit.remaining);
   if (amount <= 0) throw new Error("Deposit has no remaining balance to refund");
+  const when = date ? await actionDate(companyId, date, deposit.depositDate, "A refund") : new Date();
   const defaults = await defaultsFor(companyId);
   const cash = settlementAccountId(defaults, deposit.method);
   if (!cash || !defaults.customerDepositsId) {
@@ -1122,7 +1178,7 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
   const posted = await postBalanced(
     companyId,
     {
-      journalDate: new Date(),
+      journalDate: when,
       description: `Refund deposit ${deposit.depositNumber}`,
       referenceNumber: deposit.depositNumber,
       sourceDocumentType: "ArDepositRefund",
@@ -1136,6 +1192,7 @@ export async function refundDeposit(companyId: string, depositId: string, actor:
     },
     actor,
   );
+  await auditAr(companyId, actor, "REFUND", "ArDeposit", deposit.id, { depositNumber: deposit.depositNumber, amount });
   return prisma.arDeposit.update({
     where: { id: deposit.id },
     data: { description: `Refunded via journal ${posted.journalNumber}` },
@@ -1322,36 +1379,12 @@ export async function listDeposits(companyId: string, customerId: string) {
 }
 
 export async function ageingReport(companyId: string, asOf?: Date | string) {
-  const asOfDate = asOf ? new Date(asOf) : new Date();
-  const invoices = await prisma.arInvoice.findMany({
-    where: { companyId, status: "POSTED" },
-    include: { customer: true },
-  });
-  const buckets = Object.fromEntries(AGEING_BUCKETS.map((bucket) => [bucket.key, 0])) as Record<
-    (typeof AGEING_BUCKETS)[number]["key"],
-    number
-  >;
-  const lines = [];
-  for (const invoice of invoices) {
-    const outstanding = invoiceOutstanding(invoice);
-    if (outstanding <= 0) continue;
-    const bucket = ageingBucketKey(invoice.dueDate, asOfDate);
-    buckets[bucket] = roundMoney(buckets[bucket] + outstanding);
-    lines.push({
-      customerId: invoice.customerId,
-      customerCode: invoice.customer.code,
-      customerName: invoice.customer.name,
-      invoiceNumber: invoice.invoiceNumber,
-      dueDate: invoice.dueDate,
-      outstanding,
-      bucket,
-    });
-  }
+  const r = await agedBalances(companyId, "receivables", asOf);
   return {
-    asOf: asOfDate,
-    buckets: AGEING_BUCKETS.map((bucket) => ({ ...bucket, amount: buckets[bucket.key] })),
-    lines,
-    total: roundMoney(Object.values(buckets).reduce((sum, value) => sum + value, 0)),
+    asOf: r.asOf,
+    buckets: r.buckets,
+    total: r.total,
+    lines: r.lines.map((l) => ({ customerId: l.partyId, customerCode: l.partyCode, customerName: l.partyName, invoiceNumber: l.number, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket, currency: l.currency, outstandingForeign: l.outstandingForeign, kind: l.kind })),
   };
 }
 
@@ -1376,7 +1409,7 @@ export async function arDashboard(companyId: string) {
   let outstanding = 0;
   let overdue = 0;
   for (const invoice of invoices) {
-    const open = invoiceOutstanding(invoice);
+    const open = roundMoney(invoiceOutstanding(invoice) * Number(invoice.exchangeRate));
     outstanding = roundMoney(outstanding + open);
     if (open > 0 && invoice.dueDate < today) overdue += 1;
   }
@@ -1750,7 +1783,7 @@ export async function applyCustomerCredits(
     if (r.source === "DEPOSIT") {
       const dep = await prisma.arDeposit.findFirst({ where: { id: r.sourceId, companyId, customerId, status: "POSTED" } });
       if (!dep) throw new Error("Deposit is not available");
-      await allocateDeposit(companyId, dep.id, { invoiceId: invoice.id, amount: r.amount }, actor);
+      await allocateDeposit(companyId, dep.id, { invoiceId: invoice.id, amount: r.amount, date: input.date }, actor);
       applied.push({ source: r.source, number: dep.depositNumber, invoiceNumber: invoice.invoiceNumber, amount: r.amount });
       continue;
     }
@@ -1812,6 +1845,9 @@ export async function applyCustomerCredits(
     const note = await prisma.arCreditNote.findFirst({ where: { id: r.sourceId, companyId, customerId, status: "POSTED" } });
     if (!note) throw new Error("Credit note is not available");
     if (note.currency !== invoice.currency) throw new Error(`Credit note ${note.creditNoteNumber} is in ${note.currency}; invoice ${invoice.invoiceNumber} is in ${invoice.currency}`);
+    if (Math.abs(Number(note.exchangeRate) - Number(invoice.exchangeRate)) > 1e-10) {
+      throw new Error(`Credit note ${note.creditNoteNumber} and invoice ${invoice.invoiceNumber} were booked at different exchange rates; issue the credit on the invoice instead`);
+    }
     await prisma.$transaction(async (tx) => {
       const taken = await tx.arCreditNote.updateMany({
         where: { id: note.id, status: "POSTED", unapplied: { gte: r.amount } },
@@ -1837,6 +1873,18 @@ export async function applyCustomerCredits(
   return { applied, total: roundMoney(applied.reduce((s, a) => s + a.amount, 0)) };
 }
 
+
+/**
+ * The day something is undone or applied: the one asked for, else the document's own day while its period is open,
+ * else today. Never before the document.
+ */
+async function actionDate(companyId: string, requested: Date | string | undefined, documentDate: Date, what: string) {
+  if (!requested) return reversalDate(companyId, documentDate);
+  const date = new Date(requested);
+  if (Number.isNaN(date.getTime())) throw new Error("Date must be yyyy-mm-dd");
+  if (date.toISOString().slice(0, 10) < documentDate.toISOString().slice(0, 10)) throw new Error(`${what} can't be dated before ${documentDate.toISOString().slice(0, 10)}`);
+  return date;
+}
 
 /* ── Void and un-apply ──────────────────────────────────────────────────── */
 
@@ -1871,7 +1919,7 @@ async function postSourceReversal(
  * balance, its journal is reversed and the customer ledger takes a matching credit.
  * Payments, credits and deposits must be removed from it first, so their money goes back on account.
  */
-export async function voidInvoice(companyId: string, invoiceId: string, reason: string | undefined, actor: Actor = {}) {
+export async function voidInvoice(companyId: string, invoiceId: string, reason: string | undefined, actor: Actor = {}, date?: Date | string) {
   const invoice = await prisma.arInvoice.findFirst({ where: { id: invoiceId, companyId } });
   if (!invoice) throw new Error("Invoice does not exist");
   if (invoice.status !== "POSTED") throw new Error(`Invoice ${invoice.invoiceNumber} is already void`);
@@ -1887,7 +1935,7 @@ export async function voidInvoice(companyId: string, invoiceId: string, reason: 
     data: { status: "REVERSED", description: [invoice.description, `Voided${reason ? `: ${reason}` : ""}`].filter(Boolean).join(" · ") },
   });
   if (!claimed.count) throw new Error(`Invoice ${invoice.invoiceNumber} changed while you were voiding it; refresh and try again`);
-  const voidDate = new Date();
+  const voidDate = await actionDate(companyId, date, invoice.invoiceDate, "A void");
   if (invoice.journalId) {
     await postSourceReversal(
       companyId,
@@ -2002,6 +2050,7 @@ export async function unapplyFromInvoice(companyId: string, kind: ApplicationKin
     // A credit note issued against an invoice: take it off and keep it on account, like a later application.
     const n = await prisma.arCreditNote.findFirst({ where: { id: applicationId, companyId, status: "POSTED" }, include: { applications: true, invoice: true } });
     if (!n || !n.invoice) throw new Error("This credit note is no longer applied to the invoice");
+    if (n.kind === "WRITE_OFF") throw new Error(`${n.creditNoteNumber} is a write-off, not credit the customer can use; reverse the write-off instead`);
     if (n.sourceModule && n.sourceModule !== "AR") throw new Error(`Credit note ${n.creditNoteNumber} came from ${n.sourceModule}; it can't be moved here`);
     const amount = roundMoney(money(n.gross) - money(n.unapplied) - n.applications.reduce((s, a) => s + money(a.amount), 0));
     if (amount <= 0.005) throw new Error("This credit note is no longer applied to the invoice");
@@ -2022,9 +2071,10 @@ export async function unapplyFromInvoice(companyId: string, kind: ApplicationKin
     }
     const amount = money(a.amount);
     await prisma.$transaction(async (tx) => {
-      const gone = await tx.arAllocation.deleteMany({ where: { id: a.id } });
+      // Locks the receipt first, as a reversal does, so the two can't both take it off the invoice.
+      const held = await tx.arReceipt.updateMany({ where: { id: a.receiptId, status: "POSTED" }, data: { unallocated: { increment: amount } } });
+      const gone = held.count ? await tx.arAllocation.deleteMany({ where: { id: a.id } }) : held;
       if (!gone.count) throw new Error("This payment is no longer applied to the invoice");
-      await tx.arReceipt.update({ where: { id: a.receiptId }, data: { unallocated: { increment: amount } } });
       await tx.arInvoice.update({ where: { id: a.invoiceId }, data: { amountPaid: { decrement: amount } } });
     });
     detail = { customerId: a.receipt.customerId, sourceNumber: a.receipt.receiptNumber, invoiceNumber: a.invoice.invoiceNumber, amount };
@@ -2090,4 +2140,258 @@ export async function unapplyFromInvoice(companyId: string, kind: ApplicationKin
     ...actor.meta,
   });
   return detail;
+}
+
+
+/* ── Refunds ────────────────────────────────────────────────────────────── */
+
+type RefundSource = { source: "CREDIT_NOTE" | "PAYMENT"; sourceId: string; number: string; amount: number };
+
+export type RefundInput = {
+  customerId: string;
+  refundDate: Date | string;
+  financialAccountId: string;
+  method?: string;
+  reference?: string;
+  description?: string;
+  /** Credit the customer already holds. */
+  sources?: Array<{ source: "CREDIT_NOTE" | "PAYMENT"; sourceId: string; amount: number }>;
+  /** Goods or services being refunded: a credit note reverses the sale and its VAT, then is paid out at once. */
+  lines?: DocumentLineInput[];
+  reason?: string;
+};
+
+/**
+ * Pays a customer back: Dr receivables, Cr bank or cash, using up unapplied credit notes or payments so the
+ * same credit can't be used twice. Runs inside the caller's transaction.
+ */
+export async function createRefund(companyId: string, input: RefundInput, actor: Actor = {}) {
+  const customer = await loadActiveCustomer(companyId, input.customerId, { collecting: true });
+  await assertFunctionalDocument(companyId, null, customer.currency);
+  if (Boolean(input.lines?.length) === Boolean(input.sources?.length)) throw new Error("Choose the credit to refund, or enter what is being refunded, but not both");
+  const refundDate = new Date(input.refundDate);
+  const account = await prisma.financialAccount.findFirst({ where: { id: input.financialAccountId, companyId } });
+  if (!account || !account.isActive) throw new Error("Choose an active bank or cash account for the refund");
+  await assertFunctionalDocument(companyId, account.currency);
+
+  let requested = input.sources ?? [];
+  if (input.lines?.length) {
+    const note = await createCreditNote(companyId, { customerId: customer.id, noteDate: refundDate, reason: input.reason || input.description || "Refund", description: input.description, lines: input.lines }, actor);
+    requested = [{ source: "CREDIT_NOTE", sourceId: note.id, amount: money(note.gross) }];
+  }
+  const sources: RefundSource[] = [];
+  for (const r of requested) {
+    const amount = roundMoney(r.amount);
+    if (!(amount > 0)) throw new Error("Refund amounts must be positive");
+    if (r.source === "CREDIT_NOTE") {
+      const note = await prisma.arCreditNote.findFirst({ where: { id: r.sourceId, companyId, customerId: customer.id, status: "POSTED" } });
+      if (!note) throw new Error("Credit note is not available");
+      const taken = await prisma.arCreditNote.updateMany({ where: { id: note.id, status: "POSTED", unapplied: { gte: amount } }, data: { unapplied: { decrement: amount } } });
+      if (!taken.count) throw new Error(`Credit note ${note.creditNoteNumber} doesn't have ${amount} left to refund`);
+      sources.push({ source: "CREDIT_NOTE", sourceId: note.id, number: note.creditNoteNumber, amount });
+    } else {
+      const receipt = await prisma.arReceipt.findFirst({ where: { id: r.sourceId, companyId, customerId: customer.id, status: "POSTED" } });
+      if (!receipt) throw new Error("Payment is not available");
+      const taken = await prisma.arReceipt.updateMany({ where: { id: receipt.id, status: "POSTED", unallocated: { gte: amount } }, data: { unallocated: { decrement: amount } } });
+      if (!taken.count) throw new Error(`Payment ${receipt.receiptNumber} doesn't have ${amount} left to refund`);
+      sources.push({ source: "PAYMENT", sourceId: receipt.id, number: receipt.receiptNumber, amount });
+    }
+  }
+  const amount = roundMoney(sources.reduce((t, r) => t + r.amount, 0));
+  if (!account.allowOverdraft) {
+    const held = await prisma.glEntry.aggregate({ where: { companyId, accountId: account.glAccountId }, _sum: { debit: true, credit: true } });
+    if (money(held._sum.debit ?? 0) - money(held._sum.credit ?? 0) < amount - 0.0001) throw new Error(`${account.name} doesn't have enough money for this refund`);
+  }
+  const ar = customer.arAccountId || (await defaultsFor(companyId)).accountsReceivableId;
+  if (!ar) throw new Error("Receivables account is not configured");
+  const refundNumber = await nextNumber(companyId, "AR_REFUND", "RFD");
+  const description = input.description?.trim() || `Refund to ${customer.name}`;
+  const refund = await prisma.arRefund.create({
+    data: { companyId, customerId: customer.id, refundNumber, refundDate, amount, financialAccountId: account.id, reference: input.reference, description, sources, createdByErpUserId: actor.erpUserId },
+  });
+  const posted = await postBalanced(
+    companyId,
+    {
+      journalDate: refundDate,
+      description,
+      referenceNumber: input.reference || refundNumber,
+      sourceDocumentType: "ArRefund",
+      sourceDocumentId: refund.id,
+      sourceDocumentNumber: refundNumber,
+      customerRef: customer.id,
+      lines: [
+        { accountId: ar, description: `Refund ${sources.map((r) => r.number).join(", ")}`, debit: amount, credit: 0 },
+        { accountId: account.glAccountId, description: "Refund paid", debit: 0, credit: amount },
+      ],
+    },
+    actor,
+  );
+  await prisma.arRefund.update({ where: { id: refund.id }, data: { journalId: posted.id } });
+  await prisma.$transaction((tx) =>
+    appendLedger(tx, { companyId, customerId: customer.id, entryDate: refundDate, docType: "REFUND", docId: refund.id, docNumber: refundNumber, description, debit: amount, credit: 0 }),
+  );
+  await prisma.bankTransaction.create({
+    data: {
+      companyId,
+      number: refundNumber,
+      kind: "PAYMENT",
+      financialAccountId: account.id,
+      transactionDate: refundDate,
+      amount,
+      method: input.method,
+      reference: input.reference || undefined,
+      partyType: "CUSTOMER",
+      partyName: customer.name,
+      relatedCustomerId: customer.id,
+      arRefundId: refund.id,
+      journalId: posted.id,
+      description,
+      lines: [{ accountId: ar, amount, description: `Refund ${sources.map((r) => r.number).join(", ")}` }],
+      createdByErpUserId: actor.erpUserId,
+    },
+  });
+  await writeAudit({ companyId, erpUserId: actor.erpUserId ?? 0, erpRole: actor.erpRole, action: "POST", entityType: "ArRefund", entityId: refund.id, afterJson: { refundNumber, amount, sources }, ...actor.meta });
+  return { ...(await prisma.arRefund.findUniqueOrThrow({ where: { id: refund.id } })), journalNumber: posted.journalNumber };
+}
+
+/** Undoes a refund from its bank transaction: the money comes back and the customer holds the credit again. */
+export async function reverseRefund(companyId: string, refundId: string, actor: Actor = {}, options: { reason?: string; reversalDate: Date }) {
+  const refund = await prisma.arRefund.findFirst({ where: { id: refundId, companyId } });
+  if (!refund) throw new Error("Refund does not exist");
+  const claimed = await prisma.arRefund.updateMany({ where: { id: refundId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
+  if (!claimed.count || !refund.journalId) throw new Error("Refund is already reversed");
+  const posted = await postSourceReversal(
+    companyId,
+    refund.journalId,
+    {
+      date: options.reversalDate,
+      description: `Reverse refund ${refund.refundNumber}${options.reason ? `: ${options.reason}` : ""}`,
+      sourceDocumentType: "ArRefundReversal",
+      sourceDocumentId: refund.id,
+      sourceDocumentNumber: refund.refundNumber,
+      customerRef: refund.customerId,
+    },
+    actor,
+  );
+  for (const r of refund.sources as RefundSource[]) {
+    if (r.source === "CREDIT_NOTE") await prisma.arCreditNote.update({ where: { id: r.sourceId }, data: { unapplied: { increment: r.amount } } });
+    else await prisma.arReceipt.update({ where: { id: r.sourceId }, data: { unallocated: { increment: r.amount } } });
+  }
+  await prisma.$transaction((tx) =>
+    appendLedger(tx, {
+      companyId,
+      customerId: refund.customerId,
+      entryDate: options.reversalDate,
+      docType: "REFUND_REVERSAL",
+      docId: refund.id,
+      docNumber: refund.refundNumber,
+      description: options.reason || "Refund reversed",
+      debit: 0,
+      credit: money(refund.amount),
+    }),
+  );
+  return { refundId: refund.id, journalId: posted.id };
+}
+
+
+/* ── Bad debts ──────────────────────────────────────────────────────────── */
+
+/**
+ * Writes off what is left on an invoice as a bad debt: Dr bad debt expense, Cr receivables. The VAT stays payable;
+ * any relief is claimed through the tax return. Kept as a credit of kind WRITE_OFF that can't be moved or refunded.
+ */
+export async function writeOffInvoice(companyId: string, invoiceId: string, input: { date?: Date | string; amount?: number; reason: string }, actor: Actor = {}) {
+  const invoice = await prisma.arInvoice.findFirst({ where: { id: invoiceId, companyId, status: "POSTED" }, include: { customer: true } });
+  if (!invoice) throw new Error("Invoice does not exist");
+  const open = invoiceOutstanding(invoice);
+  const amount = roundMoney(input.amount ?? open);
+  if (!(amount > 0)) throw new Error(`Invoice ${invoice.invoiceNumber} has nothing left to write off`);
+  if (amount - open > 0.0001) throw new Error(`Invoice ${invoice.invoiceNumber} only has ${open} left`);
+  const date = input.date ? await actionDate(companyId, input.date, invoice.invoiceDate, "A write-off") : new Date();
+  const defaults = await defaultsFor(companyId);
+  const ar = invoice.customer.arAccountId || defaults.accountsReceivableId;
+  const badDebt =
+    (await prisma.account.findFirst({ where: { companyId, isActive: true, type: "EXPENSE", OR: [{ code: "6200" }, { name: { contains: "bad debt", mode: "insensitive" } }] }, orderBy: { code: "asc" } }))?.id;
+  if (!ar || !badDebt) throw new Error("Set up a bad debt expense account first");
+  const creditNoteNumber = await nextNumber(companyId, "AR_WRITE_OFF", "WO");
+  const note = await prisma.arCreditNote.create({
+    data: {
+      companyId, customerId: invoice.customerId, invoiceId: invoice.id, kind: "WRITE_OFF", creditNoteNumber, noteDate: date, reason: input.reason,
+      currency: invoice.currency, exchangeRate: invoice.exchangeRate, net: amount, gross: amount, unapplied: 0, description: `Bad debt: ${input.reason}`, createdByErpUserId: actor.erpUserId,
+    },
+  });
+  const posted = await postBalanced(
+    companyId,
+    {
+      journalDate: date,
+      description: `Write off ${invoice.invoiceNumber}: ${input.reason}`,
+      referenceNumber: creditNoteNumber,
+      currencyCode: invoice.currency,
+      exchangeRate: Number(invoice.exchangeRate),
+      sourceDocumentType: "ArWriteOff",
+      sourceDocumentId: note.id,
+      sourceDocumentNumber: creditNoteNumber,
+      customerRef: invoice.customerId,
+      lines: [
+        { accountId: badDebt, description: "Bad debt", debit: amount, credit: 0 },
+        { accountId: ar, description: `Written off ${invoice.invoiceNumber}`, debit: 0, credit: amount },
+      ],
+    },
+    actor,
+  );
+  await prisma.arCreditNote.update({ where: { id: note.id }, data: { journalId: posted.id } });
+  await prisma.$transaction(async (tx) => {
+    await bumpOpenInvoice(tx, invoice.id, { amountCredited: { increment: amount } });
+    await appendLedger(tx, { companyId, customerId: invoice.customerId, entryDate: date, docType: "WRITE_OFF", docId: note.id, docNumber: creditNoteNumber, description: input.reason, debit: 0, credit: amount });
+  });
+  await auditAr(companyId, actor, "WRITE_OFF", "ArInvoice", invoice.id, { creditNoteNumber, amount, reason: input.reason });
+  return prisma.arCreditNote.findUniqueOrThrow({ where: { id: note.id } });
+}
+
+/** The customer is paying after all: the debt goes back on the invoice so a receipt can be recorded. */
+export async function reverseWriteOff(companyId: string, writeOffId: string, input: { date?: Date | string; reason?: string }, actor: Actor = {}) {
+  const note = await prisma.arCreditNote.findFirst({ where: { id: writeOffId, companyId, kind: "WRITE_OFF" } });
+  if (!note || !note.invoiceId || !note.journalId) throw new Error("Write-off does not exist");
+  const claimed = await prisma.arCreditNote.updateMany({ where: { id: note.id, status: "POSTED" }, data: { status: "REVERSED" } });
+  if (!claimed.count) throw new Error("Write-off is already reversed");
+  const date = input.date ? await actionDate(companyId, input.date, note.noteDate, "A reversal") : new Date();
+  const posted = await postSourceReversal(
+    companyId,
+    note.journalId,
+    { date, description: `Reverse write-off ${note.creditNoteNumber}${input.reason ? `: ${input.reason}` : ""}`, sourceDocumentType: "ArWriteOffReversal", sourceDocumentId: note.id, sourceDocumentNumber: note.creditNoteNumber, customerRef: note.customerId },
+    actor,
+  );
+  await prisma.$transaction(async (tx) => {
+    await tx.arInvoice.update({ where: { id: note.invoiceId! }, data: { amountCredited: { decrement: money(note.gross) } } });
+    await appendLedger(tx, { companyId, customerId: note.customerId, entryDate: date, docType: "WRITE_OFF_REVERSAL", docId: note.id, docNumber: note.creditNoteNumber, description: input.reason || "Write-off reversed", debit: money(note.gross), credit: 0 });
+  });
+  await auditAr(companyId, actor, "REVERSE_WRITE_OFF", "ArInvoice", note.invoiceId, { creditNoteNumber: note.creditNoteNumber, reason: input.reason });
+  return { id: note.id, journalId: posted.id, status: "REVERSED" as const };
+}
+
+/* ── Sales receipts ─────────────────────────────────────────────────────── */
+
+/** A sale paid on the spot: the invoice and its receipt post together or not at all. */
+export async function createSalesReceipt(
+  companyId: string,
+  input: {
+    customerId: string;
+    date: Date | string;
+    lines: DocumentLineInput[];
+    method?: NonNullable<Parameters<typeof createReceipt>[1]["method"]>;
+    financialAccountId?: string;
+    reference?: string;
+    description?: string;
+  },
+  actor: Actor = {},
+) {
+  // Paid at once, so it uses no credit.
+  const invoice = await createInvoice(companyId, { customerId: input.customerId, invoiceDate: input.date, dueDate: input.date, lines: input.lines, description: input.description }, { ...actor, allowCreditOverride: true });
+  const amount = money(invoice.gross);
+  const receipt = await createReceipt(
+    companyId,
+    { customerId: input.customerId, receiptDate: input.date, method: input.method, amount, currency: invoice.currency, exchangeRate: Number(invoice.exchangeRate), reference: input.reference, financialAccountId: input.financialAccountId, allocations: [{ invoiceId: invoice.id, amount }] },
+    actor,
+  );
+  return { invoice: await prisma.arInvoice.findUniqueOrThrow({ where: { id: invoice.id } }), receipt };
 }

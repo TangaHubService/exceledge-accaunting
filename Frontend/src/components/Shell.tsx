@@ -42,11 +42,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { APP_HUBS, isAppActive } from "../lib/app-hub-nav";
-import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, DUMMY, REPORTS_MENU } from "../lib/dashboard-dummy";
+import { ALL_APPS, CREATE_MENU, CUSTOMISE_NAV_APPS, REPORTS_MENU } from "../lib/dashboard-dummy";
 import { APP_FLYOUTS } from "../lib/settings-dummy";
 import { useCompany } from "../lib/company";
 import { isPathActive, Link, navigate, setQueryParam, useLocation } from "../lib/router";
-import { useSession } from "../lib/session";
+import { NOTIFICATIONS_CHANGED } from "../lib/approvals";
+import { useResource, useSession } from "../lib/session";
 import { AllAppsSidebar } from "./customers/AllAppsSidebar";
 import { isReportsPath, ReportsSidebar, showsReportsSidebar } from "./reports/kit";
 import { CustomisePreferences } from "./CustomisePreferences";
@@ -133,7 +134,7 @@ function placeBeside(el: HTMLElement | null, opts?: { caretAlign?: boolean }): P
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { email } = useSession();
+  const { email, can } = useSession();
   const company = useCompany();
   const { path, query } = useLocation();
   const [navOpen, setNavOpen] = useState(false);
@@ -158,7 +159,13 @@ export function Shell({ children }: { children: ReactNode }) {
   const pinBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const closeTimer = useRef<number | null>(null);
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine);
-  const companyLabel = company.name || DUMMY.companyName;
+  const unreadCount = useResource<{ count?: number; unread?: number } | number>(can("platform:view") ? "/api/v1/books/notifications/unread-count" : null);
+  const unread = typeof unreadCount.data === "number" ? unreadCount.data : (unreadCount.data?.count ?? unreadCount.data?.unread ?? 0);
+  useEffect(() => {
+    window.addEventListener(NOTIFICATIONS_CHANGED, unreadCount.reload);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, unreadCount.reload);
+  }, [unreadCount.reload]);
+  const companyLabel = company.name || "Your company";
 
   function openOverlay(next: Overlay) {
     setPanel(null);
@@ -716,12 +723,12 @@ export function Shell({ children }: { children: ReactNode }) {
               type="button"
               className={`ee-icon-btn ee-bell ${overlay === "notifications" ? "active" : ""}`}
               title="Notifications"
-              aria-label={`Notifications, ${DUMMY.notificationCount} unread`}
+              aria-label={`Notifications, ${unread} unread`}
               aria-expanded={overlay === "notifications"}
               onClick={() => openOverlay("notifications")}
             >
               <Bell size={20} strokeWidth={SW} />
-              <span className="ee-badge">{DUMMY.notificationCount}</span>
+              {unread > 0 ? <span className="ee-badge">{unread > 99 ? "99+" : unread}</span> : null}
             </button>
             <button
               ref={settingsBtnRef}

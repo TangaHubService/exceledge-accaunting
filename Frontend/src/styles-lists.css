@@ -1139,3 +1139,15 @@
   gap: 12px;
   margin-bottom: 20px;
 }
+
+/* ── Bank rule drawer ─────────────────────────────────────── */
+.ee-rule-field { margin-bottom: 18px; }
+.ee-rule-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ee-rule-line > .ee-input-select, .ee-rule-line > .ee-input-text { flex: 1; min-width: 0; width: auto; }
+.ee-rule-line > .select { flex: 1; min-width: 0; }
+.ee-rule-line > .ee-rule-pct { flex: 0 0 72px; }
+.ee-rule-preview { margin-bottom: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); font-size: var(--fs-sm); }
+.ee-rule-preview > div { display: flex; justify-content: space-between; gap: 12px; padding-top: 4px; }
+/* An open row menu may hang below the table. */
+.ee-mockup-table-wrap:has(details[open]) { overflow: visible; }
+.ee-mockup-table .ee-link-btn { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }

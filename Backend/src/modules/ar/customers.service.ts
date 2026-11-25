@@ -255,6 +255,7 @@ export async function mergeCustomers(companyId: string, sourceId: string, target
     payments: (await prisma.arReceipt.updateMany({ where, data: move })).count,
     creditNotes: (await prisma.arCreditNote.updateMany({ where, data: move })).count,
     debitNotes: (await prisma.arDebitNote.updateMany({ where, data: move })).count,
+    refunds: (await prisma.arRefund.updateMany({ where, data: move })).count,
     deposits: (await prisma.arDeposit.updateMany({ where, data: move })).count,
     documents: (await prisma.commercialDocument.updateMany({ where, data: move })).count,
   };

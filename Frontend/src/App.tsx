@@ -29,12 +29,10 @@ import { ImportCustomers } from "./pages/ImportCustomers";
 import { Employees } from "./pages/Employees";
 import { Dimensions } from "./pages/Dimensions";
 import { Lists } from "./pages/Lists";
-import { CustomFields } from "./pages/CustomFields";
 import { BankingRules } from "./pages/BankingRules";
 import { ProductsServices } from "./pages/ProductsServices";
 import { RecurringTxnTypes } from "./pages/RecurringTxnTypes";
 import { AttachmentsWorkspace } from "./pages/AttachmentsWorkspace";
-import { SelectForms } from "./pages/SelectForms";
 import { SingleTimeActivity } from "./components/team/SingleTimeActivity";
 import { WeeklyTimesheet } from "./components/team/WeeklyTimesheet";
 import { Exceptions } from "./pages/Exceptions";
@@ -77,11 +75,10 @@ import { TaxSettingsPage } from "./pages/TaxSettings";
 import { TaxVat } from "./pages/TaxVat";
 import { TrialBalance } from "./pages/TrialBalance";
 import { WithholdingTaxReport } from "./pages/WithholdingTax";
-import { Workflows } from "./pages/Workflows";
 import { ImportChartOfAccounts } from "./pages/ImportChartOfAccounts";
+import { NotAvailable } from "./pages/NotAvailable";
 import { ImportData } from "./pages/ImportData";
 import { ExportData } from "./pages/ExportData";
-import { BackupRestore } from "./pages/BackupRestore";
 import { SignIn } from "./SignIn";
 import { AcceptInvite } from "./AcceptInvite";
 import { ProjectForm } from "./pages/projects/ProjectForm";
@@ -92,8 +89,6 @@ import { BankDepositForm, InventoryAdjustmentForm, JournalEntryForm, PayDownCred
 import { SalesDocForm } from "./pages/txn/SalesDocForm";
 import { CategoryTxnForm, ItemReceiptForm, PayBillsForm } from "./pages/txn/SupplierTxnForms";
 import { AddUser } from "./pages/AddUser";
-import { CustomFormStyles } from "./pages/CustomFormStyles";
-import { EditInvoiceStyle } from "./pages/EditInvoiceStyle";
 import { InviteFirm } from "./pages/InviteFirm";
 import { ManageUsers } from "./pages/ManageUsers";
 import { RoleEditor } from "./pages/RoleEditor";
@@ -147,7 +142,7 @@ const ROUTES: Route[] = [
   { pattern: "/projects/new", needs: "setup:view", render: () => <ProjectForm key="new" /> },
   { pattern: "/projects/:id", needs: "setup:view", render: (p) => <ProjectDetail key={p.id} id={p.id} /> },
   { pattern: "/projects/:id/edit", needs: "setup:view", render: (p) => <ProjectForm key={p.id} id={p.id} /> },
-  { pattern: "/workflows", needs: "setup:view", render: () => <Workflows /> },
+  { pattern: "/workflows", needs: "setup:view", render: () => <NotAvailable title="Workflows" body="Automatic workflows aren't available yet. Approval rules are in Setup, and document workflows are in Assurance." /> },
   { pattern: "/settings/company", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/settings/usage", needs: "setup:view", render: () => <UsageSettings /> },
   { pattern: "/settings/reports", needs: "setup:view", render: () => <ReportsSettings /> },
@@ -157,10 +152,10 @@ const ROUTES: Route[] = [
   { pattern: "/settings/inbox", needs: "setup:view", render: () => <InboxSettings /> },
   { pattern: "/settings/wallet", needs: "setup:view", render: () => <WalletSettings /> },
   { pattern: "/settings/advanced", needs: "setup:view", render: () => <AdvancedSettings /> },
-  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <CustomFields /> },
-  { pattern: "/settings/forms", needs: "setup:view", render: () => <SelectForms /> },
-  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <EditInvoiceStyle /> },
-  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <CustomFormStyles /> },
+  { pattern: "/settings/custom-fields", needs: "setup:view", render: () => <NotAvailable title="Custom fields" body="Custom fields can't be saved yet." /> },
+  { pattern: "/settings/forms", needs: "setup:view", render: () => <NotAvailable title="Form templates" body="Form templates can't be changed yet. Invoices and statements print in the standard layout." /> },
+  { pattern: "/settings/form-styles/edit", needs: "setup:view", render: () => <NotAvailable title="Form styles" body="Form styles can't be changed yet. Invoices and statements print in the standard layout." /> },
+  { pattern: "/settings/form-styles", needs: "setup:view", render: () => <NotAvailable title="Form styles" body="Form styles can't be changed yet. Invoices and statements print in the standard layout." /> },
   { pattern: "/settings", needs: "setup:view", render: () => <CompanySettings /> },
   { pattern: "/users/new", needs: "setup:view", render: () => <AddUser /> },
   { pattern: "/users/accounting-firms/invite", needs: "setup:view", render: () => <InviteFirm /> },
@@ -268,7 +263,7 @@ const ROUTES: Route[] = [
   { pattern: "/import-data", needs: "setup:view", render: () => <ImportData /> },
   { pattern: "/import-data/chart-of-accounts", needs: "coa:import", render: () => <ImportChartOfAccounts /> },
   { pattern: "/export-data", needs: "setup:view", render: () => <ExportData /> },
-  { pattern: "/backup-restore", needs: "setup:view", render: () => <BackupRestore /> },
+  { pattern: "/backup-restore", needs: "setup:view", render: () => <NotAvailable title="Backup and restore" body="Backups can't be run or restored from here. Ask your administrator how the database is backed up." /> },
 ];
 
 export function App() {

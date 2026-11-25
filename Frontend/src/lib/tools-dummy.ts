@@ -285,50 +285,6 @@ export const IMPORT_CATALOG_ITEMS: ImportCatalogItem[] = [
   },
 ];
 
-export type ExportOption = {
-  id: string;
-  title: string;
-  enabled: boolean;
-};
-
-export const DEFAULT_EXPORT_REPORTS: ExportOption[] = [
-  { id: "general-ledger", title: "General ledger", enabled: true },
-  { id: "profit-and-loss", title: "Profit and loss", enabled: true },
-  { id: "balance-sheet", title: "Balance sheet", enabled: true },
-  { id: "trial-balance", title: "Trial balance", enabled: true },
-  { id: "journal", title: "Journal", enabled: true },
-];
-
-export const DEFAULT_EXPORT_LISTS: ExportOption[] = [
-  { id: "customers", title: "Customers", enabled: true },
-  { id: "suppliers", title: "Suppliers", enabled: true },
-  { id: "employees", title: "Employees", enabled: true },
-  { id: "products-and-services", title: "Products and services", enabled: true },
-  { id: "chart-of-accounts", title: "Chart of accounts", enabled: true },
-];
-
-export type BudgetEditorRow = {
-  id: string;
-  category: "Income" | "Cost Of Goods Sold" | "Expenses";
-  name: string;
-  actualsYtd: number;
-  months: number[]; // 12 values for Jan - Dec
-};
-
-export const INITIAL_BUDGET_ROWS: BudgetEditorRow[] = [
-  // Income
-  { id: "inc-1", category: "Income", name: "Billable Expense Income", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-2", category: "Income", name: "Revenue - General", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-3", category: "Income", name: "Sales - retail", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-4", category: "Income", name: "Sales - wholesale", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-5", category: "Income", name: "Sales of Product Income", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-6", category: "Income", name: "Services", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "inc-7", category: "Income", name: "Uncategorised Income", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-
-  // Cost Of Goods Sold
-  { id: "cogs-1", category: "Cost Of Goods Sold", name: "Cost of sales", actualsYtd: 0.0, months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-];
-
 export type AuditLogItem = {
   id: string;
   dateChanged: string;
@@ -337,59 +293,6 @@ export type AuditLogItem = {
   eventLink?: string;
   hasViewHistory: boolean;
 };
-
-export const MOCKUP_AUDIT_LOG_EVENTS: AuditLogItem[] = [
-  {
-    id: "aud-1",
-    dateChanged: "24 Oct, 12:31 pm Central Africa Time",
-    user: "System Administration",
-    event: "Added account Reconciliation Discrepancies",
-    eventLink: "/accounting/chart-of-accounts",
-    hasViewHistory: true,
-  },
-  {
-    id: "aud-2",
-    dateChanged: "24 Oct, 11:10 am Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed in.",
-    hasViewHistory: false,
-  },
-  {
-    id: "aud-3",
-    dateChanged: "19 Oct, 9:15 pm Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed in.",
-    hasViewHistory: false,
-  },
-  {
-    id: "aud-4",
-    dateChanged: "19 Oct, 3:00 pm Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed in.",
-    hasViewHistory: false,
-  },
-  {
-    id: "aud-5",
-    dateChanged: "19 Oct, 1:02 pm Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed out.",
-    hasViewHistory: false,
-  },
-  {
-    id: "aud-6",
-    dateChanged: "19 Oct, 11:24 am Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed in.",
-    hasViewHistory: false,
-  },
-  {
-    id: "aud-7",
-    dateChanged: "19 Oct, 9:12 am Central Africa Time",
-    user: "Iradukunda Enock",
-    event: "Signed in.",
-    hasViewHistory: false,
-  },
-];
 
 export type BackupItem = {
   id: string;

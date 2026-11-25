@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "crypto";
+import { Prisma, type JournalType } from "@prisma/client";
 import {
   aggregateTrialBalance,
   comparativeTrialBalance,
@@ -31,37 +32,28 @@ function asType(type: string): BookAccountType {
   return type as BookAccountType;
 }
 
+/** Ledger totals per account, journal type and dimension: summed by the database, so size doesn't matter. */
 export async function movements(companyId: string, opts: { to?: Date; from?: Date; dims?: Dims } = {}) {
-  const entries = await prisma.glEntry.findMany({
-    where: {
-      companyId,
-      ...dimWhere(opts.dims),
-      ...(opts.from || opts.to
-        ? {
-            transactionDate: {
-              ...(opts.from ? { gte: opts.from } : {}),
-              ...(opts.to ? { lte: opts.to } : {}),
-            },
-          }
-        : {}),
-    },
-    include: { account: true, journal: true },
-  });
-  return entries.map((e) => ({
-    accountId: e.accountId,
-    code: e.account.code,
-    name: e.account.name,
-    type: asType(e.account.type),
-    debit: Number(e.debit),
-    credit: Number(e.credit),
-    journalType: e.journal.journalType,
-    costCentre: e.costCentre ?? e.journal.costCentre,
-    project: e.project ?? e.journal.project,
-    branchId: e.branchId ?? e.journal.branchId,
-    postingDate: e.transactionDate,
-    journalId: e.journalId,
-    amount: Number(e.debit) + Number(e.credit),
-  }));
+  const at = (d: Date) => Prisma.sql`${d.toISOString()}::timestamp`;
+  const d = opts.dims ?? {};
+  const rows = await prisma.$queryRaw<
+    Array<{ accountId: string; code: string; name: string; type: string; journalType: string; costCentre: string | null; project: string | null; branchId: string | null; debit: number; credit: number }>
+  >`
+    SELECT t.*, a."code", a."name", a."type"::text AS "type"
+    FROM (
+      SELECT g."accountId", j."journalType"::text AS "journalType",
+             COALESCE(g."costCentre", j."costCentre") AS "costCentre", COALESCE(g."project", j."project") AS "project", COALESCE(g."branchId", j."branchId") AS "branchId",
+             SUM(g."debit")::float8 AS "debit", SUM(g."credit")::float8 AS "credit"
+      FROM "gl_entries" g JOIN "journals" j ON j."id" = g."journalId"
+      WHERE g."companyId" = ${companyId}
+        ${opts.from ? Prisma.sql`AND g."transactionDate" >= ${at(opts.from)}` : Prisma.empty}
+        ${opts.to ? Prisma.sql`AND g."transactionDate" <= ${at(opts.to)}` : Prisma.empty}
+        ${d.costCentre ? Prisma.sql`AND g."costCentre" = ${d.costCentre}` : Prisma.empty}
+        ${d.project ? Prisma.sql`AND g."project" = ${d.project}` : Prisma.empty}
+        ${d.branchId ? Prisma.sql`AND g."branchId" = ${d.branchId}` : Prisma.empty}
+      GROUP BY 1, 2, 3, 4, 5
+    ) t JOIN "accounts" a ON a."id" = t."accountId"`;
+  return rows.map((r) => ({ ...r, type: asType(r.type), journalType: r.journalType as JournalType, amount: r.debit + r.credit }));
 }
 
 export async function getTrialBalance(

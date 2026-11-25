@@ -13,6 +13,7 @@ import { inventoryRouter } from "./modules/inventory/inventory.routes";
 import { taxRouter } from "./modules/tax/tax.routes";
 import { expenseRouter } from "./modules/expense/expense.routes";
 import { booksRouter } from "./modules/books/books.routes";
+import { recurringRouter } from "./modules/books/recurring-templates.routes";
 import { faRouter } from "./modules/fixed-assets/fa.routes";
 import { journalsRouter } from "./modules/journals/journal.routes";
 import { glRouter } from "./modules/gl/gl.routes";
@@ -21,6 +22,9 @@ import { accessRouter, usersRouter } from "./modules/users/users.routes";
 import { commercialRouter } from "./modules/commercial/commercial.routes";
 import { projectsRouter, tasksRouter, teamRouter, workspaceRouter } from "./modules/workspace/workspace.routes";
 import { prisma } from "./lib/prisma";
+import { rateLimit } from "./middleware/rate-limit";
+import { safeErrors } from "./middleware/safe-errors";
+import { idempotency } from "./middleware/idempotency";
 import { processPendingEvents } from "./modules/integration/integration.service";
 import { openApiDocument } from "./modules/platform/openapi";
 
@@ -39,8 +43,12 @@ export function createApp() {
     next();
   });
   app.use(cors({ origin: env.corsOrigin === "*" ? true : env.corsOrigin }));
+  app.use(safeErrors);
+  app.use("/api/v1/integration", rateLimit(env.integrationRateLimitPerMinute));
+  app.use(/^\/api\/v1\/(?!integration\/)/, rateLimit(env.rateLimitPerMinute));
   app.use("/api/v1/banking", express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "2mb" }));
+  app.use("/api/v1", idempotency);
 
   app.get("/health", (_req, res) => {
     res.json({
@@ -67,6 +75,7 @@ export function createApp() {
     ["/api/v1/exceptions", exceptionsRouter],
     ["/api/v1/audit", auditRouter],
     ["/api/v1/books", booksRouter],
+    ["/api/v1/recurring", recurringRouter],
     ["/api/v1/commercial", commercialRouter],
     ["/api/v1/projects", projectsRouter],
     ["/api/v1/tasks", tasksRouter],

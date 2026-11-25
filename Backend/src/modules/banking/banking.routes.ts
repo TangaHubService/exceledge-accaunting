@@ -3,6 +3,7 @@ import { type Response, Router } from "express";
 import { z } from "zod";
 import { AuthedRequest, authenticateErpJwt, getRequestMeta, requireCapability, resolveCompany } from "../../middleware/auth";
 import * as banking from "./banking.service";
+import * as rules from "./rules.service";
 import * as recon from "./reconciliation.service";
 import { inTransaction } from "../../lib/prisma";
 
@@ -131,7 +132,14 @@ bankingRouter.get(
 );
 bankingRouter.get("/transactions/:id", handle((req) => banking.getTransaction(req.companyId!, req.params.id)));
 
-bankingRouter.post("/receipts", requireCapability("bank:manage"), handle((req) => banking.receiveMoney(req.companyId!, moneyBody.parse(req.body), actor(req)), 201));
+bankingRouter.post("/receipts", requireCapability("bank:manage"), handle(async (req) => {
+    const body = moneyBody.extend({ cashBack: z.object({ toAccountId: z.string().min(1), amount: money, description: text() }).optional() }).parse(req.body);
+    const { cashBack, ...receipt } = body;
+    const saved = await banking.receiveMoney(req.companyId!, receipt, actor(req));
+    // Same transaction: a deposit is never left without the cash taken back from it.
+    if (cashBack) await banking.transferFunds(req.companyId!, { fromAccountId: body.financialAccountId, transactionDate: body.transactionDate, ...cashBack }, actor(req));
+    return saved;
+  }, 201));
 bankingRouter.post("/payments", requireCapability("bank:manage"), handle((req) => banking.makePayment(req.companyId!, moneyBody.parse(req.body), actor(req)), 201));
 
 bankingRouter.post(
@@ -185,7 +193,17 @@ const upload = z.object({
 
 bankingRouter.get("/accounts/:id/statements", handle((req) => recon.listStatements(req.companyId!, req.params.id)));
 bankingRouter.post("/accounts/:id/statements/preview", requireCapability("bank:manage"), handle((req) => recon.previewStatement(req.companyId!, req.params.id, upload.parse(req.body))));
-bankingRouter.post("/accounts/:id/statements", requireCapability("bank:manage"), handle((req) => recon.importStatement(req.companyId!, req.params.id, upload.parse(req.body), actor(req)), 201));
+bankingRouter.post("/accounts/:id/statements", requireCapability("bank:manage"), async (req: AuthedRequest, res) => {
+  try {
+    const body = upload.parse(req.body);
+    const data = await inTransaction(() => recon.importStatement(req.companyId!, req.params.id, body, actor(req)));
+    // The statement is saved by now; a rule that can't post must not undo it.
+    const ruled = await rules.autoPostAfterImport(req.companyId!, req.params.id, actor(req)).catch((e) => (console.error("[bank rules]", e), null));
+    res.status(201).json({ success: true, data: ruled ? { ...data, rules: ruled } : data });
+  } catch (e) {
+    fail(res, e);
+  }
+});
 bankingRouter.delete("/statements/:id", requireCapability("bank:manage"), handle((req) => recon.deleteStatement(req.companyId!, req.params.id, actor(req))));
 
 bankingRouter.get("/accounts/:id/matching", handle((req) => recon.matchingWorkspace(req.companyId!, req.params.id, { until: str(req.query.until) })));
@@ -208,6 +226,22 @@ bankingRouter.post(
     return recon.recordStatementLine(req.companyId!, req.params.id, body, actor(req));
   }, 201),
 );
+
+/* Bank rules */
+
+bankingRouter.get("/rules", handle((req) => rules.listRules(req.companyId!)));
+bankingRouter.post("/rules", requireCapability("bank:manage"), handle((req) => rules.createRule(req.companyId!, rules.ruleBody.parse(req.body), actor(req)), 201));
+bankingRouter.post("/rules/preview", requireCapability("bank:manage"), handle((req) => rules.previewRule(req.companyId!, rules.ruleBody.parse(req.body))));
+bankingRouter.put("/rules/:id", requireCapability("bank:manage"), handle((req) => rules.updateRule(req.companyId!, req.params.id, rules.ruleBody.parse(req.body), actor(req))));
+bankingRouter.delete("/rules/:id", requireCapability("bank:manage"), handle((req) => rules.deleteRule(req.companyId!, req.params.id, actor(req))));
+// Each line posts in its own transaction, so one refusal doesn't undo the others.
+bankingRouter.post("/rules/:id/apply", requireCapability("bank:manage"), async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, data: await rules.applyRules(req.companyId!, { ruleId: req.params.id }, actor(req)) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
 
 /* Reconciliation */
 

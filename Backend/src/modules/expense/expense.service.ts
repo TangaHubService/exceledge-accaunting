@@ -13,7 +13,7 @@ import {
   type JournalLineDraft,
   type RecurringFrequency,
 } from "@exceledge/accounting-domain";
-import { defaultsFor, money, nextNumber } from "../../lib/documents";
+import { controlAccounts, defaultsFor, money, nextNumber } from "../../lib/documents";
 import type { Prisma } from "@prisma/client";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { assertExpenseBillReversible, recordExpenseOnAccount, voidExpenseBill } from "../ap/ap.service";
@@ -220,6 +220,12 @@ export async function updateCategory(
 
 type AllocationInput = { branch?: string; department?: string; costCentre?: string; project?: string; amount: number; notes?: string };
 
+/** Receivables, payables and inventory carry a subledger an expense would leave behind. */
+async function assertNotControlAccount(companyId: string, account: { id: string; code: string; name: string }) {
+  const kind = (await controlAccounts(companyId)).get(account.id);
+  if (kind) throw new Error(`${account.code} ${account.name} is the ${kind} control account; choose an expense account`);
+}
+
 async function resolveCreditAccount(
   companyId: string,
   paymentMode: ExpensePaymentMode,
@@ -419,6 +425,7 @@ export async function createExpense(
   if (!expenseAccountId) throw new Error("Map a GL account on the category or choose one on the expense");
   const gl = await prisma.account.findFirst({ where: { id: expenseAccountId, companyId, isActive: true } });
   if (!gl) throw new Error("Expense account does not exist");
+  await assertNotControlAccount(companyId, gl);
 
   const paymentMode = input.paymentMode ?? "IMMEDIATE";
   const { net, tax, gross } = assertExpenseAmounts({ net: input.net, tax: input.tax });
@@ -574,6 +581,8 @@ async function postExpenseOnce(companyId: string, id: string, actor: Actor) {
   }
 
   if (!expense.creditAccountId) throw new Error("Choose the bank, cash or payable account for this expense");
+  const expenseAccount = await prisma.account.findFirst({ where: { id: expense.expenseAccountId, companyId }, select: { id: true, code: true, name: true } });
+  if (expenseAccount) await assertNotControlAccount(companyId, expenseAccount);
   const defaults = await defaultsFor(companyId);
   const allocations = await prisma.expenseAllocation.findMany({ where: { expenseId: id }, orderBy: { id: "asc" } });
   const lines = allocateExpenseLine(

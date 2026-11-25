@@ -1,9 +1,41 @@
 import { ChevronDown, Info } from "lucide-react";
 import { useState } from "react";
+import { useFeedback } from "../../components/feedback";
+import { SettingsToggle } from "../../components/settings/SettingsToggle";
+import { useCompany } from "../../lib/company";
+import { type Prefs, usePreferences } from "../../lib/preferences";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
 import { REPORT_FORMATTING, REPORT_VISUAL, SAMPLE_PNL_ROWS } from "../../lib/settings-dummy";
 
+const DEFAULTS: Prefs = { header: true, footer: true, column: false, banded: false, empty: false, grid: true, number: "1,234", view: "Comfortable" };
+const CHOICES: Record<string, string[]> = { number: ["1,234", "1,234.00", "Thousands"], view: ["Comfortable", "Compact"] };
+
 export function ReportsSettings() {
+  const { toast } = useFeedback();
+  const company = useCompany();
+  const prefs = usePreferences("reports", DEFAULTS);
+  const [draft, setDraft] = useState<Prefs | null>(null);
+  const [busy, setBusy] = useState(false);
+  const look = draft ?? prefs.values;
+  const set = (key: string, value: string | boolean) => setDraft({ ...look, [key]: value });
+  async function save() {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      await prefs.save(draft);
+      setDraft(null);
+      toast("Report settings saved");
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+  function figure(total: string) {
+    if (!total) return look.empty ? "—" : "";
+    if (look.number === "1,234.00") return `${total}.00`;
+    return look.number === "Thousands" ? Math.round(Number(total.replace(/,/g, "")) / 1000).toLocaleString("en") : total;
+  }
   const [open, setOpen] = useState<string | null>(null);
 
   function toggle(id: string) {
@@ -16,7 +48,7 @@ export function ReportsSettings() {
       subtitle="Customise the appearance of your financial reports."
       footer={
         <footer className="ee-settings-actions-bar">
-          <button type="button" className="btn ee-btn-outline-blue">
+          <button type="button" className="btn ee-btn-outline-blue" disabled={!prefs.canEdit} onClick={() => setDraft(DEFAULTS)}>
             Reset to default
           </button>
           <div className="ee-settings-legal ee-settings-legal-inline">
@@ -33,10 +65,10 @@ export function ReportsSettings() {
             </a>
           </div>
           <div className="ee-settings-actions-right">
-            <button type="button" className="btn ee-btn-outline-blue">
+            <button type="button" className="btn ee-btn-outline-blue" disabled={!draft} onClick={() => setDraft(null)}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary">
+            <button type="button" className="btn btn-primary" disabled={!draft || busy || !prefs.canEdit} onClick={() => void save()}>
               Save changes
             </button>
           </div>
@@ -63,7 +95,10 @@ export function ReportsSettings() {
                 </button>
                 {open === item.id && (
                   <div className="ee-settings-accordion-body">
-                    <p className="muted small">Options for {item.label.toLowerCase()} appear here.</p>
+                    <div className="ee-settings-row">
+                      <div className="ee-settings-row-label">{item.id === "empty" ? "Show a dash" : "Show"}</div>
+                      <SettingsToggle label={item.label} on={Boolean(look[item.id])} disabled={!prefs.canEdit} onChange={(v) => set(item.id, v)} />
+                    </div>
                   </div>
                 )}
               </li>
@@ -80,7 +115,9 @@ export function ReportsSettings() {
                 </button>
                 {open === item.id && (
                   <div className="ee-settings-accordion-body">
-                    <p className="muted small">Options for {item.label.toLowerCase()} appear here.</p>
+                    <select className="ee-input-select" aria-label={item.label} disabled={!prefs.canEdit} value={String(look[item.id])} onChange={(e) => set(item.id, e.target.value)}>
+                      {CHOICES[item.id].map((o) => <option key={o}>{o}</option>)}
+                    </select>
                   </div>
                 )}
               </li>
@@ -94,9 +131,13 @@ export function ReportsSettings() {
               <div className="ee-settings-preview-mark" aria-hidden="true">
                 SAMPLE REPORT
               </div>
-              <h4>EXCEL EDGE CPA — Profit and Loss</h4>
-              <p className="muted small">January – December 2026 · Amounts in RWF</p>
-              <table className="ee-settings-preview-table">
+              {look.header ? (
+                <>
+                  <h4>{company.name} — Profit and Loss</h4>
+                  <p className="muted small">January – December 2026 · Amounts in {company.currency}</p>
+                </>
+              ) : null}
+              <table className={`ee-settings-preview-table ${look.banded ? "banded" : ""} ${look.grid ? "" : "no-grid"} ${look.column ? "col-hi" : ""} ${look.view === "Compact" ? "compact" : ""}`}>
                 <thead>
                   <tr>
                     <th>Account</th>
@@ -109,15 +150,17 @@ export function ReportsSettings() {
                       <td style={{ paddingLeft: 12 + (row.indent ?? 0) * 14 }} className={row.bold ? "strong" : ""}>
                         {row.label}
                       </td>
-                      <td className={`num ${row.bold ? "strong" : ""}`}>{row.total}</td>
+                      <td className={`num ${row.bold ? "strong" : ""}`}>{figure(row.total)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="ee-settings-preview-foot">
-                <span>Excel Edge ERP · Sample financial report</span>
-                <span>Page 1</span>
-              </div>
+              {look.footer ? (
+                <div className="ee-settings-preview-foot">
+                  <span>Excel Edge ERP · Sample financial report</span>
+                  <span>Page 1</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </aside>

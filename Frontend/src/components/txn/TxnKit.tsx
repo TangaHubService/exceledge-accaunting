@@ -16,7 +16,8 @@ import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { useCompany } from "../../lib/company";
 import { amount, date } from "../../lib/format";
 import { navigate } from "../../lib/router";
-import { type RecurringTemplate, saveRecurring, TXN_LABELS, type TxnKind, useTxnIndex } from "../../lib/txn";
+import { useSession } from "../../lib/session";
+import { type RecurringTemplate, TXN_LABELS, type TxnKind, useTxnIndex } from "../../lib/txn";
 import { type FieldErrors, validateYup, yup } from "../../lib/validation";
 import { useFeedback } from "../feedback";
 import { parseAmount } from "../forms";
@@ -921,8 +922,15 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function RecurringModal({ kind, snapshot, onClose, defaultName }: { kind: TxnKind; snapshot: unknown; onClose: () => void; defaultName: string }) {
+/** What the server posts each time: the API body without its dates. */
+export type RecurringPayload = { customerId?: string; supplierId?: string; description?: string; dueInDays: number; lines: unknown[] };
+
+export function RecurringModal({ kind, template, onClose, defaultName, partyName, amount }: { kind: TxnKind; template?: RecurringPayload; onClose: () => void; defaultName: string; partyName?: string; amount?: number }) {
   const { toast } = useFeedback();
+  const { api } = useSession();
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<RecurringTemplate["mode"]>(template ? "SCHEDULED" : "REMINDER");
+  const [error, setError] = useState("");
   const [form, setForm] = useState({ name: defaultName, interval: "MONTHLY" as RecurringTemplate["interval"], every: "1", startDate: new Date().toISOString().slice(0, 10), endDate: "", daysInAdvance: "0" });
   const v = useValidation();
   const schema = yup.object({
@@ -936,7 +944,18 @@ export function RecurringModal({ kind, snapshot, onClose, defaultName }: { kind:
   });
   async function save() {
     if (!(await v.validate(schema, form))) return;
-    saveRecurring({ kind, name: form.name.trim(), interval: form.interval, every: Number(form.every), startDate: form.startDate, endDate: form.endDate, daysInAdvance: Number(form.daysInAdvance), snapshot });
+    if (mode === "SCHEDULED" && !template?.lines.length) return setError("Fill in the form first: choose who it is for and add at least one line.");
+    setBusy(true);
+    try {
+      await api("/api/v1/recurring", {
+        method: "POST",
+        body: JSON.stringify({ kind, mode, name: form.name.trim(), interval: form.interval, every: Number(form.every), startDate: form.startDate, endDate: form.endDate, daysInAdvance: Number(form.daysInAdvance), partyName, amount, payload: template ?? null }),
+      });
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+      return;
+    }
     toast(`Recurring template "${form.name.trim()}" saved`);
     onClose();
   }
@@ -950,13 +969,22 @@ export function RecurringModal({ kind, snapshot, onClose, defaultName }: { kind:
           <button type="button" className="txn-btn-outline blue" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="txn-btn-primary" onClick={save}>
+          <button type="button" className="txn-btn-primary" disabled={busy} onClick={save}>
             Save template
           </button>
         </>
       }
     >
+      <ErrorBanner message={error} onClose={() => setError("")} />
       <div className="txn-form-grid">
+        <TField label="Type" className="span-2" hint={mode === "SCHEDULED" ? "Created and posted automatically on each date" : mode === "REMINDER" ? "You get a notification on each date" : "Kept for you to use when you need it"}>
+          <Select
+            value={mode}
+            onChange={(m) => setMode(m as RecurringTemplate["mode"])}
+            searchable={false}
+            options={[...(template ? [{ value: "SCHEDULED", label: "Scheduled" }] : []), { value: "REMINDER", label: "Reminder" }, ...(template ? [{ value: "UNSCHEDULED", label: "Unscheduled" }] : [])]}
+          />
+        </TField>
         <TField label="Template name" required error={v.errors.name} className="span-2">
           <input className="txn-input" value={form.name} onChange={(e) => set("name")(e.target.value)} />
         </TField>

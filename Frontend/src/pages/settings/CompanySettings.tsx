@@ -1,82 +1,59 @@
-import { Pencil, Store } from "lucide-react";
-import { useFeedback } from "../../components/feedback";
+import { Store } from "lucide-react";
 import { SettingsLayout } from "../../components/settings/SettingsLayout";
-import { COMPANY_INFO } from "../../lib/settings-dummy";
+import { SettingsCard, SettingsSection } from "../../components/settings/SettingsSection";
+import { useCompany } from "../../lib/company";
+import type { Prefs } from "../../lib/preferences";
+import { useResource, useSession } from "../../lib/session";
 
-function Row({ label, value }: { label: string; value: string }) {
-  const { toast } = useFeedback();
-  return (
-    <div className="ee-settings-row">
-      <div>
-        <div className="ee-settings-row-label">{label}</div>
-        <div className="ee-settings-row-value">{value}</div>
-      </div>
-      <button type="button" className="ee-link-btn" onClick={() => toast(`Edit ${label}`)}>
-        Edit
-      </button>
-    </div>
-  );
-}
+type Snapshot = { profile: Record<string, string | null> | null; businessInfo: Record<string, string | null> | null };
+
+const PROFILE = ["industry", "tradingName", "operatingAddress", "businessEmail", "registeredName", "taxIdentificationNumber", "registeredAddress"] as const;
 
 export function CompanySettings() {
-  const { toast } = useFeedback();
+  const { api, can } = useSession();
+  const company = useCompany();
+  const res = useResource<Snapshot>("/api/v1/setup/snapshot");
+  const canEdit = Boolean(res.data) && can("setup:prepare");
+  const values: Prefs = Object.fromEntries(PROFILE.map((k) => [k, res.data?.profile?.[k] ?? ""]));
+  values.businessType = res.data?.businessInfo?.businessType ?? "";
+
+  // Only what changed is sent, so untouched fields stay exactly as setup left them.
+  async function save(next: Prefs) {
+    const changed = Object.entries(next).filter(([k, v]) => v !== values[k]);
+    if (changed.some(([k, v]) => (k === "registeredName" || k === "taxIdentificationNumber") && !String(v).trim())) throw new Error("The legal name and TIN can't be empty");
+    const profile = Object.fromEntries(changed.filter(([k]) => k !== "businessType"));
+    if (Object.keys(profile).length) await api("/api/v1/setup/profile", { method: "PUT", body: JSON.stringify(profile) });
+    if (changed.some(([k]) => k === "businessType")) await api("/api/v1/setup/business-info", { method: "PUT", body: JSON.stringify({ businessType: next.businessType }) });
+    res.reload();
+    company.reload();
+  }
+  const card = { values, canEdit, onSave: save };
+
   return (
     <SettingsLayout title="Company" subtitle="Manage your business profile and legal information.">
       <div className="ee-settings-profile">
-        <button
-          type="button"
-          className="ee-settings-profile-avatar"
-          aria-label="Edit company profile"
-          onClick={() => toast("Edit company profile")}
-        >
+        <span className="ee-settings-profile-avatar" aria-hidden="true">
           <Store size={28} strokeWidth={1.5} />
-          <span className="ee-settings-profile-edit">
-            <Pencil size={12} strokeWidth={2} />
-          </span>
-        </button>
-        <div className="ee-settings-profile-label">Company profile</div>
+        </span>
+        <div className="ee-settings-profile-label">{company.name || "Company profile"}</div>
       </div>
-
-      <section className="ee-settings-card ee-settings-card-flat">
-        <div className="ee-settings-row">
-          <div>
-            <div className="ee-settings-row-label">Industry</div>
-            <div className="ee-settings-row-value">{COMPANY_INFO.industry}</div>
-          </div>
-          <button type="button" className="ee-link-btn" onClick={() => toast("Edit Industry")}>
-            Edit
-          </button>
-        </div>
-      </section>
-
-      <section className="ee-settings-card">
-        <header className="ee-settings-card-head">
-          <h2>Company info</h2>
-          <p>Details customers and suppliers see on documents.</p>
-        </header>
-        <Row label="Name" value={COMPANY_INFO.name} />
-        <Row label="Address" value={COMPANY_INFO.address} />
-        <Row label="Email" value={COMPANY_INFO.email} />
-      </section>
-
-      <section className="ee-settings-card">
-        <header className="ee-settings-card-head">
-          <h2>Legal info</h2>
-          <p>This is the information your business uses for tax purposes.</p>
-        </header>
-        <Row label="Legal business name" value={COMPANY_INFO.legalName} />
-        <Row label="VAT/GST/TAX ID number" value={COMPANY_INFO.tin} />
-        <Row label="Business type" value={COMPANY_INFO.businessType} />
-        <Row label="Legal address" value={COMPANY_INFO.legalAddress} />
-      </section>
-
-      <section className="ee-settings-card">
-        <header className="ee-settings-card-head">
-          <h2>Customer contact info</h2>
-        </header>
-        <Row label="Customer email" value={COMPANY_INFO.customerEmail} />
-        <Row label="Customer address" value={COMPANY_INFO.customerAddress} />
-      </section>
+      {res.error ? <p className="ee-settings-hint" role="alert">Couldn't load company details: {res.error}</p> : null}
+      <SettingsCard {...card} title="Industry" rows={[{ key: "industry", label: "Industry", kind: "text", value: "" }]} />
+      <SettingsCard {...card} title="Company info" description="Details customers and suppliers see on documents." rows={[
+        { key: "tradingName", label: "Name", kind: "text", value: "" },
+        { key: "operatingAddress", label: "Address", kind: "text", value: "" },
+        { key: "businessEmail", label: "Email", kind: "email", value: "" },
+      ]} />
+      <SettingsCard {...card} title="Legal info" description="This is the information your business uses for tax purposes." rows={[
+        { key: "registeredName", label: "Legal business name", kind: "text", value: "" },
+        { key: "taxIdentificationNumber", label: "VAT/GST/TAX ID number", kind: "text", value: "" },
+        { key: "businessType", label: "Business type", kind: "text", value: "" },
+        { key: "registeredAddress", label: "Legal address", kind: "text", value: "" },
+      ]} />
+      <SettingsSection id="company-contact" title="Customer contact info" rows={[
+        { key: "email", label: "Customer email", kind: "email", value: "" },
+        { key: "address", label: "Customer address", kind: "text", value: "" },
+      ]} />
     </SettingsLayout>
   );
 }

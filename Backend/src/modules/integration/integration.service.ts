@@ -151,6 +151,35 @@ async function resolveCompany(externalOrganizationId: string) {
   return company;
 }
 
+/**
+ * The books keep dates as UTC days, so an event is stored at its local clock time: a sale at 00:30 in Kigali on
+ * 1 March belongs to 1 March. The exact instant stays in the payload.
+ */
+export async function businessTime(companyId: string, occurredAt: string) {
+  const at = new Date(occurredAt);
+  if (Number.isNaN(at.getTime())) throw new Error("occurredAt must be a date and time");
+  // A plain day, or midnight UTC standing for one, has no clock time to convert.
+  if (/^\d{4}-\d{2}-\d{2}(T00:00:00(\.0+)?Z)?$/.test(occurredAt)) return at;
+  const info = await prisma.businessAccountingInfo.findUnique({ where: { companyId }, select: { timeZone: true } });
+  return toLocalClock(at, info?.timeZone || "Africa/Kigali");
+}
+
+export function toLocalClock(at: Date, timeZone: string) {
+  const read = (zone: string) =>
+    Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" })
+        .formatToParts(at)
+        .map((p) => [p.type, Number(p.value)]),
+    );
+  let p: Record<string, number>;
+  try {
+    p = read(timeZone);
+  } catch {
+    p = read("Africa/Kigali");
+  }
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second, at.getUTCMilliseconds()));
+}
+
 export async function ingestEvent(envelope: IngestEnvelope) {
   const company = await resolveCompany(envelope.externalOrganizationId);
 
@@ -183,7 +212,7 @@ export async function ingestEvent(envelope: IngestEnvelope) {
       sourceDocumentType: envelope.sourceDocumentType,
       sourceDocumentId: String(envelope.sourceDocumentId),
       sourceDocumentNumber: envelope.sourceDocumentNumber,
-      occurredAt: new Date(envelope.occurredAt),
+      occurredAt: await businessTime(company.id, envelope.occurredAt),
       currencyCode: envelope.currencyCode,
       payload: envelope as object,
       status: "RECEIVED",

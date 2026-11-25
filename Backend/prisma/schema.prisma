@@ -137,6 +137,8 @@ model Company {
   arCreditNotes         ArCreditNote[]
   arDebitNotes          ArDebitNote[]
   arDeposits            ArDeposit[]
+  arRefunds             ArRefund[]
+  integrationKeys       IntegrationKey[]
   arLedgerEntries       ArLedgerEntry[]
   suppliers             Supplier[]
   apBills               ApBill[]
@@ -165,6 +167,8 @@ model Company {
   expenseCategories     ExpenseCategory[]
   expenses              Expense[]
   recurringExpenses     RecurringExpense[]
+  recurringTemplates    RecurringTemplate[]
+  bankRules             BankRule[]
   fixedAssetCategories  FixedAssetCategory[]
   fixedAssets           FixedAsset[]
   faDepreciationRuns    FixedAssetDepreciationRun[]
@@ -938,6 +942,7 @@ model GlEntry {
   journal Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
 
   @@index([companyId, accountId, postingDate])
+  @@index([companyId, transactionDate])
   @@index([companyId, journalId])
   @@map("gl_entries")
 }
@@ -1223,6 +1228,8 @@ model ArCreditNote {
   creditNoteNumber   String
   noteDate           DateTime
   reason             String
+  /// CREDIT, or WRITE_OFF for a bad debt
+  kind               String           @default("CREDIT")
   currency           String           @default("RWF")
   exchangeRate       Decimal          @default(1) @db.Decimal(18, 8)
   net                Decimal          @default(0) @db.Decimal(18, 4)
@@ -2032,6 +2039,7 @@ model BankTransaction {
   supplierId                String?
   arReceiptId               String?
   apPaymentId               String?
+  arRefundId                String?
   description               String?
   /// Account lines chosen by the user: [{ accountId, amount, description }]
   lines                     Json?
@@ -4082,4 +4090,121 @@ model AccountingFirm {
 
   @@unique([companyId, email])
   @@map("accounting_firms")
+}
+
+/// QuickBooks-style recurring transaction. SCHEDULED invoices and bills are created when due; REMINDER only notifies.
+model RecurringTemplate {
+  id                 String    @id @default(cuid())
+  companyId          String
+  kind               String
+  name               String
+  mode               String
+  interval           String
+  every              Int       @default(1)
+  startDate          DateTime
+  endDate            DateTime?
+  occurrences        Int       @default(0)
+  nextDate           DateTime?
+  previousDate       DateTime?
+  daysInAdvance      Int       @default(0)
+  partyName          String?
+  amount             Decimal?  @db.Decimal(18, 4)
+  payload            Json?
+  isActive           Boolean   @default(true)
+  lastError          String?
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, nextDate])
+  @@map("recurring_templates")
+}
+
+/// Categorises imported statement lines that meet its conditions. Lower priority numbers win.
+model BankRule {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  priority           Int
+  direction          String
+  financialAccountId String?
+  matchAll           Boolean  @default(true)
+  conditions         Json
+  splits             Json
+  payee              String?
+  memo               String?
+  keepMemo           Boolean  @default(false)
+  autoPost           Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  createdByErpUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, priority])
+  @@map("bank_rules")
+}
+
+/// Money paid back to a customer. Clears credit they hold: Dr receivables, Cr bank or cash.
+model ArRefund {
+  id                 String           @id @default(cuid())
+  companyId          String
+  customerId         String
+  refundNumber       String
+  refundDate         DateTime
+  amount             Decimal          @db.Decimal(18, 4)
+  financialAccountId String
+  reference          String?
+  description        String?
+  /// Credit consumed: [{ source: "CREDIT_NOTE" | "PAYMENT", sourceId, number, amount }]
+  sources            Json
+  status             ArDocumentStatus @default(POSTED)
+  journalId          String?
+  createdByErpUserId Int?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, refundNumber])
+  @@index([companyId, customerId])
+  @@map("ar_refunds")
+}
+
+/// Remembers the answer to a request sent with an Idempotency-Key, so sending it again posts nothing new.
+model IdempotencyRecord {
+  id          String   @id @default(cuid())
+  /// Organization and user from the verified token
+  scope       String
+  key         String
+  requestHash String
+  /// The sender's access at the time; a replay needs the same
+  accessHash  String?
+  /// Null while the first request is still running
+  statusCode  Int?
+  response    Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([scope, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}
+
+/// A company's own key for ERP events. While it has one, the shared key no longer works for that company.
+model IntegrationKey {
+  id                 String    @id @default(cuid())
+  companyId          String
+  prefix             String
+  tokenHash          String
+  createdByErpUserId Int?
+  createdAt          DateTime  @default(now())
+  revokedAt          DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("integration_keys")
 }

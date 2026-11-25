@@ -24,9 +24,10 @@ import {
   type JournalLineDraft,
 } from "@exceledge/accounting-domain";
 import { Prisma, type SupplierType } from "@prisma/client";
-import { defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
+import { assertFunctionalDocument, assertPlausibleTax, defaultsFor, functionalCurrencyOf, fxAccounts, money, nextNumber, openingContraAccount, priceDocumentLines, resolveDocumentMoney, settlementDefaults } from "../../lib/documents";
 import { inTransaction, prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
+import { agedBalances } from "../books/ageing.service";
 import { documentApprovalPlan, requestApproval } from "../approvals/approval.service";
 import { inventoryConfig, recordSupplierReturn } from "../inventory/inventory.service";
 import { createAndPostJournal, linesInJournalCurrency, reversalCurrency } from "../journals/journal.service";
@@ -257,7 +258,8 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
   if (opening > 0) {
     const defaults = await defaultsFor(companyId);
     const ap = supplier.apAccountId || defaults.accountsPayableId;
-    const contra = defaults.suspenseAccountId || defaults.retainedEarningsId;
+    const contra = await openingContraAccount(companyId);
+    const fx = await resolveDocumentMoney(companyId, { partyCurrency: supplier.currency, date: openingDate });
     if (!ap || !contra) throw new Error("AP and suspense/retained earnings accounts are required for opening balances");
     const billNumber = await nextNumber(companyId, "AP_BILL", "BILL");
     const posted = await postBalanced(
@@ -266,6 +268,8 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
         journalDate: openingDate,
         description: `Opening balance ${supplier.code}`,
         referenceNumber: supplier.code,
+        currencyCode: fx.currency,
+        exchangeRate: fx.rate,
         sourceDocumentType: "SupplierOpening",
         sourceDocumentId: supplier.id,
         sourceDocumentNumber: supplier.code,
@@ -285,7 +289,8 @@ export async function createSupplier(companyId: string, input: SupplierInput, ac
           billNumber,
           billDate: openingDate,
           dueDate: openingDate,
-          currency: supplier.currency,
+          currency: fx.currency,
+          exchangeRate: fx.rate,
           net: opening,
           gross: opening,
           description: "Opening balance",
@@ -409,6 +414,8 @@ export async function createBill(
     exchangeRate?: number;
     /** Line items; when given, the totals come from the lines and their tax codes. */
     lines?: DocumentLineInput[];
+    /** Hold the bill until someone else approves it, whatever setup asks for. */
+    requireApproval?: boolean;
   },
   actor: Actor = {},
 ) {
@@ -432,6 +439,7 @@ export async function createBill(
   if (priced && input.discount) throw new Error("Give discounts on the lines when a bill has lines");
   if (priced && (input.net != null || input.tax != null)) throw new Error("A bill with lines takes its net and tax from the lines");
   if (!priced && !(Number(input.net) > 0)) throw new Error("Bill amount must be positive");
+  if (!priced) await assertPlausibleTax(companyId, "purchase", input.net!, input.tax ?? 0, billDate);
   const net = priced ? priced.net : roundMoney(input.net!);
   const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
   const discount = priced ? 0 : roundMoney(input.discount ?? 0);
@@ -441,7 +449,7 @@ export async function createBill(
   else buildApBillLines(defaults, { net, tax, discount, apAccountId: supplier.apAccountId, expenseAccountId });
   const dueDate = input.dueDate ? new Date(input.dueDate) : new Date(billDate.getTime() + supplier.creditPeriodDays * DAY);
   if (dueDate < billDate) throw new Error("Due date can't be before the bill date");
-  const plan = await documentApprovalPlan(companyId, "ApBill", gross);
+  const plan = await documentApprovalPlan(companyId, "ApBill", gross, input.requireApproval);
   const billNumber = await nextNumber(companyId, "AP_BILL", "BILL");
   const bill = await prisma.apBill.create({
     data: {
@@ -774,6 +782,8 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
   // The conditional update row-locks the payment, so a concurrent reversal waits and then finds it reversed.
   const claimed = await prisma.apPayment.updateMany({ where: { id: paymentId, companyId, status: "POSTED" }, data: { status: "REVERSED" } });
   if (!claimed.count) throw new Error("Payment is already reversed");
+  // Read only now that the row is locked, so an application that was under way is taken off its bill too.
+  const allocations = await prisma.apAllocation.findMany({ where: { paymentId } });
   const paid = money(payment.amount);
   const wht = money(payment.withholdingTax);
   const defaults = await settlementDefaults(companyId, payment.financialAccountId);
@@ -799,7 +809,7 @@ async function reversePaymentOnce(companyId: string, paymentId: string, input: {
     actor,
   );
   await prisma.$transaction(async (tx) => {
-    for (const allocation of payment.allocations) {
+    for (const allocation of allocations) {
       await tx.apBill.update({ where: { id: allocation.billId }, data: { amountPaid: { decrement: money(allocation.amount) } } });
     }
     await appendLedger(tx, {
@@ -889,12 +899,14 @@ async function createCreditNoteInTransaction(
   actor: Actor,
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
+  await assertFunctionalDocument(companyId, null, supplier.currency);
   const noteDate = new Date(input.noteDate);
   const returned = (input.returnedItems ?? []).filter((item) => item && item.itemId);
   const priced = input.lines?.length ? await priceDocumentLines(companyId, input.lines, noteDate, "purchase") : null;
   if (priced && returned.length) throw new Error("Returned stock goes on its own credit note, without category or item lines");
   if (priced && (input.net != null || input.tax != null)) throw new Error("A credit note with lines takes its net and tax from the lines");
   if (!priced && !(Number(input.net) > 0)) throw new Error("Credit note amount must be positive");
+  if (!priced) await assertPlausibleTax(companyId, "purchase", input.net!, input.tax ?? 0, noteDate);
   const net = priced ? priced.net : roundMoney(input.net!);
   const tax = priced ? priced.tax : roundMoney(input.tax ?? 0);
   const gross = roundMoney(net + tax);
@@ -1011,6 +1023,7 @@ export async function createDebitNote(
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
+  await assertFunctionalDocument(companyId, null, supplier.currency);
   const expenseAccountId = input.expenseAccountId || supplier.defaultExpenseAccountId || undefined;
   await assertAccountsUsable(companyId, [expenseAccountId]);
   const net = roundMoney(input.net);
@@ -1108,6 +1121,7 @@ export async function createAdvance(
   actor: Actor = {},
 ) {
   const supplier = await loadActiveSupplier(companyId, input.supplierId);
+  await assertFunctionalDocument(companyId, null, supplier.currency);
   const amount = roundMoney(input.amount);
   const method = input.method ?? "BANK";
   const defaults = await defaultsFor(companyId);
@@ -1433,35 +1447,12 @@ async function voidBillOnce(companyId: string, billId: string, input: { reason: 
 }
 
 export async function ageingReport(companyId: string, asOf?: Date | string) {
-  const asOfDate = asOf ? new Date(asOf) : new Date();
-  const bills = await prisma.apBill.findMany({
-    where: { companyId, status: "POSTED", billDate: { lte: asOfDate } },
-    include: { supplier: true },
-  });
-  const buckets = Object.fromEntries(AGEING_BUCKETS.map((b) => [b.key, 0])) as Record<(typeof AGEING_BUCKETS)[number]["key"], number>;
-  const lines = [];
-  for (const bill of bills) {
-    const outstanding = billOutstanding(bill);
-    if (outstanding <= 0) continue;
-    const bucket = ageingBucketKey(bill.dueDate, asOfDate);
-    buckets[bucket] = roundMoney(buckets[bucket] + outstanding);
-    lines.push({
-      billId: bill.id,
-      supplierId: bill.supplierId,
-      supplierCode: bill.supplier.code,
-      supplierName: bill.supplier.name,
-      billNumber: bill.billNumber,
-      supplierInvoiceNumber: bill.supplierInvoiceNumber,
-      dueDate: bill.dueDate,
-      outstanding,
-      bucket,
-    });
-  }
+  const r = await agedBalances(companyId, "payables", asOf);
   return {
-    asOf: asOfDate,
-    buckets: AGEING_BUCKETS.map((b) => ({ ...b, amount: buckets[b.key] })),
-    lines,
-    total: roundMoney(Object.values(buckets).reduce((sum, v) => sum + v, 0)),
+    asOf: r.asOf,
+    buckets: r.buckets,
+    total: r.total,
+    lines: r.lines.map((l) => ({ billId: l.documentId, supplierId: l.partyId, supplierCode: l.partyCode, supplierName: l.partyName, billNumber: l.number, supplierInvoiceNumber: l.partyReference, dueDate: l.dueDate, outstanding: l.outstanding, bucket: l.bucket, currency: l.currency, outstandingForeign: l.outstandingForeign, kind: l.kind })),
   };
 }
 
@@ -1566,7 +1557,7 @@ export async function apDashboard(companyId: string) {
   let monthlyPurchases = 0;
   for (const bill of bills) {
     if (bill.billDate >= monthStart && bill.sourceDocumentType !== "SupplierOpening") monthlyPurchases = roundMoney(monthlyPurchases + money(bill.gross));
-    const open = billOutstanding(bill);
+    const open = roundMoney(billOutstanding(bill) * Number(bill.exchangeRate));
     if (open <= 0) continue;
     outstanding = roundMoney(outstanding + open);
     const days = Math.floor((bill.dueDate.getTime() - todayStart.getTime()) / DAY);
@@ -2078,9 +2069,10 @@ export async function unapplyFromBill(companyId: string, kind: BillApplicationKi
     }
     const amount = money(a.amount);
     await prisma.$transaction(async (tx) => {
-      const gone = await tx.apAllocation.deleteMany({ where: { id: a.id } });
+      // Locks the payment first, as a reversal does, so the two can't both take it off the bill.
+      const held = await tx.apPayment.updateMany({ where: { id: a.paymentId, status: "POSTED" }, data: { unallocated: { increment: amount } } });
+      const gone = held.count ? await tx.apAllocation.deleteMany({ where: { id: a.id } }) : held;
       if (!gone.count) throw new Error("This payment is no longer applied to the bill");
-      await tx.apPayment.update({ where: { id: a.paymentId }, data: { unallocated: { increment: amount } } });
       await tx.apBill.update({ where: { id: a.billId }, data: { amountPaid: { decrement: amount } } });
     });
     detail = { supplierId: a.payment.supplierId, sourceNumber: a.payment.paymentNumber, billNumber: a.bill.billNumber, amount };

@@ -4,7 +4,7 @@ import { useFeedback } from "../components/feedback";
 import { Drawer, EmptyState } from "../components/ui";
 import { Link } from "../lib/router";
 import { useResource, useSession } from "../lib/session";
-import { MOCKUP_AUDIT_LOG_EVENTS, type AuditLogItem } from "../lib/tools-dummy";
+import type { AuditLogItem } from "../lib/tools-dummy";
 import type { AuditEvent } from "../lib/types";
 
 type AuditRow = AuditEvent & { ipAddress?: string | null };
@@ -21,11 +21,10 @@ export function AuditLog() {
   const [viewingItem, setViewingItem] = useState<AuditLogItem | null>(null);
 
   // Fetch backend audit events if any
-  const eventsResource = useResource<AuditRow[]>("/api/v1/audit?limit=50");
+  const eventsResource = useResource<AuditRow[]>("/api/v1/audit?limit=500");
 
   // Merge or adapt backend events into display items
   const displayItems = useMemo<AuditLogItem[]>(() => {
-    const mockList = MOCKUP_AUDIT_LOG_EVENTS;
     const backendRows = eventsResource.data ?? [];
 
     let combined: AuditLogItem[] = [];
@@ -43,15 +42,26 @@ export function AuditLog() {
         event: `${e.action.replace(/_/g, " ")} ${e.entityType} ${e.entityId || ""}`,
         hasViewHistory: true,
       }));
-    } else {
-      combined = [...mockList];
     }
 
     // Apply filters
+    const now = new Date();
+    const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const month = (back: number) => new Date(now.getFullYear(), now.getMonth() - back, 1).getTime();
+    const [from, to] =
+      dateRange === "Today" ? [day(now), Infinity]
+      : dateRange === "This Week" ? [day(now) - ((now.getDay() + 6) % 7) * 86_400_000, Infinity]
+      : dateRange === "This Month" ? [month(0), Infinity]
+      : dateRange === "Last Month" ? [month(1), month(0)]
+      : [0, Infinity];
+    const at = new Map(backendRows.map((e) => [e.id, new Date(e.createdAt).getTime()]));
     return combined.filter((item) => {
+      const t = at.get(item.id) ?? 0;
+      if (t < from || t >= to) return false;
       if (selectedUser !== "All Users" && item.user !== selectedUser) return false;
       if (eventCategory !== "All events") {
         if (eventCategory === "Sign in / out" && !item.event.toLowerCase().includes("sign")) return false;
+        if (eventCategory === "Automation" && item.user !== "User #0") return false;
         if (eventCategory === "Accounts" && !item.event.toLowerCase().includes("account")) return false;
       }
       if (searchQuery.trim()) {
@@ -98,7 +108,6 @@ export function AuditLog() {
           className="ee-btn-outline"
           onClick={() => {
             setEventCategory("Automation");
-            toast("Filtered by automation workflows audit events.");
           }}
         >
           Automation audit log <ArrowRight size={16} />
@@ -117,8 +126,9 @@ export function AuditLog() {
               onChange={(e) => setSelectedUser(e.target.value)}
             >
               <option value="All Users">All Users</option>
-              <option value="System Administration">System Administration</option>
-              <option value="Iradukunda Enock">Iradukunda Enock</option>
+              {[...new Set((eventsResource.data ?? []).map((e) => `User #${e.erpUserId}`))].map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
             </select>
           </div>
 

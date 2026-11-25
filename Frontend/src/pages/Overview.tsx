@@ -28,9 +28,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
-import { DASHBOARD_WIDGETS, DUMMY, MODULES, QUICK_ACTIONS } from "../lib/dashboard-dummy";
+import { DASHBOARD_WIDGETS, MODULES, QUICK_ACTIONS } from "../lib/dashboard-dummy";
+import { useCompany } from "../lib/company";
+import { date, humanize, isoDay } from "../lib/format";
+import { monthKey, monthShort, shiftMonth, useMonthlyFigures } from "../lib/reports";
+import { TXN_LABELS, type TxnKind } from "../lib/txn";
+import type { AgeingReport, ApAgeingReport } from "../lib/types";
 import { Link, navigate } from "../lib/router";
-import { useSession } from "../lib/session";
+import { useResource, useSession } from "../lib/session";
 
 const ICON = 1.5;
 
@@ -52,17 +57,9 @@ const QUICK_ICONS: Record<string, LucideIcon> = {
   cheque: FileText,
 };
 
-const BANK_ICONS = {
-  main: Landmark,
-  mobile: Smartphone,
-  cashhand: Banknote,
-} as const;
-
-const BANK_COLORS = {
-  main: "#2f6fed",
-  mobile: "#0f766e",
-  cashhand: "#ea580c",
-} as const;
+const BANK_ICONS: Record<string, LucideIcon> = { BANK: Landmark, MOBILE_MONEY: Smartphone, CASH: Banknote, PETTY_CASH: Wallet };
+const BANK_COLORS: Record<string, string> = { BANK: "#2f6fed", MOBILE_MONEY: "#0f766e", CASH: "#ea580c", PETTY_CASH: "#ea580c" };
+const KPI_COLORS: Record<string, string> = { income: "#16a34a", expenses: "#e11d48", profit: "#2f6fed", cash: "#7c3aed" };
 
 const KPI_ICONS: Record<string, LucideIcon> = {
   income: TrendingUp,
@@ -77,10 +74,6 @@ function defaultEnabled(): Record<WidgetKey, boolean> {
   const map = {} as Record<WidgetKey, boolean>;
   for (const w of DASHBOARD_WIDGETS) map[w.key] = w.defaultOn;
   return map;
-}
-
-function formatMoney(n: number) {
-  return `${n.toLocaleString("en-US")} ${DUMMY.currency}`;
 }
 
 function greeting() {
@@ -110,23 +103,24 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function IncomeExpenseChart() {
-  const max = 5;
+function IncomeExpenseChart({ rows }: { rows: Array<{ month: string; revenue: number; expenses: number }> }) {
+  const max = Math.max(1, ...rows.flatMap((r) => [r.revenue, r.expenses]));
+  const short = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : `${Math.round(n)}`);
   return (
-    <div className="ee-bar-chart ee-bar-chart-tall" role="img" aria-label="Income vs expenses by week">
+    <div className="ee-bar-chart ee-bar-chart-tall" role="img" aria-label={`Income and expenses by month. ${rows.map((r) => `${monthShort(r.month)}: income ${short(r.revenue)}, expenses ${short(r.expenses)}`).join("; ")}`}>
       <div className="ee-bar-y" aria-hidden="true">
-        <span>5M</span>
-        <span>2.5M</span>
+        <span>{short(max)}</span>
+        <span>{short(max / 2)}</span>
         <span>0</span>
       </div>
       <div className="ee-bar-plot">
-        {DUMMY.weekly.map((w) => (
-          <div className="ee-bar-group" key={w.week}>
+        {rows.map((r) => (
+          <div className="ee-bar-group" key={r.month}>
             <div className="ee-bars">
-              <div className="ee-bar income" style={{ height: `${(w.income / max) * 100}%` }} title={`Income ${w.income}M`} />
-              <div className="ee-bar expense" style={{ height: `${(w.expenses / max) * 100}%` }} title={`Expenses ${w.expenses}M`} />
+              <div className="ee-bar income" style={{ height: `${(Math.max(0, r.revenue) / max) * 100}%` }} title={`Income ${r.revenue.toLocaleString("en-US")}`} />
+              <div className="ee-bar expense" style={{ height: `${(Math.max(0, r.expenses) / max) * 100}%` }} title={`Expenses ${r.expenses.toLocaleString("en-US")}`} />
             </div>
-            <span className="ee-bar-label">{w.week}</span>
+            <span className="ee-bar-label">{monthShort(r.month)}</span>
           </div>
         ))}
       </div>
@@ -142,17 +136,30 @@ function IncomeExpenseChart() {
   );
 }
 
-function statusClass(status: string) {
-  if (status === "Paid" || status === "Completed") return "ok";
-  if (status === "Unpaid") return "bad";
-  return "";
+const SALE_KINDS = new Set(["invoice", "payment", "bank-deposit"]);
+const COST_KINDS = new Set(["bill", "expense", "bill-payment", "cheque"]);
+const typeTone = (kind: string) => (SALE_KINDS.has(kind) ? "ok" : COST_KINDS.has(kind) ? "bad" : "info");
+
+type FinancialAccount = { id: string; kind: string; name: string; balance: number; currency: string };
+type Activity = { rows: Array<{ id: string; kind: TxnKind; number: string; date: string; party: string; memo: string; amount: number; status: string }> };
+
+/** Everything on the home page, read from the books. A part the reader may not see stays empty. */
+function useHome() {
+  const { can } = useSession();
+  const months = useMemo(() => {
+    const now = monthKey(isoDay());
+    return [-5, -4, -3, -2, -1, 0].map((n) => shiftMonth(now, n));
+  }, []);
+  const figures = useMonthlyFigures(can("report:view") ? months : []);
+  const banks = useResource<FinancialAccount[]>(can("bank:view") ? "/api/v1/banking/accounts" : null);
+  const ar = useResource<AgeingReport>(can("ar:view") ? "/api/v1/ar/ageing" : null);
+  const ap = useResource<ApAgeingReport>(can("ap:view") ? "/api/v1/ap/ageing" : null);
+  const activity = useResource<Activity>(can("report:view") ? "/api/v1/workspace/transactions?pageSize=8" : null);
+  return { figures, banks, ar, ap, activity };
 }
 
-function typeTone(type: string) {
-  if (type === "Invoice" || type === "Payment") return "ok";
-  if (type === "Bill" || type === "Expense") return "bad";
-  return "info";
-}
+const documents = (lines: Array<{ kind: string; outstanding: number; bucket: string; dueDate: string }> | undefined, pick: (l: { bucket: string; dueDate: string }) => boolean = () => true) =>
+  (lines ?? []).filter((l) => l.kind === "DOCUMENT" && pick(l)).reduce((s, l) => ({ count: s.count + 1, amount: s.amount + l.outstanding }), { count: 0, amount: 0 });
 
 function EditChrome({
   editing,
@@ -193,10 +200,28 @@ export function Overview() {
   const name = useMemo(() => {
     const local = (email ?? "").split("@")[0];
     const first = local.split(/[._-]+/).filter(Boolean)[0];
-    return first ? first[0]!.toUpperCase() + first.slice(1) : DUMMY.greetingName;
+    return first ? first[0]!.toUpperCase() + first.slice(1) : "there";
   }, [email]);
 
-  const mask = (n: number) => (privacy ? "••••••" : formatMoney(n));
+  const { currency } = useCompany();
+  const home = useHome();
+  const rows = home.figures.rows;
+  const thisMonth = rows?.[rows.length - 1];
+  const lastMonth = rows?.[rows.length - 2];
+  const cash = home.banks.data?.filter((b) => !b.currency || b.currency === currency).reduce((t, b) => t + b.balance, 0);
+  const kpis = [
+    { key: "income", label: "Total income", value: thisMonth?.revenue, before: lastMonth?.revenue, spark: rows?.map((r) => r.revenue), upIsGood: true },
+    { key: "expenses", label: "Total expenses", value: thisMonth?.expenses, before: lastMonth?.expenses, spark: rows?.map((r) => r.expenses), upIsGood: false },
+    { key: "profit", label: "Net profit", value: thisMonth?.profit, before: lastMonth?.profit, spark: rows?.map((r) => r.profit), upIsGood: true },
+    { key: "cash", label: "Cash & bank", value: cash, before: undefined, spark: undefined, upIsGood: true },
+  ];
+  const soon = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+  const unpaid = documents(home.ap.data?.lines);
+  const dueThisWeek = documents(home.ap.data?.lines, (l) => l.bucket === "CURRENT" && l.dueDate.slice(0, 10) <= soon);
+  const outstanding = documents(home.ar.data?.lines);
+  const late = documents(home.ar.data?.lines, (l) => l.bucket !== "CURRENT");
+  const formatMoney = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${currency}`;
+  const mask = (n: number | undefined) => (n === undefined ? "—" : privacy ? "••••••" : formatMoney(n));
   const on = editing ? draft : enabled;
 
   function startEdit() {
@@ -264,10 +289,10 @@ export function Overview() {
                 {privacy ? <EyeOff size={16} strokeWidth={ICON} /> : <Eye size={16} strokeWidth={ICON} />}
                 Privacy
               </button>
-              <button type="button" className="ee-period">
+              <span className="ee-period">
                 <Calendar size={16} strokeWidth={ICON} />
-                {DUMMY.periodLabel}
-              </button>
+                This month
+              </span>
               <button type="button" className="ee-privacy" onClick={startEdit} title="Customise dashboard">
                 <Pencil size={15} strokeWidth={ICON} />
                 Edit layout
@@ -350,25 +375,31 @@ export function Overview() {
       {on.glance && (
         <EditChrome editing={editing} onRemove={() => removeWidget("glance")} className="ee-section">
           <h2>Business at a glance</h2>
+          {home.figures.error ? <p className="notice-inline" role="alert">Figures couldn't be loaded: {home.figures.error}</p> : null}
           <div className="ee-glance">
-            {DUMMY.kpis.map((kpi) => {
+            {kpis.map((kpi) => {
               const KIcon = KPI_ICONS[kpi.key] ?? TrendingUp;
-              const DeltaIcon = kpi.tone === "up" ? ArrowUpRight : ArrowDownRight;
+              const change = kpi.value !== undefined && kpi.before ? Math.round(((kpi.value - kpi.before) / Math.abs(kpi.before)) * 100) : null;
+              const DeltaIcon = (change ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight;
               return (
                 <article className="ee-kpi" key={kpi.key}>
                   <div className="ee-kpi-top">
-                    <span className="ee-kpi-icon" style={{ background: kpi.color }}>
+                    <span className="ee-kpi-icon" style={{ background: KPI_COLORS[kpi.key] }}>
                       <KIcon size={14} strokeWidth={1.75} />
                     </span>
                     <span className="ee-kpi-label">{kpi.label}</span>
                   </div>
                   <div className="ee-kpi-value">{mask(kpi.value)}</div>
                   <div className="ee-kpi-foot">
-                    <span className={`ee-delta ${kpi.tone}`}>
-                      <DeltaIcon size={14} strokeWidth={2} />
-                      {kpi.delta}% vs last month
-                    </span>
-                    <Sparkline values={kpi.spark} color={kpi.color} />
+                    {change !== null ? (
+                      <span className={`ee-delta ${change >= 0 === kpi.upIsGood ? "up" : "down"}`}>
+                        <DeltaIcon size={14} strokeWidth={2} />
+                        {Math.abs(change)}% vs last month
+                      </span>
+                    ) : (
+                      <span className="muted small">{kpi.key === "cash" ? "Book balance today" : "No figures last month"}</span>
+                    )}
+                    {!privacy && kpi.spark && kpi.spark.length > 1 ? <Sparkline values={kpi.spark} color={KPI_COLORS[kpi.key]!} /> : null}
                   </div>
                 </article>
               );
@@ -384,9 +415,9 @@ export function Overview() {
               <section className="ee-card">
                 <div className="ee-card-head">
                   <h3>Income vs Expenses</h3>
-                  <span className="muted small">This month · RWF</span>
+                  <span className="muted small">Last 6 months · {currency}</span>
                 </div>
-                <IncomeExpenseChart />
+                {rows?.some((r) => r.revenue > 0 || r.expenses > 0) && !privacy ? <IncomeExpenseChart rows={rows} /> : <p className="muted small">{privacy ? "Hidden" : home.figures.loading ? "Loading…" : "No figures to show"}</p>}
               </section>
             </EditChrome>
           )}
@@ -400,20 +431,21 @@ export function Overview() {
                   </Link>
                 </div>
                 <ul className="ee-bank-list">
-                  {DUMMY.banks.map((b) => {
-                    const BIcon = BANK_ICONS[b.tone] ?? Wallet;
-                    const color = BANK_COLORS[b.tone] ?? "#2f6fed";
+                  {home.banks.data?.length === 0 ? <li className="muted small">No bank or cash accounts yet</li> : null}
+                  {(home.banks.data ?? []).slice(0, 4).map((b) => {
+                    const BIcon = BANK_ICONS[b.kind] ?? Wallet;
+                    const color = BANK_COLORS[b.kind] ?? "#2f6fed";
                     return (
-                      <li key={b.name}>
-                        <button type="button" className="ee-bank-row" onClick={() => !editing && navigate("/banking")}>
+                      <li key={b.id}>
+                        <button type="button" className="ee-bank-row" onClick={() => !editing && navigate(`/banking/accounts/${b.id}`)}>
                           <span className="ee-bank-icon" style={{ background: `${color}18`, color }}>
                             <BIcon size={16} strokeWidth={ICON} />
                           </span>
                           <span className="ee-bank-meta">
                             <strong>{b.name}</strong>
-                            <small>{b.updated}</small>
+                            <small>{humanize(b.kind)} · balance in the books</small>
                           </span>
-                          <strong className="ee-bank-bal">{mask(b.balance)}</strong>
+                          <strong className="ee-bank-bal">{privacy ? "••••••" : `${b.balance.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${b.currency || currency}`}</strong>
                           <ChevronRight size={16} strokeWidth={ICON} className="muted" />
                         </button>
                       </li>
@@ -444,8 +476,8 @@ export function Overview() {
                     </span>
                     <div>
                       <div className="muted small">Outstanding invoices</div>
-                      <strong>{mask(DUMMY.invoices.outstanding.amount)}</strong>
-                      <div className="muted small">{DUMMY.invoices.outstanding.count} invoices</div>
+                      <strong>{mask(home.ar.data ? outstanding.amount : undefined)}</strong>
+                      <div className="muted small">{home.ar.data ? outstanding.count : "—"} invoices</div>
                     </div>
                   </div>
                   <div className="ee-split-item">
@@ -454,8 +486,8 @@ export function Overview() {
                     </span>
                     <div>
                       <div className="muted small">Overdue invoices</div>
-                      <strong>{mask(DUMMY.invoices.overdue.amount)}</strong>
-                      <div className="muted small">{DUMMY.invoices.overdue.count} invoices</div>
+                      <strong>{mask(home.ar.data ? late.amount : undefined)}</strong>
+                      <div className="muted small">{home.ar.data ? late.count : "—"} invoices</div>
                     </div>
                   </div>
                 </div>
@@ -478,8 +510,8 @@ export function Overview() {
                     </span>
                     <div>
                       <div className="muted small">Unpaid bills</div>
-                      <strong>{mask(DUMMY.bills.unpaid.amount)}</strong>
-                      <div className="muted small">{DUMMY.bills.unpaid.count} bills</div>
+                      <strong>{mask(home.ap.data ? unpaid.amount : undefined)}</strong>
+                      <div className="muted small">{home.ap.data ? unpaid.count : "—"} bills</div>
                     </div>
                   </div>
                   <div className="ee-split-item">
@@ -488,8 +520,8 @@ export function Overview() {
                     </span>
                     <div>
                       <div className="muted small">Due this week</div>
-                      <strong>{mask(DUMMY.bills.dueThisWeek.amount)}</strong>
-                      <div className="muted small">{DUMMY.bills.dueThisWeek.count} bills</div>
+                      <strong>{mask(home.ap.data ? dueThisWeek.amount : undefined)}</strong>
+                      <div className="muted small">{home.ap.data ? dueThisWeek.count : "—"} bills</div>
                     </div>
                   </div>
                 </div>
@@ -504,7 +536,7 @@ export function Overview() {
           <section className="ee-card ee-activity">
             <div className="ee-card-head">
               <h3>Recent activity</h3>
-              <span className="muted small">Sample data · RWF</span>
+              <span className="muted small">In each document's currency</span>
             </div>
             <div className="ee-table-wrap">
               <table className="ee-table">
@@ -514,34 +546,32 @@ export function Overview() {
                     <th>Type</th>
                     <th>Number</th>
                     <th>Contact / Description</th>
-                    <th className="num">Amount (RWF)</th>
+                    <th className="num">Amount</th>
                     <th>Status</th>
-                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {DUMMY.activity.map((row) => (
-                    <tr key={row.number}>
-                      <td>{row.date}</td>
+                  {home.activity.data?.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="muted">
+                        Nothing recorded yet
+                      </td>
+                    </tr>
+                  ) : null}
+                  {(home.activity.data?.rows ?? []).map((row) => (
+                    <tr key={`${row.kind}-${row.id}`}>
+                      <td>{date(row.date)}</td>
                       <td>
-                        <span className={`ee-type ${typeTone(row.type)}`}>
+                        <span className={`ee-type ${typeTone(row.kind)}`}>
                           <FileText size={14} strokeWidth={ICON} />
-                          {row.type}
+                          {TXN_LABELS[row.kind] ?? humanize(row.kind)}
                         </span>
                       </td>
                       <td className="mono">{row.number}</td>
-                      <td>{row.contact}</td>
-                      <td className="num">{privacy ? "••••" : row.amount.toLocaleString("en-US")}</td>
+                      <td>{row.party || row.memo || "—"}</td>
+                      <td className="num">{privacy ? "••••" : row.amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
                       <td>
-                        <span className={`ee-status ${statusClass(row.status)}`}>{row.status}</span>
-                      </td>
-                      <td>
-                        <button type="button" className="ee-linkish">
-                          View
-                        </button>
-                        <button type="button" className="ee-icon-btn sm" aria-label="More">
-                          <MoreHorizontal size={16} strokeWidth={ICON} />
-                        </button>
+                        <span className={`ee-status ${row.status === "Posted" || row.status === "Paid" ? "ok" : ""}`}>{row.status}</span>
                       </td>
                     </tr>
                   ))}

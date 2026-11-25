@@ -53,6 +53,7 @@ import { amount, date, isoDay } from "../../lib/format";
 import { navigate, useLocation } from "../../lib/router";
 import { useResource, useSession } from "../../lib/session";
 import {
+  daysBetween,
   addDays,
   customerOptions,
   emailListValid,
@@ -367,6 +368,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
   const accountLines = () =>
     filledCategoryLines(form.lines).map((l) => ({ accountId: l.category, amount: Math.round(num(l.amount) * 100) / 100, description: (l.description.trim() || categories.find((c) => c.value === l.category)?.label || title).slice(0, 300) }));
 
+  const billLines = () => [
+    ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
+    ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
+  ];
+
   /** Item lines keep their item so a purchase order shows what was ordered and converts to a bill with it. */
   const itemPayloadWithIds = () => {
     const filled = filledProductLines(itemLines);
@@ -376,11 +382,11 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     }));
   };
 
-  async function post(): Promise<{ id: string; number: string; posted: boolean }> {
+  async function post(forApproval: boolean): Promise<{ id: string; number: string; posted: boolean }> {
     const description = form.memo.trim() || undefined;
     switch (kind) {
       case "bill": {
-        const bill = await api<{ id: string; billNumber: string }>("/api/v1/ap/bills", {
+        const bill = await api<{ id: string; billNumber: string; status: string }>("/api/v1/ap/bills", {
           method: "POST",
           body: JSON.stringify({
             supplierId: form.party,
@@ -388,17 +394,15 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             billDate: form.date,
             dueDate: form.dueDate || undefined,
             description,
-            lines: [
-              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
-              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
-            ],
+            lines: billLines(),
+            requireApproval: forApproval || undefined,
           }),
         });
         if (files.length) {
           const failed = await uploadAttachments(api, "ApBill", bill.id, files);
           if (failed) toast(`${failed} attachment${failed > 1 ? "s" : ""} couldn't be uploaded`, { error: true });
         }
-        return { id: bill.id, number: bill.billNumber, posted: true };
+        return { id: bill.id, number: bill.billNumber, posted: bill.status === "POSTED" };
       }
       case "supplier-credit": {
         const note = await api<{ id: string; creditNoteNumber?: string; noteNumber?: string }>("/api/v1/ap/credit-notes", {
@@ -410,10 +414,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
             reason: description ?? "Supplier credit",
             description: accountLines().map((l) => l.description).join("; ").slice(0, 500) || undefined,
             // Each line credits its own expense account, as the bill it reverses debited it.
-            lines: [
-              ...accountLines().map((l) => ({ description: l.description, quantity: 1, unitPrice: l.amount, accountId: l.accountId })),
-              ...productLinesPayload(itemLines, purchaseItems.options, purchaseItems.items, "purchase"),
-            ],
+            lines: billLines(),
           }),
         });
         return { id: note.id, number: note.creditNoteNumber ?? note.noteNumber ?? form.number, posted: true };
@@ -470,15 +471,8 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
     if (!(await v.validate(schema, form))) return;
     setBusy(true);
     try {
-      const result = await post();
-      if (after === "approval") {
-        try {
-          await api("/api/v1/books/approvals", { method: "POST", body: JSON.stringify({ entityType: "ApBill", entityId: result.id, amount: Math.round(total * 100) / 100, reason: form.memo || undefined }) });
-          toast(`Bill ${result.number} submitted for approval`);
-        } catch (e) {
-          toast(`Bill saved, but the approval request failed: ${(e as Error).message}`, { error: true });
-        }
-      }
+      const result = await post(after === "approval");
+      if (after === "approval") toast(`Bill ${result.number} is waiting for approval; it posts when approved`);
       indexTxn({
         id: result.id,
         kind: kind as TxnKind,
@@ -823,7 +817,7 @@ export function CategoryTxnForm({ kind }: { kind: CatKind }) {
           }}
         />
       ) : null}
-      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} snapshot={form} onClose={() => setRecurring(false)} /> : null}
+      {recurring ? <RecurringModal kind={kind as TxnKind} defaultName={`${partyName || title} recurring`} partyName={partyName || undefined} template={kind === "bill" ? { supplierId: form.party, description: form.memo.trim() || undefined, dueInDays: daysBetween(form.date, form.dueDate), lines: billLines() } : undefined} amount={total} onClose={() => setRecurring(false)} /> : null}
       {preview ? (
         <Modal
           title="Print preview"

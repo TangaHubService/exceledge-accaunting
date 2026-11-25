@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
-import { controlAccounts, money } from "../../lib/documents";
+import { controlAccounts, functionalCurrencyOf, money } from "../../lib/documents";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../audit/audit.service";
 import { reconciliation as inventoryReconciliation } from "../inventory/inventory.service";
@@ -16,6 +16,7 @@ export const INTEGRITY_CHECKS = {
   UNBALANCED_JOURNAL: "Unbalanced or mismatched journals",
   JOURNAL_NUMBER_GAP: "Journal number gaps",
   NEGATIVE_CASH: "Negative cash and bank balances",
+  NEGATIVE_STOCK: "Stock below zero",
 } as const;
 export type IntegrityCheck = keyof typeof INTEGRITY_CHECKS;
 
@@ -37,6 +38,44 @@ const round = (n: number) => Math.round(n * 100) / 100;
 async function glNet(companyId: string, accountIds: string[]) {
   if (!accountIds.length) return 0;
   const sum = await prisma.glEntry.aggregate({ where: { companyId, accountId: { in: accountIds } }, _sum: { debit: true, credit: true } });
+  return money(sum._sum.debit) - money(sum._sum.credit);
+}
+
+/** Functional value of foreign parties' open documents and unapplied credit, less what the ledgers total for them. */
+async function foreignParties(companyId: string, side: "receivables" | "payables") {
+  const functional = await functionalCurrencyOf(companyId);
+  const where = { companyId, currency: { not: functional } };
+  const at = (amount: unknown, rate: unknown) => money(amount as number) * Number(rate);
+  let value = 0;
+  if (side === "receivables") {
+    const ids = (await prisma.customer.findMany({ where, select: { id: true } })).map((c) => c.id);
+    if (!ids.length) return 0;
+    const mine = { companyId, customerId: { in: ids }, status: "POSTED" as const };
+    for (const d of await prisma.arInvoice.findMany({ where: mine })) value += at(money(d.gross) - money(d.amountPaid) - money(d.amountCredited), d.exchangeRate);
+    for (const d of await prisma.arReceipt.findMany({ where: mine })) value -= at(d.unallocated, d.exchangeRate);
+    for (const d of await prisma.arCreditNote.findMany({ where: mine })) value -= at(d.unapplied, d.exchangeRate);
+    for (const d of await prisma.arDebitNote.findMany({ where: mine })) value += at(money(d.gross) - money(d.amountSettled), d.exchangeRate);
+    const ledger = await prisma.arLedgerEntry.aggregate({ where: { companyId, customerId: { in: ids } }, _sum: { debit: true, credit: true } });
+    value -= money(ledger._sum.debit) - money(ledger._sum.credit);
+    value += await revaluations(companyId, "receivables");
+  } else {
+    const ids = (await prisma.supplier.findMany({ where, select: { id: true } })).map((c) => c.id);
+    if (!ids.length) return 0;
+    const mine = { companyId, supplierId: { in: ids }, status: "POSTED" as const };
+    for (const d of await prisma.apBill.findMany({ where: mine })) value += at(money(d.gross) - money(d.amountPaid) - money(d.amountCredited), d.exchangeRate);
+    for (const d of await prisma.apPayment.findMany({ where: mine })) value -= at(d.unallocated, d.exchangeRate);
+    for (const d of await prisma.apCreditNote.findMany({ where: mine })) value -= money(d.unapplied);
+    const ledger = await prisma.apLedgerEntry.aggregate({ where: { companyId, supplierId: { in: ids } }, _sum: { debit: true, credit: true } });
+    value -= money(ledger._sum.credit) - money(ledger._sum.debit);
+    value -= await revaluations(companyId, "payables");
+  }
+  return round(value);
+}
+
+/** Unrealized FX posted to the control accounts by a revaluation belongs to no document. */
+async function revaluations(companyId: string, side: "receivables" | "payables") {
+  const ids = [...(await controlAccounts(companyId))].filter(([, k]) => k === side).map(([id]) => id);
+  const sum = await prisma.glEntry.aggregate({ where: { companyId, accountId: { in: ids }, sourceModule: "FX" }, _sum: { debit: true, credit: true } });
   return money(sum._sum.debit) - money(sum._sum.credit);
 }
 
@@ -64,6 +103,8 @@ async function partyLedgers(companyId: string): Promise<IntegrityFinding[]> {
     // (A reversed one nets to zero on both sides.)
     prisma.apBill.aggregate({ where: { companyId, sourceDocumentType: "Expense", status: "POSTED" }, _sum: { gross: true } }),
   ]);
+  // The ledgers keep each party in its own currency; foreign parties are compared at their documents' booked rates.
+  const [arForeign, apForeign] = await Promise.all([foreignParties(companyId, "receivables"), foreignParties(companyId, "payables")]);
   const findings: IntegrityFinding[] = [];
   const compare = (check: IntegrityCheck, label: string, gl: number, ledger: number, explained?: { amount: number; note: string }) => {
     const difference = round(gl - ledger);
@@ -86,14 +127,14 @@ async function partyLedgers(companyId: string): Promise<IntegrityFinding[]> {
       },
     });
   };
-  compare("AR_SUBLEDGER", "Receivables", arGl, money(ar._sum.debit) - money(ar._sum.credit));
+  compare("AR_SUBLEDGER", "Receivables", arGl, money(ar._sum.debit) - money(ar._sum.credit) + arForeign);
   // Payables are credit-positive on both sides. Credits from expenses/FA without a bill explain part of a GL surplus.
   const nonBillPayables = round(money(payableOutsideBills._sum.credit) - money(payableOutsideBills._sum.debit) - money(expenseBills._sum.gross));
   compare(
     "AP_SUBLEDGER",
     "Payables",
     -apGl,
-    money(ap._sum.credit) - money(ap._sum.debit),
+    money(ap._sum.credit) - money(ap._sum.debit) + apForeign,
     Math.abs(nonBillPayables) > TOLERANCE
       ? { amount: nonBillPayables, note: "expenses on account and fixed-asset purchases posted to payables without a supplier bill" }
       : undefined,
@@ -250,6 +291,17 @@ async function journalNumberGaps(companyId: string): Promise<IntegrityFinding[]>
   });
 }
 
+/** More left than was recorded as received, so cost of sales for it is an estimate until the count is put right. */
+async function negativeStock(companyId: string): Promise<IntegrityFinding[]> {
+  const rows = await prisma.inventoryBalance.findMany({ where: { companyId, quantity: { lt: 0 } }, include: { item: { select: { name: true, sku: true } }, location: { select: { name: true } } }, take: LIMIT });
+  return rows.map((r) => ({
+    check: "NEGATIVE_STOCK" as const,
+    severity: "WARNING" as const,
+    message: `${r.item.name} at ${r.location.name} is ${Number(r.quantity)} in stock (value ${fmt(money(r.value))}); check receipts and counts.`,
+    details: { itemId: r.itemId, locationId: r.locationId, sku: r.item.sku, quantity: Number(r.quantity), value: money(r.value) },
+  }));
+}
+
 async function negativeCash(companyId: string): Promise<IntegrityFinding[]> {
   const [financial, flagged, defaults] = await Promise.all([
     prisma.financialAccount.findMany({ where: { companyId }, select: { glAccountId: true, allowOverdraft: true, name: true } }),
@@ -314,6 +366,7 @@ export async function runIntegrityScan(companyId: string): Promise<IntegrityFind
     guarded(["UNBALANCED_JOURNAL"], () => unbalancedJournals(companyId)),
     guarded(["JOURNAL_NUMBER_GAP"], () => journalNumberGaps(companyId)),
     guarded(["NEGATIVE_CASH"], () => negativeCash(companyId)),
+    guarded(["NEGATIVE_STOCK"], () => negativeStock(companyId)),
   ]);
   return groups.flat();
 }

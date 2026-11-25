@@ -1,0 +1,118 @@
+# module|feature|QBO capability (plan)|existing implementation|status|test|accuracy|gap|evidence|impact|recommendation|priority
+Core accounting|Double-entry|Std (A)|Balanced-journal check, transactional posting|F|A01 PASS|Correct|-|journals/journal.service.ts; results A01|-|Keep; add DB guard (F-08)|-
+Core accounting|Chart of accounts, subaccounts, merge|Std (A)|CRUD, tree, import, merge|F|S02a PASS; coa suites|Correct|-|coa/; tests/coa*.test.ts|-|-|-
+Core accounting|General ledger|Std (A)|Paged ledger with running balance|F|S18 PASS|Correct|-|gl/gl.service.ts|-|-|-
+Core accounting|Journal entries|Std (A)|Draft, submit, post, reverse|F|E24, E07 PASS|Correct|-|journals/; tests/wave-b-controls|-|-|-
+Core accounting|Opening balances|Std (A)|Batch with second-person approval; per-party|I|S02b FAIL|GL right, ageing wrong|Batch customer balance has no open item; direct balances go to 1900 Suspense, not 3020|setup.service.ts:840; ar.service.ts:251|Opening debt cannot be collected against or aged|Create open items; use 3020|P0
+Core accounting|Trial balance|Std (A)|5 modes plus columns|P|A02 PASS; E22 FAIL|Correct|19.1 s at 100,000 rows; loads every row|books.service.ts:34|Unusable at volume, slows close|Aggregate in SQL|P1
+Core accounting|Fiscal years and periods|Std (A)|Monthly/quarterly/etc, auto-open|F|S01, E09, E29 PASS|Correct|-|domain/index.ts|-|-|-
+Core accounting|Cash and accrual reporting|Std (A): report basis switch|Policy stored, not applied|I|E17 FAIL|Incorrect label|CASH policy prints "Cash basis" on accrual figures|reports.service.ts:249|Misleading statements|Block CASH now; build later|P0
+Core accounting|Retained earnings, year end|Std (A)|Closing journal, unclosed-profit lines|F|suite wave-c-closing PASS; A04 PASS|Correct|-|close.service.ts|-|-|-
+Core accounting|Period close and lock|Std (A)|Checklist, overrides, approval, row lock|F|S19, S20 PASS|Correct|-|close.service.ts|-|-|-
+Core accounting|Reversals and adjustments|Std (A)|Original-rate reversals|P|E14 PASS; S20b PARTIAL|Right in total, wrong month possible|Invoice void and deposit refund/allocation always dated today|ar.service.ts:1874,1104,1035|February sale voided in November stays in February|Accept a date; default to original if open|P1
+Core accounting|Multi-currency and FX|Essentials+ (A2)|Rates, realised FX, revaluation|I|suite document-fx PASS; E27, A17 FAIL|GL correct; ageing and subledger totals wrong|USD 1,000 added as RWF 1,000; integrity raises false error|ar.service.ts:1324; integrity.service.ts:89|Receivables understated|Store functional amounts on subledger|P0
+Sales and receivables|Customers|Std|Profile, contacts, notes, tags, merge, import|F|suite customer-* PASS|-|-|ar/customers.service.ts|-|-|-
+Sales and receivables|Estimates, proposals, sales orders|Estimates Std; sales orders plan not verified|Convert to invoice once|F|suite design-screens PASS|Correct|-|commercial.service.ts|-|-|-
+Sales and receivables|Sales invoices|Std|Lines, tax, credit limit, PDF, email|P|S08, E19 PASS; E02b, E15 FAIL/PARTIAL|Correct with lines|Header form accepts any VAT amount; no edit of posted invoice|ar.service.ts:463|Wrong VAT possible via API|Require tax code; guarded edit|P1
+Sales and receivables|Sales receipts|Std|Screen makes invoice then receipt in two calls|P|code review|Correct if both succeed|Not atomic: failure leaves unpaid invoice|CustomerTxnForms.tsx:601|Cash sale shown as debt|One endpoint|P1
+Sales and receivables|POS cash/credit sale from ERP|n/a (ERP)|Event posting, idempotent|F|S07, S08b PASS|Correct|-|integration.service.ts|-|-|-
+Sales and receivables|Recurring invoices|Plan not verified|Templates run daily|P|suite recurring-bank-rules PASS|Correct|UI save of a template not exercised|recurring-templates.service.ts|-|UI test|P2
+Sales and receivables|Payments, partial payments|Std|Allocation, overpayment guard, row lock|F|S09, E05, E06 PASS|Correct|-|ar.service.ts:603|-|-|-
+Sales and receivables|Advances (deposits)|Std|Deposit, allocate, refund|P|S09b, S13b PASS|Correct amounts|Allocation and refund dated today|ar.service.ts:1035,1104|Wrong month|Accept date|P1
+Sales and receivables|Credit notes|Std|API supports net and tax|I|S13a API PASS; screen FAIL|VAT overstated|Screen has no tax and no invoice link; whole total sent as net|CustomerTxnForms.tsx:594|VAT overpaid to RRA; revenue understated|Send lines and tax code|P0
+Sales and receivables|Refund receipts|Std|Bank payment to income account|I|S13c, S13d FAIL|VAT never reversed; credit remains|Cannot refund an open credit; workaround deducts revenue twice|banking.service.ts:419; CustomerTxnForms.tsx:627|Revenue and AR wrong|Refund document clearing credit|P0
+Sales and receivables|Discounts|Std|Line discounts|F|suite ar PASS|Correct|-|ar.service.ts|-|-|-
+Sales and receivables|Statements|Std|Period and outstanding, PDF, email|P|S18 PASS|Correct|Email delivery not tested live|print.service.ts|-|-|P2
+Sales and receivables|AR ageing|Std|Open invoices by due date|I|A09, E26, E27 FAIL|Incorrect|Not historical; ignores unapplied credits, batch openings, currency|ar.service.ts:1324|Report does not equal control account|Rebuild from ledger at a date|P0
+Sales and receivables|Bad debt write-off|Std|None|M|E21 FAIL|-|Only workaround hits Sales Returns|-|Misstated revenue|Write-off action|P1
+Sales and receivables|Online payment / Pay now|Regional (QuickBooks Payments)|None|M|-|-|No provider|WalletSettings.tsx|Slower collection|Mobile money|P2
+Sales and receivables|Late fees, scheduled reminders|Advanced automates reminders (A)|Reminder email by hand|M|-|-|Not scheduled|customer-email.service.ts|Slower collection|Scheduler job|P2
+Purchases and payables|Suppliers|Std|Profile, import, WHT settings|F|suites PASS|-|-|ap/suppliers.service.ts|-|-|-
+Purchases and payables|Purchase orders|Plan not verified|PO to receipt to bill|P|suite design-screens PASS|Correct|Screen has account lines only; stock lines API-only|DESIGN_SCREENS_BACKEND.md|Stock orders need ERP|Item picker|P2
+Purchases and payables|Supplier bills|Std|Lines, duplicate guard, void|P|S05, E01c PASS|Correct|"Submit for approval" requests approval after the bill has posted|SupplierTxnForms.tsx:476|Control not effective|Hold then post|P1
+Purchases and payables|Direct expenses, cheques|Std|Bank payments|P|S10, E23b|Correct to expense|Can be coded to 1300 and 2200|banking.service.ts:408|Subledger breaks|Extend guard|P0
+Purchases and payables|Payments, partial, WHT|Std; WHT regional|Allocation, credits, WHT certificate|F|S06 PASS; suite|Correct|WHT on foreign payments refused|ap.service.ts:608|-|-|-
+Purchases and payables|Supplier advances|Std|Advance, allocate, refund|F|suite ap PASS|Correct|-|ap.service.ts:1098|-|-|-
+Purchases and payables|Supplier credits and returns|Std|Credit note with stock return|F|S12b PASS|Correct|-|ap.service.ts:864|-|-|-
+Purchases and payables|AP ageing|Std|Open bills by due date|I|A10 FAIL|Incorrect|Payments with no allocation and other credits ignored; not historical|ap.service.ts:1435|1,447,280 shown vs 267,280 owed in test|Rebuild from ledger|P0
+Purchases and payables|Supplier statements, outstanding bills|Std|Period statement PDF|F|S18 PASS|Correct|-|ap.service.ts:1292|-|-|-
+Banking|Bank, cash, petty cash, mobile money accounts|Std|Account kinds, overdraft guard|F|S03 PASS; suite|Correct|-|banking.service.ts|-|-|-
+Banking|Statement import|Std|CSV, OFX, QIF, CAMT.053|F|S17 PASS|-|Excel not read|reconciliation.service.ts|-|-|-
+Banking|Live bank feeds|Simple Start connects 1 bank (A); regional|None|M|-|-|No provider|CashFlow.tsx:213|Manual work|Provider needed|P3
+Banking|Matching, categorising, rules|Std|Auto-match, rules with splits|F|suite PASS; S17|Correct|-|rules.service.ts|-|-|-
+Banking|Reconciliation|Std|Review, approve, complete, reopen|F|S17 PASS|Correct|-|reconciliation.service.ts|-|-|-
+Banking|Transfers, deposits, charges|Std|With fee|F|S14 PASS|Correct|Deposit with cash back is two calls|OtherTxnForms.tsx:119|Partial save possible|One endpoint|P2
+Banking|Duplicate statement detection|Std|Re-import refused|F|S17 PASS|Correct|-|reconciliation.service.ts|-|-|-
+Banking|Cash count, over/short|Not standard QBO|Cash count posts over/short|F|suite banking PASS|Correct|-|banking.service.ts|-|-|-
+Banking|Cashier shift / daily close|Not standard QBO|None here (ERP POS)|U|-|-|ERP not in this repository|-|-|Confirm with ERP|P2
+Inventory|Products, services, categories|Plus for inventory (A)|Items, import, categories|F|suite products-services PASS|-|-|items.service.ts|-|-|-
+Inventory|Stock in/out from ERP|Plus (A)|Events, idempotent|F|S04, S07 PASS|Correct|-|inventory.service.ts:400|-|-|-
+Inventory|Adjustments and write-offs|Plus (A)|Quantity and value, approval|F|S15, E04 PASS|Correct|-|stock-documents.service.ts|-|-|-
+Inventory|Valuation equals GL|Plus (A)|Weighted average, FIFO layers|F|A06: 1,172,571.4287 both|Correct|-|inventory.service.ts:788|-|-|-
+Inventory|COGS|Plus (A) uses FIFO|From stock ledger|F|S07 PASS|Correct 205,714.29|-|-|-|-|-
+Inventory|Returns|Plus (A)|Customer and supplier|F|S12a, S12b PASS|Correct|-|-|-|-|-
+Inventory|Low-stock alerts|Plus (A); detail not verified|Reorder point and filter only|P|code|-|No notification|items.service.ts|Stock-outs|Daily alert|P2
+Inventory|Negative stock|QBO behaviour not verified|App refuses; ERP event allowed silently|P|E04 PASS; E04b INFO|Cost estimated|ERP oversell gave -3 units, -61,714 asset, no alert|results E04b|Hidden error|Raise exception|P1
+Inventory|App invoice moves stock|Plus (A)|By design no|X|S08|-|ERP owns stock (agreed)|-|-|-|-
+Expenses and income|Expenses, categories, approval|Std; approvals Advanced (A)|Full workflow|P|S10 PASS; E23c FAIL|Correct for normal accounts|Accepts 1200, 2100, 1300 as expense account|expense.service.ts:560|AR/AP subledger out of balance|Reject control accounts|P0
+Expenses and income|Other income|Std|Bank receipt|F|S11 PASS|Correct|-|-|-|-|-
+Expenses and income|Recurring expenses|Plan not verified|Daily scheduler|F|suite expense PASS|Correct|-|scheduler.ts|-|-|-
+Expenses and income|Attachments|Std|Stored per document, local or S3|P|suite wave-c-documents PASS|-|Attachments workspace page is a stub|AttachmentsWorkspace.tsx|Files "attached" there are lost|Connect page|P1
+Expenses and income|Receipt capture / inbox|Std; detail not verified|None|M|-|-|-|-|Manual entry|-|P3
+Expenses and income|Reimbursements|Add-on/plan not verified|Employee payee fields, no settlement flow|P|code|-|No reimbursement document|expense.routes.ts|-|Build|P2
+Expenses and income|Prepaid and accrued expenses|Not verified|Manual journals; menu opens plain Expenses|M|code|-|No schedules|App.tsx /accounting/prepaid-expenses|Manual work|Amortisation schedule|P2
+Reporting|Profit and loss|Std|Range, comparatives|F|A04 PASS; UI read|Correct|-|reports.service.ts|-|-|-
+Reporting|Balance sheet|Std|Current/non-current|F|A03, A16 PASS|Correct|0.05 tolerance in "balanced" flag|reports.service.ts|-|Tighten|P3
+Reporting|Cash flow statement|Std|Indirect|I|A05 PASS; E18 FAIL|Total right, sections wrong|Disposal gain left in operating: 120,000 operating, 1,180,000 investing; should be 0 and 1,300,000|reports.service.ts:120|Misclassified cash flow|Deduct gain; add proceeds|P1
+Reporting|Ledger, journal, trial balance reports|Std|Yes, exports|F|S18 PASS|Correct|-|-|-|-|-
+Reporting|Sales and purchase reports|Std|Customer/supplier yes; product none|P|code|-|About 14 of 72 listed reports have no data|ReportViewer.tsx:364|Missing analysis|Build|P2
+Reporting|Inventory valuation|Plus (A)|As-of date|F|S18 PASS|Correct|-|-|-|-|-
+Reporting|Budget vs actual|Plus (A)|Backend complete|I|suite wave-c-budgets PASS; UI FAIL|New editor saves nothing|Says saved, calls no API, sample rows|BudgetEditor.tsx:89|User loses budget|Connect|P0
+Reporting|Comparative, filters, drill-down, export|Std|CSV, XLSX, PDF|F|S18 PASS|-|-|-|-|-|-
+Reporting|Home dashboard|Std|Sample data only|I|UI FAIL: 12,850,000 vs 2,360,854 income|False|All KPIs, banks, invoices, bills, activity fake|Overview.tsx; dashboard-dummy.ts|Wrong business decisions|Connect to API|P0
+Reporting|KPIs, forecasts, custom reports|Advanced custom KPIs (A)|Yes|N|S18 (KPI endpoint only)|-|-|reports/|-|Test|P2
+Tax and compliance|Tax codes and rates|Regional|VAT18, VATIN, VAT0, VATEX, WHT|F|S01b PASS; suite tax|Correct|-|tax.service.ts:138|-|-|-
+Tax and compliance|Tax exclusive prices|Std|Yes|F|S08 PASS|Correct|-|-|-|-|-
+Tax and compliance|Tax inclusive prices|Regional; not verified|None|M|E20 FAIL|-|No field in schema|ArInvoiceLine|Retail prices are VAT-inclusive|Add flag|P1
+Tax and compliance|VAT input/output and report|Regional|Ledger-based|F|A11: report equals GL|Correct for posted data|-|tax.service.ts|-|-|-
+Tax and compliance|Exemptions|Regional|Customer and code|F|suite PASS|Correct|-|-|-|-|-
+Tax and compliance|Payments, filings, WHT certificate|Regional|Yes; nothing sent to RRA|F|suite PASS|Correct|Filing is manual|-|-|-|-
+Tax and compliance|EBM fiscal invoice for app sales|Not in QBO (regional)|None; ERP metadata recorded only|M|code|-|App invoices and credit notes have no EBM receipt|tax.service.ts:1182|Compliance exposure|Via ERP or certified VSDC|P0
+Tax and compliance|EBM retry and reconciliation|n/a|Reconciliation compares recorded documents|N|A11b: 0 documents|-|No live EBM available|tax.service.ts:1146|-|Sandbox test|P1
+Tax and compliance|RWF handling|n/a|4-decimal storage|P|E19 PASS|-|Fractional RWF accepted on documents|-|Odd amounts|Currency rounding rule|P2
+Tax and compliance|Time zone of ERP postings|n/a|UTC dates|I|E08 FAIL|Wrong day|Sales from 00:00 to 02:00 Kigali post the previous day|integration.service.ts|Month-end VAT cut-off|Convert to Africa/Kigali|P1
+Additional|Fixed assets|Not verified|Depreciation, revalue, impair, dispose|F|S16 PASS; suite|Correct|-|fa.service.ts|-|-|-
+Additional|Payroll calculation|Add-on, regional|None here; ERP payroll journals accepted|P|suite payroll PASS|Correct for received events|No calculation or payslips here|posting-rules.service.ts|Depends on ERP|Confirm ERP scope|P2
+Additional|Projects|Plus (A)|Dimension with GL profit|F|suite design-screens PASS|Correct|-|projects.service.ts|-|-|-
+Additional|Classes/cost centres, branches|Plus, 40 (A)|Dimensions and branches|F|suite PASS|Correct|-|books.service.ts|-|-|-
+Additional|Notifications|Std|Backend real; header badge fake|P|code, UI|-|Badge always 3|Shell.tsx:724|Misleading|Connect|P1
+Additional|Import|Std|Customers, suppliers, items, accounts real|P|suites PASS|-|Import hub reports success without importing|ImportData.tsx:145|Data loss|Connect|P0
+Additional|Export|Std|Report exports real; Export data page stub|P|code|-|"Export complete" without backend|ExportData.tsx:67|Misleading|Connect|P1
+Additional|QuickBooks migration|n/a|CSV lists and journal import|P|code|-|No open invoices, bills or history import|-|Manual migration|Migration kit|P1
+Additional|Workflow automation|Advanced (A)|Backend exists; page stub|I|code|-|"Running... Sent successfully" does nothing|Workflows.tsx:104|False assurance|Connect|P0
+Additional|Custom fields, form styles|Plan not verified|Stub pages|M|code|-|"Saved" without API|CustomFields.tsx:67|Loss of input|Build|P2
+Additional|Settings switches|Std|Stored; mostly unused|P|code|-|Forms ignore most switches|lib/preferences.ts|Confusing|Wire or hide|P1
+Security|Tenant isolation|Std|companyId on every query|F|E12 PASS (13 reads, 5 writes)|-|-|middleware/auth.ts|-|Automate for all routes|P2
+Security|Roles and permissions|Advanced customises (A)|Roles, custom roles, capabilities|F|E11 PASS; suite custom-roles|-|No branch-level data restriction found|auth.ts; users/|Branch staff see all branches|Branch scope|P1
+Security|Approvals, separation of duties|Advanced (A)|Journal, bill, expense, close|F|E24 PASS; suite approval-gates|-|See bill note|approval.service.ts|-|-|-
+Security|Audit trail|Std|Append-only by DB trigger|P|A13 PASS; A14 FAIL; E16|-|No own event for AR receipt, deposit, credit note; page shows invented rows when empty|AuditLog.tsx; tools-dummy.ts|Weak evidence|Add events; remove samples|P1
+Security|Ledger immutability|Vendor controlled|API only|P|E16 PARTIAL|-|gl_entries can be updated in SQL; no CHECK constraints|migrations|Tampering|Trigger and constraints|P1
+Security|Integration key|n/a|One shared secret for all companies|P|E12b FAIL|-|Leak allows posting to any business|integration.routes.ts:22|High|Per-company keys|P1
+Security|Error messages|Vendor|Raw Prisma text with file paths|I|E30 FAIL|-|Information disclosure|ar.routes.ts|Medium|Map errors|P1
+Security|Rate limiting|Vendor|API keys only|M|code|-|None on user or integration routes|app.ts|Abuse|Add|P1
+Security|Pay data at rest|Vendor|Access controlled, plain text|P|code|-|Not encrypted|team.service.ts|Privacy|Encrypt|P1
+Security|Dependencies|Vendor|6 production advisories (4 high)|P|npm audit|-|zod, exceljs/uuid and others|Backend/package.json|Medium|Upgrade|P1
+Reliability|Posting rollback|Vendor|Transactions|F|E03, E10 PASS|Correct|-|lib/prisma.ts|-|-|-
+Reliability|Concurrent postings|Vendor|Row locks, counters|F|E06, E07, E07b PASS|Correct|-|-|-|-|-
+Reliability|Duplicate ERP events|n/a|Idempotency key|F|S07 PASS|Correct|-|-|-|-|-
+Reliability|Duplicate user submissions|Vendor|Button disabled only|I|E01, E01b FAIL|Double posting|No idempotency on POST|all document routes|Double revenue or payment|Idempotency-Key|P0
+Reliability|Failed integrations|Vendor|Exceptions and retry|F|S20; suite integration-gl|Correct|-|-|-|-|-
+Reliability|Backup and restore|Not found on pricing page|Page is fabricated|I|UI FAIL|-|Lists "Success" backups that do not exist|BackupRestore.tsx|Data loss risk|Real backups; remove page|P0
+Reliability|Automated tests, CI|Vendor|430 backend/domain tests; 0 frontend; no CI|P|321+109 PASS|-|Nothing runs on push|-|Regressions|CI|P1
+Reliability|Large volume|Vendor|Statements fast, TB slow|P|E22|-|TB 19.1 s vs statements 0.3 s|books.service.ts:34|-|SQL aggregate|P1
+Reliability|Offline use|Not evaluated|None|X|-|-|Web app|-|-|-|-
+User experience|Navigation|Std|All apps, create menu, settings|D|UI|-|Banking rules, recurring, reports reachable by 3+ paths; several menu items open the same page|App.tsx; settings-dummy.ts|Confusing|RECOMMENDED_NAVIGATION|P2
+User experience|Validation messages|Std|Good on forms|P|E02|-|Some API errors are raw JSON|-|-|Map errors|P2
+User experience|Report to source drill-down|Std|Ledger and documents link|N|not clicked|-|-|-|-|UI test|P2
+User experience|Screens that fake success|Std|7 pages|I|code, UI|-|Budget, backup, workflows, import, export, attachments, custom fields|see F-01|Trust|Connect or hide|P0
+User experience|Text defects|Std|"{cfg.detailLabel}" printed on ageing|I|UI FAIL|-|Literal template|Ageing.tsx:21|Cosmetic|Fix|P2

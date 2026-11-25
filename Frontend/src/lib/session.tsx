@@ -14,6 +14,13 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * One key per submission: a double click or a retry after a lost answer sends the same key, so the server saves it
+ * once. The key goes once the server has answered, so entering the same thing again on purpose still works.
+ */
+const submissions = new Map<string, { key: string; inFlight: number }>();
+const newKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 type Envelope<T> = { success: boolean; data?: T; error?: string; message?: string };
 
 export type Session = {
@@ -175,12 +182,24 @@ export function SessionProvider({
 
   const call = useCallback<Session["apiWithMessage"]>(
     async <T,>(path: string, init?: RequestInit) => {
+      const print = init?.method === "POST" && typeof init.body === "string" ? `${path}\n${init.body}` : null;
+      const submission = print ? (submissions.get(print) ?? { key: newKey(), inFlight: 0 }) : null;
+      if (print && submission) {
+        submission.inFlight += 1;
+        submissions.set(print, submission);
+      }
+      const settle = (answered: boolean) => {
+        if (!print || !submission) return;
+        submission.inFlight -= 1;
+        if (answered && submission.inFlight <= 0) submissions.delete(print);
+      };
       const send = (bearer: string) =>
         fetch(accountingUrl(path), {
           ...init,
           headers: {
             ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
             Authorization: `Bearer ${bearer}`,
+            ...(submission ? { "Idempotency-Key": submission.key } : {}),
             ...(init?.headers ?? {}),
           },
         });
@@ -195,8 +214,11 @@ export function SessionProvider({
           }
         }
       } catch {
+        settle(false);
         throw new ApiError("Can't reach the accounting service. Check your connection and try again.", 0);
       }
+      // 409: the first attempt may still be running, so a retry must carry the same key.
+      settle(res.status < 500 && res.status !== 409);
       let body: Envelope<T> | null = null;
       try {
         body = (await res.json()) as Envelope<T>;

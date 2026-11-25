@@ -102,6 +102,10 @@ export type AgeingReport = {
     dueDate: string;
     outstanding: number;
     bucket: string;
+    currency: string;
+    outstandingForeign: number | null;
+    /** ON_ACCOUNT: payments and credits not used yet */
+    kind: "DOCUMENT" | "ON_ACCOUNT";
   }>;
   total: number;
 };
@@ -727,7 +731,7 @@ export type ApAgeingReport = {
   asOf: string;
   buckets: AgeingBucket[];
   lines: Array<{
-    billId: string;
+    billId: string | null;
     supplierId: string;
     supplierCode: string;
     supplierName: string;
@@ -736,6 +740,10 @@ export type ApAgeingReport = {
     dueDate: string;
     outstanding: number;
     bucket: string;
+    currency: string;
+    outstandingForeign: number | null;
+    /** ON_ACCOUNT: payments and credits not used yet */
+    kind: "DOCUMENT" | "ON_ACCOUNT";
   }>;
   total: number;
 };

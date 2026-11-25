@@ -403,6 +403,7 @@ apRouter.post("/bills", requireCapability("ap:manage"), async (req: AuthedReques
         tax: z.number().min(0).optional(),
         discount: z.number().min(0).optional(),
         expenseAccountId: z.string().optional(),
+        requireApproval: z.boolean().optional(),
         description: optionalText,
         lines: documentLines.optional(),
       })

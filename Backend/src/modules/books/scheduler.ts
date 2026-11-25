@@ -2,10 +2,12 @@ import { claimOnce, withJobLock } from "../../lib/job-lock";
 import { inTransaction, prisma } from "../../lib/prisma";
 import * as expenses from "../expense/expense.service";
 import { recordIntegrityScan } from "../integrity/integrity.service";
+import { purgeIdempotency } from "../../middleware/idempotency";
 import { openStartedPeriods } from "../journals/journal.service";
 import { deliverDueEmails } from "../notifications/email-outbox.service";
 import { notify } from "../notifications/notification.service";
 import { deliverDueWebhooks } from "../platform/webhook.service";
+import { runDueTemplates } from "./recurring-templates.service";
 import { automationDue, purgeApiKeyUsage, runAutomation, runRecurring } from "./books.service";
 
 const SYSTEM = { erpUserId: 0, erpRole: "SYSTEM" };
@@ -80,7 +82,7 @@ export async function dailyAlerts(companyId: string, now: Date) {
 
 /** Opens started periods and runs due recurring journals and expenses, once per UTC day. */
 async function runDailyWork(companyId: string, now: Date) {
-  const summary = { periodsOpened: 0, recurringJournals: 0, recurringExpenses: 0 };
+  const summary = { periodsOpened: 0, recurringJournals: 0, recurringExpenses: 0, recurringDocuments: 0 };
   summary.periodsOpened = await openStartedPeriods(companyId, now);
 
   if (await prisma.recurringJournal.count({ where: { companyId, isActive: true, nextRunDate: { lte: now } } })) {
@@ -107,6 +109,11 @@ async function runDailyWork(companyId: string, now: Date) {
     } catch (e) {
       await notifyFailure(companyId, `Recurring expense ${template.name} failed`, e);
     }
+  }
+  try {
+    summary.recurringDocuments = (await runDueTemplates(companyId, now)).created;
+  } catch (e) {
+    await notifyFailure(companyId, "Recurring transactions did not run", e);
   }
   try {
     await dailyAlerts(companyId, now);
@@ -149,6 +156,7 @@ export async function runScheduledWork(now = new Date()) {
     const today = now.toISOString().slice(0, 10);
     const daily = await claimOnce(`daily:${today}`, 26 * 3_600_000);
     if (daily) await prisma.jobLock.deleteMany({ where: { expiresAt: { lt: now } } });
+    if (daily) await purgeIdempotency(now).catch((e) => console.error("[scheduler] idempotency purge", e));
     if (daily) await purgeApiKeyUsage(now).catch((e) => console.error("[scheduler] API key usage purge", e));
     let automationRuns = 0;
     for (const { companyId } of activations) {

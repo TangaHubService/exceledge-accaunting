@@ -38,6 +38,7 @@ export async function resetCompany(orgId: number) {
   await prisma.bankTransaction.deleteMany({ where: { company } });
   await prisma.bankStatement.deleteMany({ where: { company } });
   await prisma.bankReconciliation.deleteMany({ where: { company } });
+  await prisma.arRefund.deleteMany({ where: { company } });
   await prisma.company.deleteMany({ where: company });
 }
 
